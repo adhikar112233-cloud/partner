@@ -60,7 +60,7 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       }
       const idToken = await firebaseUser.getIdToken();
 
-      const res = await fetch("https://bigyapan-backend.onrender.com/create-order", {
+      const res = await fetch("https://partnerpayment-backend.onrender.com/create-order", {
         method: "POST",
         headers: {
           "Authorization": "Bearer " + idToken,

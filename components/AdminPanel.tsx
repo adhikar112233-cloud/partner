@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 // Fix: Import `CombinedCollabItem` from the central types file.
@@ -1465,7 +1463,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
                     </button>
                 ))}
             </nav>
-            <main className="flex-1 bg-gray-100 overflow-hidden">
+            <main className="flex-1 bg-gray-100 dark:bg-gray-900 overflow-hidden">
                 {activeTab === 'dashboard' && <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />}
                 {activeTab === 'user_management' && <UserManagementPanel users={regularUsers} onUserSelect={handleOpenUserDetails} />}
                 {activeTab === 'staff_management' && <StaffManagementPanel staffUsers={staffUsers} onUpdate={onUpdate} platformSettings={platformSettings} />}

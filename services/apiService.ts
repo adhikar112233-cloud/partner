@@ -1576,9 +1576,9 @@ export const apiService = {
   getAllRefunds: async (): Promise<RefundRequest[]> => getDocs(collection(db, 'refund_requests')).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as RefundRequest))),
   getAllDailyPayouts: async (): Promise<DailyPayoutRequest[]> => getDocs(collection(db, 'daily_payout_requests')).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as DailyPayoutRequest))),
   getAllCollaborationRequests: async (): Promise<CollaborationRequest[]> => getDocs(collection(db, 'collaboration_requests')).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as CollaborationRequest))),
-  getAllCampaignApplications: async (): Promise<CampaignApplication[]> => getDocs(collection(db, 'campaign_applications')).then(snap => snap.docs.map(d => ({ id: d.id, ...doc.data() } as CampaignApplication))),
-  getAllAdSlotRequests: async (): Promise<AdSlotRequest[]> => getDocs(collection(db, 'ad_slot_requests')).then(snap => snap.docs.map(d => ({ id: d.id, ...doc.data() } as AdSlotRequest))),
-  getAllBannerAdBookingRequests: async (): Promise<BannerAdBookingRequest[]> => getDocs(collection(db, 'banner_booking_requests')).then(snap => snap.docs.map(d => ({ id: d.id, ...doc.data() } as BannerAdBookingRequest))),
+  getAllCampaignApplications: async (): Promise<CampaignApplication[]> => getDocs(collection(db, 'campaign_applications')).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as CampaignApplication))),
+  getAllAdSlotRequests: async (): Promise<AdSlotRequest[]> => getDocs(collection(db, 'ad_slot_requests')).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as AdSlotRequest))),
+  getAllBannerAdBookingRequests: async (): Promise<BannerAdBookingRequest[]> => getDocs(collection(db, 'banner_booking_requests')).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as BannerAdBookingRequest))),
 
   updatePayoutRequest: async (id: string, data: Partial<PayoutRequest>): Promise<void> => {
     await updateDoc(doc(db, 'payout_requests', id), data);

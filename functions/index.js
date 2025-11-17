@@ -1,29 +1,42 @@
 
-const { onRequest } = require("firebase-functions/v2/https");
-const { setGlobalOptions } = require("firebase-functions/v2");
-const logger = require("firebase-functions/logger");
-const cors = require("cors")({ origin: true });
+const express = require("express");
+const cors = require("cors");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const logger = require("firebase-functions/logger");
 
+const app = express();
+const PORT = process.env.PORT || 8080;
+
+// IMPORTANT: When deploying to a non-Google environment (like Render),
+// you MUST set the GOOGLE_APPLICATION_CREDENTIALS environment variable.
+// This variable should contain the JSON content of your Firebase service account key.
+// admin.initializeApp() will automatically use this variable.
 admin.initializeApp();
 const db = admin.firestore();
 
-// Set global options for all functions, e.g., region.
-setGlobalOptions({ region: "us-central1" });
+// Use CORS middleware for all routes
+app.use(cors({ origin: true }));
+
+// Middleware to parse JSON. For the webhook, we need the raw body for verification.
+app.use(express.json({
+    verify: (req, res, buf) => {
+        // Attach raw body to request for webhook signature verification
+        if (req.originalUrl.includes('/cashfreeWebhook')) {
+            req.rawBody = buf;
+        }
+    }
+}));
 
 
 /**
- * Creates a payment order with the Cashfree API.
- * This function must be deployed to your Firebase project.
+ * Handler for creating a payment order with the Cashfree API.
  */
-exports.createOrder = onRequest({ secrets: ["CASHFREE_ID", "CASHFREE_SECRET"] }, (req, res) => {
-  cors(req, res, async () => {
+const createOrderHandler = async (req, res) => {
     if (req.method !== 'POST') {
-      return res.status(405).send({ message: 'Method Not Allowed' });
+        return res.status(405).send({ message: 'Method Not Allowed' });
     }
 
-    // Securely verify user's identity from the token
     const idToken = req.headers.authorization?.split('Bearer ')[1];
     if (!idToken) {
         return res.status(401).send({ message: 'Unauthorized: No token provided.' });
@@ -34,7 +47,6 @@ exports.createOrder = onRequest({ secrets: ["CASHFREE_ID", "CASHFREE_SECRET"] },
         decodedToken = await admin.auth().verifyIdToken(idToken);
     } catch (error) {
         logger.error("Error verifying Firebase ID token:", error, error.code);
-        // Provide more specific feedback for common configuration errors on the backend.
         if (error.code === 'auth/argument-error' || error.message.includes('Firebase App is not initialized')) {
             return res.status(500).send({ message: 'Server authentication service is not configured. Please check backend environment variables for Firebase credentials.' });
         }
@@ -45,91 +57,85 @@ exports.createOrder = onRequest({ secrets: ["CASHFREE_ID", "CASHFREE_SECRET"] },
     const { amount, purpose, relatedId, collabId, collabType, phone } = req.body;
 
     if (!amount || !relatedId || !collabType) {
-      return res.status(400).send({ message: 'Missing required payment details.' });
+        return res.status(400).send({ message: 'Missing required payment details.' });
     }
-    
+
     const CASHFREE_ID = process.env.CASHFREE_ID;
     const CASHFREE_SECRET = process.env.CASHFREE_SECRET;
 
     if (!CASHFREE_ID || !CASHFREE_SECRET) {
-      logger.error("Cashfree API credentials are not set as environment secrets.");
-      return res.status(500).send({ message: 'Server configuration error.' });
+        logger.error("Cashfree API credentials are not set as environment variables/secrets.");
+        return res.status(500).send({ message: 'Server configuration error.' });
     }
 
     const orderId = `order_${Date.now()}`;
     try {
-      const userDoc = await db.collection('users').doc(userId).get();
-      if (!userDoc.exists) {
-        return res.status(404).send({ message: 'User not found.' });
-      }
-      const userData = userDoc.data();
-      
-      // Create a pending transaction record
-      await db.collection('transactions').doc(orderId).set({
-          userId,
-          type: 'payment',
-          description: purpose,
-          relatedId,
-          collabId,
-          collabType,
-          amount: parseFloat(amount),
-          status: 'pending',
-          transactionId: orderId, // Use orderId as initial transactionId
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          paymentGateway: 'cashfree'
-      });
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            return res.status(404).send({ message: 'User not found.' });
+        }
+        const userData = userDoc.data();
 
-      // Make phone number robust: use DB, fallback to request body (which has its own fallback)
-      const customerPhone = userData.mobileNumber || phone;
-      if (!customerPhone) {
-        // This should be rare due to frontend fallbacks but is a good safeguard.
-        throw new Error("A valid mobile number is required for payment and is missing from your profile.");
-      }
+        await db.collection('transactions').doc(orderId).set({
+            userId,
+            type: 'payment',
+            description: purpose,
+            relatedId,
+            collabId,
+            collabType,
+            amount: parseFloat(amount),
+            status: 'pending',
+            transactionId: orderId,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            paymentGateway: 'cashfree'
+        });
 
-      const response = await fetch("https://api.cashfree.com/pg/orders", { // Using production API for deployment
-        method: "POST",
-        headers: {
-          "x-api-version": "2023-08-01", // Updated to a newer API version
-          "x-client-id": CASHFREE_ID,
-          "x-client-secret": CASHFREE_SECRET,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          order_id: orderId,
-          order_amount: amount,
-          order_currency: "INR",
-          order_note: purpose || 'Payment for BIGYAPON',
-          customer_details: {
-            customer_id: userId,
-            customer_email: userData.email,
-            customer_phone: customerPhone,
-            customer_name: userData.name,
-          },
-          order_meta: {
-            // Redirect user back to app after payment
-            return_url: `https://bigyapon2-cfa39.firebaseapp.com/?order_id={order_id}`,
-         }
-        }),
-      });
+        const customerPhone = userData.mobileNumber || phone;
+        if (!customerPhone) {
+            throw new Error("A valid mobile number is required for payment and is missing from your profile.");
+        }
 
-      const data = await response.json();
+        const response = await fetch("https://api.cashfree.com/pg/orders", {
+            method: "POST",
+            headers: {
+                "x-api-version": "2023-08-01",
+                "x-client-id": CASHFREE_ID,
+                "x-client-secret": CASHFREE_SECRET,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                order_id: orderId,
+                order_amount: amount,
+                order_currency: "INR",
+                order_note: purpose || 'Payment for BIGYAPON',
+                customer_details: {
+                    customer_id: userId,
+                    customer_email: userData.email,
+                    customer_phone: customerPhone,
+                    customer_name: userData.name,
+                },
+                order_meta: {
+                    return_url: `https://bigyapon2-cfa39.firebaseapp.com/?order_id={order_id}`,
+                }
+            }),
+        });
 
-      if (!response.ok) {
-        logger.error("Cashfree API error:", data);
-        await db.collection('transactions').doc(orderId).update({ status: 'failed', failure_reason: data });
-        return res.status(response.status).send(data);
-      }
+        const data = await response.json();
 
-      return res.status(200).send(data);
+        if (!response.ok) {
+            logger.error("Cashfree API error:", data);
+            await db.collection('transactions').doc(orderId).update({ status: 'failed', failure_reason: data });
+            return res.status(response.status).send(data);
+        }
+
+        return res.status(200).send(data);
 
     } catch (error) {
-      logger.error(`Error creating Cashfree order ${orderId}:`, error);
-      // Update transaction to failed if it was created
-      await db.collection('transactions').doc(orderId).update({ status: 'failed', failure_reason: { error: error.message } }).catch(() => {});
-      return res.status(500).send({ message: error.message || 'Internal Server Error' });
+        logger.error(`Error creating Cashfree order ${orderId}:`, error);
+        await db.collection('transactions').doc(orderId).update({ status: 'failed', failure_reason: { error: error.message } }).catch(() => {});
+        return res.status(500).send({ message: error.message || 'Internal Server Error' });
     }
-  });
-});
+};
 
 const getCollectionNameForCollab = (collabType) => {
     const collectionMap = {
@@ -146,9 +152,8 @@ const getCollectionNameForCollab = (collabType) => {
 };
 
 
-exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req, res) => {
+const cashfreeWebhookHandler = async (req, res) => {
     try {
-        // Production: Verify the webhook signature from Cashfree
         const signature = req.headers["x-webhook-signature"];
         const timestamp = req.headers["x-webhook-timestamp"];
         const rawBody = req.rawBody;
@@ -176,7 +181,6 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
         logger.info("Cashfree webhook received:", req.body);
         const event = req.body;
         
-        // This structure is based on Cashfree's v2022-09-01 API webhooks
         const order = event.data.order;
 
         if (event.type === "PAYMENT_SUCCESS_WEBHOOK" && order.order_status === 'PAID') {
@@ -190,7 +194,6 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
 
             const transactionData = transactionDoc.data();
             
-            // Prevent reprocessing successful webhooks
             if (transactionData.status === 'completed') {
                 logger.info(`Order ${order.order_id} already processed.`);
                 return res.status(200).send("OK");
@@ -198,18 +201,16 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
             
             const batch = db.batch();
 
-            // 1. Update transaction status
             batch.update(transactionRef, {
                 status: "completed",
                 paymentGatewayDetails: event.data,
             });
 
-            // 2. Update collaboration status
-            const { collabType, relatedId, userId, description } = transactionData;
+            const { collabType, relatedId, userId } = transactionData;
             
             if (collabType === 'membership') {
                 const userRef = db.collection('users').doc(userId);
-                const plan = relatedId; // The plan ID, e.g., 'pro_10'
+                const plan = relatedId;
                 const now = admin.firestore.Timestamp.now();
                 let expiryDate = new Date(now.toDate());
                 
@@ -232,7 +233,6 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
                 };
                 batch.update(userRef, updateData);
                 
-                // Update denormalized influencer profile if applicable
                 const userDoc = await userRef.get();
                 if(userDoc.exists() && userDoc.data().role === 'influencer') {
                     const influencerRef = db.collection('influencers').doc(userId);
@@ -240,11 +240,11 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
                 }
         
             } else if (collabType.startsWith('boost_')) {
-                const boostType = collabType.split('_')[1]; // 'profile', 'campaign', or 'banner'
+                const boostType = collabType.split('_')[1];
                 const targetId = relatedId;
                 
                 if (boostType && targetId) {
-                    const days = 7; // All boosts now last for 7 days
+                    const days = 7;
                     const now = new Date();
                     const expiresAt = new Date();
                     expiresAt.setDate(now.getDate() + days);
@@ -259,15 +259,12 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
                         targetType: boostType,
                     });
                     
-                    // Update the boosted entity
                     let targetCollection = null;
                     let targetDocId = targetId;
         
-                    if (boostType === 'campaign') {
-                        targetCollection = 'campaigns';
-                    } else if (boostType === 'banner') {
-                        targetCollection = 'banner_ads';
-                    } else if (boostType === 'profile') {
+                    if (boostType === 'campaign') targetCollection = 'campaigns';
+                    else if (boostType === 'banner') targetCollection = 'banner_ads';
+                    else if (boostType === 'profile') {
                         const userDoc = await db.collection('users').doc(userId).get();
                         if(userDoc.exists()) {
                             const userRole = userDoc.data().role;
@@ -280,7 +277,7 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
                         batch.update(db.collection(targetCollection).doc(targetDocId), { isBoosted: true });
                     }
                 }
-            } else { // Regular collaboration payment
+            } else {
                 const collectionName = getCollectionNameForCollab(collabType);
                 if (collectionName && relatedId) {
                     const collabRef = db.collection(collectionName).doc(relatedId);
@@ -288,7 +285,7 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
                         status: 'in_progress',
                         paymentStatus: 'paid'
                     });
-                     // 3. Send a notification (optional)
+
                     try {
                         const collabDoc = await collabRef.get();
                         if (collabDoc.exists()) {
@@ -303,7 +300,7 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
                                     body: `${brandName} has completed the payment for your collaboration. You can now begin work.`,
                                     type: 'collab_update',
                                     relatedId: relatedId,
-                                    view: 'MY_APPLICATIONS', // A generic view, might need to be smarter
+                                    view: 'MY_APPLICATIONS',
                                     isRead: false,
                                     timestamp: admin.firestore.FieldValue.serverTimestamp(),
                                 });
@@ -332,73 +329,58 @@ exports.cashfreeWebhook = onRequest({ secrets: ["CASHFREE_SECRET"] }, async (req
         logger.error("Error processing Cashfree webhook:", error);
         res.status(500).send("Internal Server Error");
     }
-});
+};
 
-/**
- * Verifies the internal status of an order after a client-side redirect.
- * This is a crucial step to confirm payment on the frontend.
- */
-exports.verifyOrder = onRequest(async (req, res) => {
-    cors(req, res, async () => {
-        // Securely verify user's identity from the token
-        const idToken = req.headers.authorization?.split('Bearer ')[1];
-        if (!idToken) {
-            return res.status(401).send({ message: 'Unauthorized: No token provided.' });
-        }
-        let decodedToken;
-        try {
-            decodedToken = await admin.auth().verifyIdToken(idToken);
-        } catch (error) {
-            logger.error("Error verifying Firebase ID token:", error);
-            return res.status(403).send({ message: 'Forbidden: Invalid token.' });
-        }
-        const userId = decodedToken.uid;
+const verifyOrderHandler = async (req, res) => {
+    const idToken = req.headers.authorization?.split('Bearer ')[1];
+    if (!idToken) {
+        return res.status(401).send({ message: 'Unauthorized: No token provided.' });
+    }
+    let decodedToken;
+    try {
+        decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+        logger.error("Error verifying Firebase ID token:", error);
+        return res.status(403).send({ message: 'Forbidden: Invalid token.' });
+    }
+    const userId = decodedToken.uid;
 
-        const orderId = req.path.split('/').pop();
-        
-        if (!orderId) {
-            return res.status(400).send({ message: 'Order ID is required.' });
-        }
-
-        try {
-            const transactionRef = db.collection("transactions").doc(orderId);
-            const transactionDoc = await transactionRef.get();
-
-            if (!transactionDoc.exists) {
-                return res.status(404).send({ message: 'Order not found in our system.' });
-            }
-            
-            const transactionData = transactionDoc.data();
-
-            // Security check: ensure the user requesting verification is the one who owns the transaction.
-            if (transactionData.userId !== userId) {
-                logger.warn(`User ${userId} attempted to verify order ${orderId} belonging to ${transactionData.userId}`);
-                return res.status(403).send({ message: 'Forbidden: You are not authorized to view this order.' });
-            }
-
-            const { status, amount, description } = transactionData;
-            return res.status(200).send({
-                order_id: orderId,
-                order_status: status === 'completed' ? 'PAID' : 'PENDING/FAILED',
-                order_amount: amount,
-                order_note: description
-            });
-
-        } catch (error) {
-            logger.error("Error verifying order:", error);
-            return res.status(500).send({ message: 'Internal Server Error' });
-        }
-    });
-});
-
-exports.processPayout = onRequest({ secrets: ["PAYOUT_SECRET"] }, (req, res) => {
-  cors(req, res, async () => {
-    // Basic validation
-    if (req.method !== 'POST') {
-      return res.status(405).send({ message: 'Method Not Allowed' });
+    const { orderId } = req.params;
+    
+    if (!orderId) {
+        return res.status(400).send({ message: 'Order ID is required.' });
     }
 
-    // Securely verify admin identity from token
+    try {
+        const transactionRef = db.collection("transactions").doc(orderId);
+        const transactionDoc = await transactionRef.get();
+
+        if (!transactionDoc.exists) {
+            return res.status(404).send({ message: 'Order not found in our system.' });
+        }
+        
+        const transactionData = transactionDoc.data();
+
+        if (transactionData.userId !== userId) {
+            logger.warn(`User ${userId} attempted to verify order ${orderId} belonging to ${transactionData.userId}`);
+            return res.status(403).send({ message: 'Forbidden: You are not authorized to view this order.' });
+        }
+
+        const { status, amount, description } = transactionData;
+        return res.status(200).send({
+            order_id: orderId,
+            order_status: status === 'completed' ? 'PAID' : 'PENDING/FAILED',
+            order_amount: amount,
+            order_note: description
+        });
+
+    } catch (error) {
+        logger.error("Error verifying order:", error);
+        return res.status(500).send({ message: 'Internal Server Error' });
+    }
+};
+
+const processPayoutHandler = async (req, res) => {
     const idToken = req.headers.authorization?.split('Bearer ')[1];
     if (!idToken) {
         return res.status(401).send({ message: 'Unauthorized.' });
@@ -420,33 +402,39 @@ exports.processPayout = onRequest({ secrets: ["PAYOUT_SECRET"] }, (req, res) => 
 
     const { payoutRequestId } = req.body;
     if (!payoutRequestId) {
-      return res.status(400).send({ message: 'Missing payoutRequestId.' });
+        return res.status(400).send({ message: 'Missing payoutRequestId.' });
     }
     
     try {
-      // In a real scenario, you would integrate with a payout provider's API here.
-      // This is a simulation of a successful payout process.
-      logger.info(`Simulating payout process for request ID: ${payoutRequestId} by admin ${adminId}`);
-      
-      const payoutRef = db.collection('payout_requests').doc(payoutRequestId);
-      const doc = await payoutRef.get();
-      if (!doc.exists) {
-        throw new Error("Payout request not found.");
-      }
-      
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Update our database to reflect the payout is being processed
-      await payoutRef.update({ status: 'processing' });
-      
-      logger.info(`Payout for ${payoutRequestId} marked as 'processing'.`);
+        logger.info(`Simulating payout process for request ID: ${payoutRequestId} by admin ${adminId}`);
+        const payoutRef = db.collection('payout_requests').doc(payoutRequestId);
+        const doc = await payoutRef.get();
+        if (!doc.exists) {
+            throw new Error("Payout request not found.");
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await payoutRef.update({ status: 'processing' });
+        logger.info(`Payout for ${payoutRequestId} marked as 'processing'.`);
 
-      res.status(200).send({ success: true, message: 'Payout processing initiated.' });
+        res.status(200).send({ success: true, message: 'Payout processing initiated.' });
 
     } catch (error) {
-      logger.error("Error processing payout:", error);
-      res.status(500).send({ success: false, message: error.message || 'Internal Server Error' });
+        logger.error("Error processing payout:", error);
+        res.status(500).send({ success: false, message: error.message || 'Internal Server Error' });
     }
-  });
+};
+
+// Define routes
+app.post('/create-order', createOrderHandler);
+app.get('/verify-order/:orderId', verifyOrderHandler);
+app.post('/cashfreeWebhook', cashfreeWebhookHandler);
+app.post('/process-payout', processPayoutHandler);
+
+// Start server
+app.listen(PORT, () => {
+  logger.info(`Server listening on port ${PORT}`);
 });
+
+// Export the app for serverless environments
+exports.api = app;

@@ -32,7 +32,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                     return;
                 }
 
-                const res = await fetch(`https://bigyaponn-backend.onrender.com/verify-order/${orderId}`, {
+                const res = await fetch(`https://partnerpayment-backend.onrender.com/verify-order/${orderId}`, {
                     headers: { "Authorization": "Bearer " + idToken }
                 });
 

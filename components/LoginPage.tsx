@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { LogoIcon, GoogleIcon, ExclamationTriangleIcon } from './Icons';
 import { UserRole, PlatformSettings } from '../types';
@@ -71,8 +72,12 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
     
         verifier.render().catch((e) => {
             console.error("Failed to render reCAPTCHA for forgot password:", e);
-            // This error is almost always due to the domain not being authorized in Firebase.
-            setError("auth/unauthorized-domain");
+            if (e.code === 'auth/internal-error') {
+                setError('auth/internal-error');
+            } else {
+                // Most other render errors are due to domain authorization.
+                setError("auth/unauthorized-domain");
+            }
         });
         
         recaptchaVerifierForgotRef.current = verifier;
@@ -402,9 +407,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
     
     verifier.render().catch((err) => {
         console.error("reCAPTCHA failed to render:", err);
-        // This is a common error when the app's domain is not authorized in Firebase.
-        // We will show the same guidance as for 'auth/unauthorized-domain'.
-        setError('auth/unauthorized-domain');
+        if (err.code === 'auth/internal-error') {
+            setError('auth/internal-error');
+        } else {
+            // Most other render errors are due to domain authorization.
+            setError('auth/unauthorized-domain');
+        }
     });
     
     recaptchaVerifierRef.current = verifier;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth } from '../services/firebase';
+import { auth, BACKEND_URL } from '../services/firebase';
 import { PaymentIcon, UpiIcon, NetBankingIcon, WalletIcon } from './Icons';
 
 declare const Cashfree: any;
@@ -50,73 +50,61 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
   const totalPayable = baseAmount + processingCharge + gstOnFees;
 
   const handleInitPayment = async () => {
-    setStatus('processing');
+    setStatus("processing");
     setError(null);
-
+  
     try {
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) {
         throw new Error("You must be logged in to make a payment.");
       }
+      
       const idToken = await firebaseUser.getIdToken();
-
-      const res = await fetch("https://partnerpayment-backend.onrender.com/create-order", {
+  
+      const CREATE_ORDER_URL = `${BACKEND_URL}/create-order`;
+  
+      const body = {
+        amount: Number(totalPayable),
+        purpose: transactionDetails.description,
+        relatedId: transactionDetails.relatedId,
+        collabId: transactionDetails.collabId,
+        collabType: collabType,
+        phone: user.mobileNumber,
+      };
+  
+      const res = await fetch(CREATE_ORDER_URL, {
         method: "POST",
         headers: {
+          "Content-Type": "application/json",
           "Authorization": "Bearer " + idToken,
-          "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          amount: totalPayable,
-          customerId: user.id,
-          name: user.name,
-          email: user.email,
-          phone: user.mobileNumber || "9999999999",
-          collabType,
-          relatedId: transactionDetails.relatedId,
-          collabId: transactionDetails.collabId,
-          purpose: transactionDetails.description
-        })
+        body: JSON.stringify(body)
       });
-
-      const data = await res.json().catch(e => {
-          console.error("Failed to parse JSON response from server", e);
-          throw new Error(`Server returned an invalid response (status: ${res.status}).`);
-      });
-
+  
+      const data = await res.json();
+  
       if (!res.ok) {
-        throw new Error(data.message || "Could not create order");
-      }
-
-      console.log("Server create-order response:", data);
-
-      if (data.payment_link || data.payment_url) {
-        const url = data.payment_link || data.payment_url;
-        window.location.href = url;
-        return;
+        // The backend sends a 'message' property on error, not 'error'.
+        throw new Error(data.message || "Could not create order.");
       }
   
-      if (data.payment_session_id) {
-        if (typeof Cashfree === "undefined") {
-          console.error("Cashfree SDK not loaded. Check SDK URL and domain.");
-          throw new Error("Payment SDK failed to load. Check console.");
-        }
-  
-        Cashfree?.checkout({
-          paymentSessionId: data.payment_session_id,
-          redirectTarget: "_self"
-        });
-  
-        return;
+      if (!data.payment_session_id) {
+        throw new Error("Payment session missing in server response.");
       }
   
-      console.error("No payment link or session id in server response:", data);
-      throw new Error("Payment link not found in server response. See console for details.");
-
+      if (typeof Cashfree === "undefined") {
+        throw new Error("Cashfree SDK not loaded.");
+      }
+  
+      Cashfree.checkout({
+        paymentSessionId: data.payment_session_id,
+        redirectTarget: "_self"
+      });
+  
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Something went wrong. Try again.");
-      setStatus('error');
+      console.error("Payment error:", err);
+      setError(err.message);
+      setStatus("error");
     }
   };
 

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { LogoIcon, GoogleIcon, ExclamationTriangleIcon } from './Icons';
 import { UserRole, PlatformSettings } from '../types';
@@ -61,34 +62,6 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
     const [error, setError] = useState('');
     const recaptchaVerifierForgotRef = useRef<RecaptchaVerifier | null>(null);
 
-    // Initialize reCAPTCHA for forgot password OTP
-    useEffect(() => {
-        if (!isFirebaseConfigured || !platformSettings.isForgotPasswordOtpEnabled) return;
-
-        // Initialize reCAPTCHA verifier once when the modal is mounted.
-        const verifier = new RecaptchaVerifier(auth, 'recaptcha-container-forgot', {
-            'size': 'invisible',
-        });
-    
-        verifier.render().catch((e) => {
-            console.error("Failed to render reCAPTCHA for forgot password:", e);
-            if (e.code === 'auth/internal-error') {
-                setError('auth/internal-error');
-            } else {
-                // Most other render errors are due to domain authorization.
-                setError("auth/unauthorized-domain");
-            }
-        });
-        
-        recaptchaVerifierForgotRef.current = verifier;
-    
-        // Cleanup on unmount
-        return () => {
-            verifier.clear();
-        };
-    }, []); // Run only once when modal mounts
-
-
     const resetState = () => {
         setStatus('idle');
         setError('');
@@ -135,7 +108,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
         setStatus('sending');
         try {
             if (!recaptchaVerifierForgotRef.current) {
-                throw new Error("reCAPTCHA verifier not ready. Please wait a moment and try again.");
+                recaptchaVerifierForgotRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-forgot', { 'size': 'invisible' });
             }
             const appVerifier = recaptchaVerifierForgotRef.current;
             
@@ -145,6 +118,10 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
             setStatus('sent');
         } catch (err: any) {
             console.error("OTP Error", err);
+            if (recaptchaVerifierForgotRef.current) {
+                recaptchaVerifierForgotRef.current.clear();
+                recaptchaVerifierForgotRef.current = null;
+            }
             if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
                 setError('auth/unauthorized-domain');
             } else if (err.code === 'auth/auth-domain-config-required') {
@@ -243,23 +220,29 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
                 </>
             );
         } else if (error === 'auth/internal-error') {
-            title = "Internal Auth Error";
+            title = "Authentication Provider Not Enabled";
             content = (
-                <p>This often indicates a Firebase project configuration issue. The <strong>Phone Number sign-in provider</strong> is likely disabled.
-                    <ul className="list-disc list-inside mt-2 space-y-2 text-xs">
+                <>
+                    <p>This error commonly occurs when the <strong>Phone Number sign-in provider</strong> is not enabled in your Firebase project.</p>
+                    <ol className="list-decimal list-inside space-y-2 mt-3 text-sm">
                         <li>
-                            Please go to the Firebase Console &rarr; Authentication &rarr; Sign-in method tab, and ensure the <strong>"Phone"</strong> provider is enabled.
-                             <a 
+                            <strong>Open Firebase Sign-in Methods:</strong>
+                            <a 
                                 href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`} 
                                 target="_blank" 
                                 rel="noopener noreferrer"
                                 className="ml-2 font-medium text-indigo-600 dark:text-indigo-400 underline hover:text-indigo-800 dark:hover:text-indigo-300"
                             >
-                                (Open Sign-in methods)
+                                Click here to open settings
                             </a>
                         </li>
-                    </ul>
-                </p>
+                        <li>
+                            On that page, find the <strong>"Phone"</strong> provider in the list and click the pencil icon to enable it.
+                        </li>
+                         <li><strong>Check Other Providers:</strong> While you're there, ensure 'Email/Password' and 'Google' are also enabled for all login methods to function correctly.</li>
+                    </ol>
+                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">After enabling the provider, you must <strong>refresh this page</strong>.</p>
+                </>
             );
         } else if (error === 'auth/auth-domain-config-required') {
             title = "Auth Domain Missing";
@@ -395,34 +378,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
-  // Initialize reCAPTCHA for OTP login once on component mount for robustness.
-  useEffect(() => {
-    if (!isFirebaseConfigured) return;
-
-    // This verifier is created once and stored in a ref. It's available
-    // immediately when OTP login is attempted, preventing race conditions.
-    const verifier = new RecaptchaVerifier(auth, 'recaptcha-container-login', {
-        'size': 'invisible',
-    });
-    
-    verifier.render().catch((err) => {
-        console.error("reCAPTCHA failed to render:", err);
-        if (err.code === 'auth/internal-error') {
-            setError('auth/internal-error');
-        } else {
-            // Most other render errors are due to domain authorization.
-            setError('auth/unauthorized-domain');
-        }
-    });
-    
-    recaptchaVerifierRef.current = verifier;
-
-    // Cleanup on unmount
-    return () => {
-        verifier.clear();
-    };
-  }, []); // Empty dependency array ensures this runs only once.
-
   const roles: { id: UserRole; label: string }[] = [
     { id: 'brand', label: "Brand" },
     { id: 'influencer', label: "Influencer" },
@@ -466,7 +421,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
       setIsLoading(true);
       try {
           if (!recaptchaVerifierRef.current) {
-              throw new Error("reCAPTCHA verifier is not ready. Please refresh the page and try again.");
+              recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-login', { 'size': 'invisible' });
           }
           const appVerifier = recaptchaVerifierRef.current;
           
@@ -476,6 +431,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
           setError(null);
       } catch (err: any) {
           console.error("OTP Send Error:", err);
+          if (recaptchaVerifierRef.current) {
+              recaptchaVerifierRef.current.clear();
+              recaptchaVerifierRef.current = null;
+          }
           if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
               setError('auth/unauthorized-domain');
           } else if (err.code === 'auth/internal-error') {

@@ -17,6 +17,9 @@ export const firebaseConfig = {
   measurementId: "G-QW74JFCEQ3"
 };
 
+// Centralized backend URL
+export const BACKEND_URL = "https://partnerpayment-backend.onrender.com";
+
 // Declare variables that will hold the Firebase services.
 let app: FirebaseApp;
 let auth: Auth;

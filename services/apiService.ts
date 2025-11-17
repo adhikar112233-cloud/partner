@@ -4,7 +4,7 @@
 // Fix: Import LiveHelpSession and LiveHelpMessage to support live help chat functionality.
 // FIX: Imported missing types `LiveHelpSession` and `NotificationType` to resolve type errors.
 import { Influencer, Message, User, PlatformSettings, Attachment, CollaborationRequest, CollabRequestStatus, Conversation, ConversationParticipant, Campaign, CampaignApplication, LiveTvChannel, AdSlotRequest, BannerAd, BannerAdBookingRequest, SupportTicket, TicketReply, SupportTicketStatus, Membership, UserRole, PayoutRequest, CampaignApplicationStatus, AdBookingStatus, AnyCollaboration, DailyPayoutRequest, Post, Comment, Dispute, MembershipPlan, Transaction, KycDetails, KycStatus, PlatformBanner, PushNotification, Boost, BoostType, LiveHelpMessage, LiveHelpSession, RefundRequest, View, QuickReply, CreatorVerificationDetails, CreatorVerificationStatus, AppNotification, NotificationType, Partner } from '../types';
-import { db, storage, auth } from './firebase';
+import { db, storage, auth, BACKEND_URL } from './firebase';
 // Fix: Corrected Firebase import statements to align with Firebase v9 modular syntax.
 import {
   collection,
@@ -1007,7 +1007,9 @@ export const apiService = {
     if (!user) throw new Error("Authentication required to process payouts.");
     const token = await user.getIdToken();
 
-    const res = await fetch("https://partnerpayment-backend.onrender.com/process-payout", {
+    const PROCESS_PAYOUT_URL = `${BACKEND_URL}/process-payout`;
+
+    const res = await fetch(PROCESS_PAYOUT_URL, {
         method: "POST",
         headers: {
             "Authorization": "Bearer " + token,

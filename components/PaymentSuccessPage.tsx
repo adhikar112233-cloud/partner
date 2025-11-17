@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { auth } from '../services/firebase';
+import { auth, BACKEND_URL } from '../services/firebase';
 
 interface PaymentSuccessPageProps {
     user: User;
@@ -32,17 +32,20 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                     return;
                 }
 
-                const res = await fetch(`https://partnerpayment-backend.onrender.com/verify-order/${orderId}`, {
+                const VERIFY_ORDER_URL = `${BACKEND_URL}/verify-order/${orderId}`;
+
+                const res = await fetch(VERIFY_ORDER_URL, {
                     headers: { "Authorization": "Bearer " + idToken }
                 });
 
-                const data = await res.json();
+                const data = await res.json().catch(() => null);
                 setOutput(data);
 
-                if (res.ok && data.order_status === "PAID") {
+                if (res.ok && data?.order_status === "PAID") {
                     setStatus('success');
                 } else {
                     setStatus('failed');
+                    setErrorMessage(data?.message || `Verification failed. The server responded with status ${res.status}.`);
                 }
 
             } catch (err: any) {
@@ -80,7 +83,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <h1 className="mt-4 text-3xl font-bold text-red-600">Payment Not Confirmed</h1>
-                    <p className="text-gray-600 dark:text-gray-300 mt-2">Your payment could not be confirmed. Please check your payment provider.</p>
+                    <p className="text-gray-600 dark:text-gray-300 mt-2">{errorMessage || 'Your payment could not be confirmed. Please check your payment provider.'}</p>
                 </div>
             )}
             

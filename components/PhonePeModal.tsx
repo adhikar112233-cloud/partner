@@ -60,7 +60,7 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       }
       const idToken = await firebaseUser.getIdToken();
 
-      const res = await fetch("https://partnerpayment-backend.onrender.com/create-order", {
+      const res = await fetch("https://bigyaponn-backend.onrender.com/create-order", {
         method: "POST",
         headers: {
           "Authorization": "Bearer " + idToken,
@@ -79,40 +79,37 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         })
       });
 
+      const data = await res.json().catch(e => {
+          console.error("Failed to parse JSON response from server", e);
+          throw new Error(`Server returned an invalid response (status: ${res.status}).`);
+      });
+
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ message: "Could not create order" }));
-        throw new Error(errorData.message || "Could not create order");
+        throw new Error(data.message || "Could not create order");
       }
 
-      const data = await res.json();
       console.log("Server create-order response:", data);
 
-      // 1) If backend returns a direct payment link (legacy), redirect:
       if (data.payment_link || data.payment_url) {
         const url = data.payment_link || data.payment_url;
         window.location.href = url;
         return;
       }
   
-      // 2) If backend returns a payment_session_id (recommended) — use Cashfree SDK checkout
       if (data.payment_session_id) {
-        // Ensure `Cashfree` global is available (SDK script loaded)
         if (typeof Cashfree === "undefined") {
           console.error("Cashfree SDK not loaded. Check SDK URL and domain.");
           throw new Error("Payment SDK failed to load. Check console.");
         }
   
-        // call checkout
         Cashfree?.checkout({
           paymentSessionId: data.payment_session_id,
-          // optional: control where Cashfree redirects after payment
-          redirectTarget: "_self" // or "_blank"
+          redirectTarget: "_self"
         });
   
         return;
       }
   
-      // If neither present, show useful error
       console.error("No payment link or session id in server response:", data);
       throw new Error("Payment link not found in server response. See console for details.");
 
@@ -154,9 +151,6 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
             )}
         </div>
         
-        {/* FIX: The conditional logic for this block makes the checks for `status === 'processing'` inside the button redundant.
-            Since this block only renders when status is NOT 'processing', the button will never be in a processing state.
-            The internal logic has been removed to fix the TypeScript error and eliminate redundant code. */}
         {status !== 'processing' && (
           <div className="p-6 bg-gray-50 dark:bg-gray-700/50 rounded-b-2xl">
               <button onClick={handleInitPayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-green-500 to-teal-600 rounded-lg shadow-md hover:shadow-lg">

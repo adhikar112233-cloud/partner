@@ -1007,7 +1007,7 @@ export const apiService = {
     if (!user) throw new Error("Authentication required to process payouts.");
     const token = await user.getIdToken();
 
-    const res = await fetch("https://bigyaponn-backend.onrender.com/process-payout", {
+    const res = await fetch("https://partnerpayment-backend.onrender.com/process-payout", {
         method: "POST",
         headers: {
             "Authorization": "Bearer " + token,

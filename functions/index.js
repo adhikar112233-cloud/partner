@@ -119,15 +119,23 @@ const createOrderHandler = async (req, res) => {
                 }
             }),
         });
-
-        const data = await response.json();
-
+        
         if (!response.ok) {
-            logger.error("Cashfree API error:", data);
-            await db.collection('transactions').doc(orderId).update({ status: 'failed', failure_reason: data });
-            return res.status(response.status).send(data);
+            let errorData = { message: "Unknown payment gateway error." };
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                logger.error("Could not parse JSON from Cashfree error response", e);
+                errorData.message = `Gateway returned a non-JSON response (status: ${response.status}).`;
+            }
+            
+            const finalErrorMessage = errorData.message || JSON.stringify(errorData);
+            logger.error("Cashfree API error:", finalErrorMessage);
+            await db.collection('transactions').doc(orderId).update({ status: 'failed', failure_reason: errorData });
+            return res.status(500).send({ message: `Payment gateway error: ${finalErrorMessage}` });
         }
 
+        const data = await response.json();
         return res.status(200).send(data);
 
     } catch (error) {

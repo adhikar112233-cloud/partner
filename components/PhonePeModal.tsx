@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
 import { auth, BACKEND_URL } from '../services/firebase';
+import { apiService } from '../services/apiService';
 import { PaymentIcon, UpiIcon, NetBankingIcon, WalletIcon } from './Icons';
 
 declare const Cashfree: any;
@@ -37,6 +38,8 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
 }) => {
   const [status, setStatus] = useState<'idle' | 'processing' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
+  const needsPhone = !user.mobileNumber;
 
   // Calculate all fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
@@ -50,6 +53,13 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
   const totalPayable = baseAmount + processingCharge + gstOnFees;
 
   const handleInitPayment = async () => {
+    if (needsPhone) {
+        if (!/^\d{10,15}$/.test(phoneNumber.replace(/\s+/g, ''))) {
+            setError("Please enter a valid mobile number.");
+            return;
+        }
+    }
+    
     setStatus("processing");
     setError(null);
   
@@ -69,7 +79,7 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         relatedId: transactionDetails.relatedId,
         collabId: transactionDetails.collabId,
         collabType: collabType,
-        phone: user.mobileNumber,
+        phone: needsPhone ? phoneNumber : user.mobileNumber,
       };
   
       const res = await fetch(CREATE_ORDER_URL, {
@@ -86,6 +96,13 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       if (!res.ok) {
         // The backend sends a 'message' property on error, not 'error'.
         throw new Error(data.message || "Could not create order.");
+      }
+
+      if (needsPhone) {
+        // Update profile in the background, don't wait for it
+        apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(err => {
+            console.warn("Could not update phone number in user profile:", err);
+        });
       }
   
       if (!data.payment_session_id) {
@@ -118,12 +135,29 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         
         <div className="p-6 min-h-[250px]">
             {status !== 'processing' ? (
-                <div className="space-y-2 text-sm">
-                    <p className="font-semibold text-gray-700 dark:text-gray-300">Payment for: <span className="font-normal">{transactionDetails.description}</span></p>
-                    <div className="flex justify-between text-gray-700 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Amount:</span><span>₹{baseAmount.toFixed(2)}</span></div>
-                    {processingCharge > 0 && <div className="flex justify-between text-gray-700 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Processing Fee:</span><span>₹{processingCharge.toFixed(2)}</span></div>}
-                    {gstOnFees > 0 && <div className="flex justify-between text-gray-700 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">GST on Fees:</span><span>₹{gstOnFees.toFixed(2)}</span></div>}
-                    <div className="flex justify-between font-bold text-lg pt-2 border-t dark:border-gray-600"><span className="dark:text-gray-200">Total Payable:</span><span className="dark:text-gray-100">₹{totalPayable.toFixed(2)}</span></div>
+                <div className="space-y-4">
+                    {needsPhone && (
+                        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                            <label htmlFor="phone-number" className="block text-sm font-semibold text-yellow-800 dark:text-yellow-200">Contact Number Required</label>
+                            <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-2">Please provide your mobile number to proceed.</p>
+                            <input
+                                type="tel"
+                                id="phone-number"
+                                value={phoneNumber}
+                                onChange={(e) => setPhoneNumber(e.target.value)}
+                                placeholder="Enter your mobile number"
+                                className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+                                required
+                            />
+                        </div>
+                    )}
+                    <div className="space-y-2 text-sm">
+                        <p className="font-semibold text-gray-700 dark:text-gray-300">Payment for: <span className="font-normal">{transactionDetails.description}</span></p>
+                        <div className="flex justify-between text-gray-700 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Amount:</span><span>₹{baseAmount.toFixed(2)}</span></div>
+                        {processingCharge > 0 && <div className="flex justify-between text-gray-700 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Processing Fee:</span><span>₹{processingCharge.toFixed(2)}</span></div>}
+                        {gstOnFees > 0 && <div className="flex justify-between text-gray-700 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">GST on Fees:</span><span>₹{gstOnFees.toFixed(2)}</span></div>}
+                        <div className="flex justify-between font-bold text-lg pt-2 border-t dark:border-gray-600"><span className="dark:text-gray-200">Total Payable:</span><span className="dark:text-gray-100">₹{totalPayable.toFixed(2)}</span></div>
+                    </div>
                 </div>
             ) : (
                 <div className="text-center p-8">

@@ -20,6 +20,16 @@ import { doc, setDoc, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
 
 const DEFAULT_AVATAR_URL = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDRjMCAwIDAtMSAwLTJoMTJ2Mmg0di00YzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==';
 
+const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+};
+
+const isValidIndianMobile = (mobile: string): boolean => {
+    const mobileRegex = /^[6-9]\d{9}$/;
+    return mobileRegex.test(mobile);
+};
+
 const generatePiNumber = (): string => {
     // Generates a random 10-digit number
     const randomNumber = Math.floor(1000000000 + Math.random() * 9000000000);
@@ -72,6 +82,14 @@ const getUserProfile = async (uid: string): Promise<Omit<User, 'id' | 'email'>> 
 export const authService = {
     register: async (email: string, password: string, role: UserRole, name: string, companyName: string, mobileNumber: string): Promise<User> => {
         if (!isFirebaseConfigured) throw new Error("Firebase is not configured.");
+        
+        if (!isValidEmail(email)) {
+            throw new Error("Invalid email format provided.");
+        }
+        if (!isValidIndianMobile(mobileNumber)) {
+            throw new Error("Invalid mobile number. Must be 10 digits and start with 6, 7, 8, or 9.");
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const firebaseUser = userCredential.user;
 

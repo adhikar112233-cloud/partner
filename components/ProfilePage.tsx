@@ -15,6 +15,11 @@ interface ProfilePageProps {
 
 const DEFAULT_AVATAR_URL = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDRjMCAwIDAtMSAwLTJoMTJ2Mmg0di00YzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==';
 
+const isValidIndianMobile = (mobile: string): boolean => {
+    const mobileRegex = /^[6-9]\d{9}$/;
+    return mobileRegex.test(mobile);
+};
+
 const indianCities = [
     'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Ahmedabad', 'Chennai', 'Kolkata', 'Surat', 'Pune', 'Jaipur', 'Lucknow', 'Kanpur', 'Nagpur', 'Indore', 'Thane', 'Bhopal', 'Visakhapatnam', 'Pimpri-Chinchwad', 'Patna', 'Vadodara', 'Ghaziabad', 'Ludhiana', 'Agra', 'Nashik', 'Faridabad', 'Meerut', 'Rajkot', 'Varanasi', 'Srinagar', 'Aurangabad', 'Dhanbad', 'Amritsar', 'Navi Mumbai', 'Allahabad', 'Ranchi', 'Howrah', 'Coimbatore', 'Jabalpur', 'Gwalior', 'Vijayawada', 'Jodhpur', 'Madurai', 'Raipur', 'Kota', 'Guwahati', 'Chandigarh'
 ];
@@ -50,6 +55,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mobileError, setMobileError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -87,7 +93,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
   }, [user]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+
+    if (name === 'mobileNumber') {
+        if (value && !isValidIndianMobile(value)) {
+            setMobileError("Please enter a valid 10-digit mobile number.");
+        } else {
+            setMobileError(null);
+        }
+    }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,6 +130,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
     fetchOriginalData();
     setIsEditing(false);
     setError(null);
+    setMobileError(null);
     setSuccess(null);
     setImageFile(null);
     setImagePreview(null);
@@ -125,6 +141,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
     setIsLoading(true);
     setError(null);
     setSuccess(null);
+
+    if (formData.mobileNumber && !isValidIndianMobile(formData.mobileNumber)) {
+        setError("Please enter a valid 10-digit mobile number.");
+        setIsLoading(false);
+        return;
+    }
 
     try {
       let avatarUrl = user.avatar;
@@ -434,7 +456,19 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
               <InfoRow label="Full Name" value={formData.name} isEditable name="name" isEditing={isEditing} />
               <InfoRow label="Email Address" value={user.email} isEditing={isEditing} />
               <InfoRow label="Profile ID" value={<span className="font-mono">{user.piNumber || 'N/A'}</span>} isEditing={false} />
-              <InfoRow label="Mobile Number" value={formData.mobileNumber} isEditable name="mobileNumber" type="tel" isEditing={isEditing} />
+              <InfoRow label="Mobile Number" value={formData.mobileNumber} isEditable name="mobileNumber" type="tel" isEditing={isEditing}>
+                  <div>
+                      <input
+                          type="tel"
+                          name="mobileNumber"
+                          id="mobileNumber"
+                          value={formData.mobileNumber}
+                          onChange={handleInputChange}
+                          className={`block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${mobileError ? 'border-red-500' : 'border-gray-300'}`}
+                      />
+                      {mobileError && <p className="mt-1 text-xs text-red-500">{mobileError}</p>}
+                  </div>
+              </InfoRow>
               {(user.role === 'brand' || user.role === 'livetv' || user.role === 'banneragency') && <InfoRow label="Company Name" value={formData.companyName} isEditable name="companyName" isEditing={isEditing} />}
               {user.role === 'influencer' && <InfoRow label="Social Media Links" value={formData.socialMediaLinks || 'Not provided'} isEditable name="socialMediaLinks" multiline isEditing={isEditing} />}
               {(user.role === 'livetv' || user.role === 'banneragency') && <InfoRow label="MSME Registration No." value={formData.msmeRegistrationNumber || 'Not provided'} isEditable name="msmeRegistrationNumber" isEditing={isEditing} />}
@@ -453,7 +487,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
               <button type="button" onClick={handleCancel} className="rounded-md border border-gray-300 bg-white py-2 px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
                 Cancel
               </button>
-              <button type="submit" disabled={isLoading} className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50">
+              <button type="submit" disabled={isLoading || !!mobileError} className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50">
                 {isLoading ? 'Saving...' : 'Save'}
               </button>
             </div>

@@ -16,6 +16,16 @@ interface LoginPageProps {
 type AuthMode = 'login' | 'signup';
 type LoginMethod = 'email' | 'otp';
 
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const isValidIndianMobile = (mobile: string): boolean => {
+  const mobileRegex = /^[6-9]\d{9}$/;
+  return mobileRegex.test(mobile);
+};
+
 const CopyableInput: React.FC<{ value: string }> = ({ value }) => {
     const [copied, setCopied] = useState(false);
     const copyToClipboard = () => {
@@ -373,6 +383,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
 
   // State management
   const [error, setError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [signupMobileError, setSignupMobileError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
@@ -405,6 +417,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
     setIsOtpSent(false);
     setConfirmationResult(null);
     setError(null);
+    setEmailError(null);
+    setSignupMobileError(null);
   };
   
   const handleSendOtp = async () => {
@@ -465,6 +479,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 await authService.verifyLoginOtp(confirmationResult, otp);
             }
         } else { // Signup
+            if (!isValidEmail(email)) {
+                setError("Please provide a valid email address.");
+                setIsLoading(false);
+                return;
+            }
+            if (!isValidIndianMobile(signupMobile)) {
+                setError("Please provide a valid 10-digit mobile number starting with 6, 7, 8, or 9.");
+                setIsLoading(false);
+                return;
+            }
             if (password !== confirmPassword) {
                 setError("Passwords do not match.");
                 setIsLoading(false);
@@ -494,7 +518,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
           } else if (err.message && err.message.includes('blocked')) {
             setError(err.message);
           } else {
-            setError('Authentication failed. Please check your credentials.');
+            setError(err.message || 'Authentication failed. Please check your credentials.');
           }
       } finally {
           setIsLoading(false);
@@ -713,11 +737,29 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                 )}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mobile Number</label>
-                                    <input type="tel" value={signupMobile} onChange={e => setSignupMobile(e.target.value)} required className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
+                                    <input type="tel" value={signupMobile} onChange={e => {
+                                        const val = e.target.value;
+                                        setSignupMobile(val);
+                                        if (val && !isValidIndianMobile(val)) {
+                                            setSignupMobileError("Please enter a valid 10-digit mobile number.");
+                                        } else {
+                                            setSignupMobileError(null);
+                                        }
+                                    }} required className={`mt-1 block w-full px-3 py-2 bg-gray-50 border rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 ${signupMobileError ? 'border-red-500' : 'border-gray-300'}`}/>
+                                    {signupMobileError && <p className="mt-1 text-xs text-red-500">{signupMobileError}</p>}
                                 </div>
                                  <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
-                                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" required className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
+                                    <input type="email" value={email} onChange={e => {
+                                        const val = e.target.value;
+                                        setEmail(val);
+                                        if (val && !isValidEmail(val)) {
+                                            setEmailError("Please enter a valid email address.");
+                                        } else {
+                                            setEmailError(null);
+                                        }
+                                    }} placeholder="your@email.com" required className={`mt-1 block w-full px-3 py-2 bg-gray-50 border rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 ${emailError ? 'border-red-500' : 'border-gray-300'}`} />
+                                    {emailError && <p className="mt-1 text-xs text-red-500">{emailError}</p>}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Create Password</label>
@@ -750,7 +792,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                 {isLoading ? 'Sending OTP...' : 'Send OTP'}
                             </button>
                         ) : (
-                            <button type="submit" disabled={isLoading} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <button type="submit" disabled={isLoading || (authMode === 'signup' && (!!emailError || !!signupMobileError))} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
                                 {isLoading ? 'Processing...' : (authMode === 'login' ? `Login` : 'Sign Up')}
                             </button>
                         )}

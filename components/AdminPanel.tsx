@@ -1111,11 +1111,12 @@ const UserManagementPanel: React.FC<{
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">KYC</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                         {filteredUsers.map(user => (
-                            <tr key={user.id} onClick={() => onUserSelect(user)} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                            <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <div className="flex items-center">
                                         <img className="h-10 w-10 rounded-full" src={user.avatar} alt={user.name} />
@@ -1132,6 +1133,11 @@ const UserManagementPanel: React.FC<{
                                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${user.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
                                         {user.isBlocked ? 'Blocked' : 'Active'}
                                     </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button onClick={() => onUserSelect(user)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
+                                        View Details
+                                    </button>
                                 </td>
                             </tr>
                         ))}

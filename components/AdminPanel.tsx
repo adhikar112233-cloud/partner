@@ -1065,6 +1065,225 @@ const UserDetailsModal: React.FC<{
     );
 };
 
+// --- START: User Management Components ---
+
+const UserManagementPanel: React.FC<{
+    users: User[];
+    onUserSelect: (user: User) => void;
+}> = ({ users, onUserSelect }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const filteredUsers = useMemo(() => {
+        if (!searchTerm) return users;
+        const lowercasedFilter = searchTerm.toLowerCase();
+        return users.filter(user =>
+            user.name.toLowerCase().includes(lowercasedFilter) ||
+            user.email.toLowerCase().includes(lowercasedFilter) ||
+            (user.piNumber && user.piNumber.toLowerCase().includes(lowercasedFilter)) ||
+            user.role.toLowerCase().includes(lowercasedFilter)
+        );
+    }, [users, searchTerm]);
+
+    const KycStatusBadge: React.FC<{ status: KycStatus }> = ({ status }) => {
+        const colors = {
+            approved: "bg-green-100 text-green-800",
+            pending: "bg-yellow-100 text-yellow-800",
+            rejected: "bg-red-100 text-red-800",
+            not_submitted: "bg-gray-100 text-gray-800",
+        };
+        return <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${colors[status]} capitalize`}>{status.replace('_', ' ')}</span>;
+    };
+
+    return (
+        <div className="p-6 h-full flex flex-col bg-gray-100 dark:bg-gray-900">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">User Management</h2>
+            <input
+                type="text"
+                placeholder="Search by name, email, role, or PI number..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full p-2 border rounded-lg mb-4 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+            />
+            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">KYC</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {filteredUsers.map(user => (
+                            <tr key={user.id} onClick={() => onUserSelect(user)} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="flex items-center">
+                                        <img className="h-10 w-10 rounded-full" src={user.avatar} alt={user.name} />
+                                        <div className="ml-4">
+                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{user.name}</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">{user.piNumber}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{user.email}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 capitalize">{user.role}</td>
+                                <td className="px-6 py-4 whitespace-nowrap"><KycStatusBadge status={user.kycStatus} /></td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${user.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                                        {user.isBlocked ? 'Blocked' : 'Active'}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                 {filteredUsers.length === 0 && <p className="text-center p-6 text-gray-500">No users found.</p>}
+            </div>
+        </div>
+    );
+};
+
+const allPermissions: StaffPermission[] = ['analytics', 'user_management', 'collaborations', 'kyc', 'financial', 'community', 'support', 'marketing', 'live_help'];
+
+const StaffPermissionsModal: React.FC<{
+    staffMember: User;
+    onClose: () => void;
+    onSave: (userId: string, permissions: StaffPermission[]) => Promise<void>;
+}> = ({ staffMember, onClose, onSave }) => {
+    const [permissions, setPermissions] = useState<StaffPermission[]>(staffMember.staffPermissions || []);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleToggle = (permission: StaffPermission) => {
+        setPermissions(prev => prev.includes(permission) ? prev.filter(p => p !== permission) : [...prev, permission]);
+    };
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        await onSave(staffMember.id, permissions);
+        setIsSaving(false);
+    };
+    
+    const isSuperAdmin = staffMember.staffPermissions?.includes('super_admin');
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg">
+                <h3 className="text-lg font-bold mb-4">Manage Permissions for {staffMember.name}</h3>
+                {isSuperAdmin ? (
+                     <div className="p-4 bg-blue-50 text-blue-800 rounded-md">This user is a Super Admin and has all permissions.</div>
+                ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                        {allPermissions.map(permission => (
+                            <div key={permission} className="flex items-center">
+                                <input
+                                    id={permission}
+                                    type="checkbox"
+                                    checked={permissions.includes(permission)}
+                                    onChange={() => handleToggle(permission)}
+                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <label htmlFor={permission} className="ml-3 block text-sm font-medium text-gray-700 capitalize">{permission.replace('_', ' ')}</label>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                 <div className="flex justify-end space-x-2 mt-6">
+                    <button onClick={onClose} className="px-4 py-2 text-sm rounded-md bg-gray-200">Cancel</button>
+                    {!isSuperAdmin && <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white disabled:opacity-50">{isSaving ? 'Saving...' : 'Save'}</button>}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const StaffManagementPanel: React.FC<{
+    staffUsers: User[];
+    onUpdate: () => void;
+    platformSettings: PlatformSettings;
+}> = ({ staffUsers, onUpdate, platformSettings }) => {
+    const [editingStaff, setEditingStaff] = useState<User | null>(null);
+
+    const handleSavePermissions = async (userId: string, permissions: StaffPermission[]) => {
+        await apiService.updateUser(userId, { staffPermissions: permissions });
+        onUpdate();
+        setEditingStaff(null);
+    };
+
+    const handleRegisterStaff = () => {
+        if (!platformSettings.isStaffRegistrationEnabled) {
+            alert("Staff registration is currently disabled in settings.");
+            return;
+        }
+        // This simulates opening a simple registration form
+        const email = prompt("Enter new staff member's email:");
+        const password = prompt("Enter a temporary password (min 8 characters):");
+        const name = prompt("Enter new staff member's full name:");
+        if (email && password && name) {
+            authService.register(email, password, 'staff', name, '', '').then(() => {
+                alert("Staff member registered successfully.");
+                onUpdate();
+            }).catch(err => {
+                alert(`Registration failed: ${err.message}`);
+            });
+        }
+    };
+
+    return (
+        <div className="p-6 h-full flex flex-col bg-gray-100 dark:bg-gray-900">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Staff Management</h2>
+                <button onClick={handleRegisterStaff} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50" disabled={!platformSettings.isStaffRegistrationEnabled} title={!platformSettings.isStaffRegistrationEnabled ? "Enable in Settings to add staff" : ""}>
+                    Add New Staff
+                </button>
+            </div>
+             <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Permissions</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {staffUsers.map(staff => (
+                            <tr key={staff.id}>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="flex items-center">
+                                        <img className="h-10 w-10 rounded-full" src={staff.avatar} alt={staff.name} />
+                                        <div className="ml-4">
+                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{staff.name}</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">{staff.email}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex flex-wrap gap-1">
+                                        {staff.staffPermissions?.includes('super_admin') ? (
+                                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-200 text-purple-800">Super Admin</span>
+                                        ) : (
+                                            (staff.staffPermissions || []).map(p => <span key={p} className="px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-700">{p.replace('_', ' ')}</span>)
+                                        )}
+                                    </div>
+                                </td>
+                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button onClick={() => setEditingStaff(staff)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Manage Permissions</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                 </table>
+            </div>
+             {editingStaff && <StaffPermissionsModal staffMember={editingStaff} onClose={() => setEditingStaff(null)} onSave={handleSavePermissions} />}
+        </div>
+    );
+};
+
+// --- END: User Management Components ---
+
+
 // FIX: Export the AdminPanel component to be used in App.tsx
 export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTransactions, allPayouts, allCollabs, allRefunds, allDailyPayouts, platformSettings, onUpdate }) => {
     const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -1080,6 +1299,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
     const [lastVisibleUser, setLastVisibleUser] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
     const [isFetchingUsers, setIsFetchingUsers] = useState(false);
     const USER_PAGE_LIMIT = 20;
+
+    const staffUsers = useMemo(() => allUsers.filter(u => u.role === 'staff'), [allUsers]);
+    const regularUsers = useMemo(() => allUsers.filter(u => u.role !== 'staff'), [allUsers]);
 
     const fetchUsers = useCallback(async (loadMore = false) => {
         setIsFetchingUsers(true);
@@ -1245,8 +1467,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
             </nav>
             <main className="flex-1 bg-gray-100 overflow-hidden">
                 {activeTab === 'dashboard' && <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />}
-                {activeTab === 'user_management' && <div />}
-                {activeTab === 'staff_management' && <div />}
+                {activeTab === 'user_management' && <UserManagementPanel users={regularUsers} onUserSelect={handleOpenUserDetails} />}
+                {activeTab === 'staff_management' && <StaffManagementPanel staffUsers={staffUsers} onUpdate={onUpdate} platformSettings={platformSettings} />}
                 {activeTab === 'collaborations' && <CollaborationsPanel collaborations={combinedCollaborations} onUpdate={handleCollabUpdate} />}
                 {activeTab === 'kyc' && <KycPanel onUpdate={onUpdate} />}
                 {activeTab === 'creator_verification' && <CreatorVerificationPanel onUpdate={onUpdate} />}

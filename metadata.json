@@ -1,0 +1,8 @@
+{
+  "name": "live now",
+  "description": "A collaborative platform for brands to connect with influencers, send messages, and engage with live content. Features include influencer discovery, direct messaging with AI-powered assistance, a live TV portal, and a secure KYC process.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

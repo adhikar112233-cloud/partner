@@ -38,8 +38,6 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
 }) => {
   const [status, setStatus] = useState<'idle' | 'processing' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
-  const needsPhone = !user.mobileNumber;
 
   // Calculate all fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
@@ -53,71 +51,60 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
   const totalPayable = baseAmount + processingCharge + gstOnFees;
 
   const handleInitPayment = async () => {
-    if (needsPhone) {
-        if (!/^\d{10,15}$/.test(phoneNumber.replace(/\s+/g, ''))) {
-            setError("Please enter a valid mobile number.");
-            return;
-        }
-    }
-    
     setStatus("processing");
     setError(null);
-  
     try {
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) {
         throw new Error("You must be logged in to make a payment.");
       }
-      
       const idToken = await firebaseUser.getIdToken();
-  
+
       const CREATE_ORDER_URL = `${BACKEND_URL}/create-order`;
-  
+
+      // Keep sending the data our backend expects to not break functionality
       const body = {
         amount: Number(totalPayable),
         purpose: transactionDetails.description,
         relatedId: transactionDetails.relatedId,
         collabId: transactionDetails.collabId,
         collabType: collabType,
-        phone: needsPhone ? phoneNumber : user.mobileNumber,
+        phone: user.mobileNumber || null, // Send null if not available, backend will use fallback
       };
-  
+
       const res = await fetch(CREATE_ORDER_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": "Bearer " + idToken,
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
-  
+
       const data = await res.json();
-  
+
       if (!res.ok) {
-        // The backend sends a 'message' property on error, not 'error'.
-        throw new Error(data.message || "Could not create order.");
+        console.log("Order error:", data);
+        throw new Error(data.message || "Payment failed! (Backend Error)");
       }
 
-      if (needsPhone) {
-        // Update profile in the background, don't wait for it
-        apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(err => {
-            console.warn("Could not update phone number in user profile:", err);
-        });
+      const sessionId = data.payment_session_id;
+
+      if (!sessionId) {
+        throw new Error("Payment failed! Session ID missing.");
       }
-  
-      if (!data.payment_session_id) {
-        throw new Error("Payment session missing in server response.");
-      }
-  
+
       if (typeof Cashfree === "undefined") {
-        throw new Error("Cashfree SDK not loaded.");
+        throw new Error("Cashfree SDK not loaded. Please check your internet connection.");
       }
-  
-      Cashfree.checkout({
-        paymentSessionId: data.payment_session_id,
-        redirectTarget: "_self"
+      
+      const cashfree = new Cashfree();
+      
+      cashfree.checkout({
+        paymentSessionId: sessionId,
+        redirectTarget: "_self",
       });
-  
+
     } catch (err: any) {
       console.error("Payment error:", err);
       setError(err.message);
@@ -136,21 +123,6 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         <div className="p-6 min-h-[250px]">
             {status !== 'processing' ? (
                 <div className="space-y-4">
-                    {needsPhone && (
-                        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                            <label htmlFor="phone-number" className="block text-sm font-semibold text-yellow-800 dark:text-yellow-200">Contact Number Required</label>
-                            <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-2">Please provide your mobile number to proceed.</p>
-                            <input
-                                type="tel"
-                                id="phone-number"
-                                value={phoneNumber}
-                                onChange={(e) => setPhoneNumber(e.target.value)}
-                                placeholder="Enter your mobile number"
-                                className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                                required
-                            />
-                        </div>
-                    )}
                     <div className="space-y-2 text-sm">
                         <p className="font-semibold text-gray-700 dark:text-gray-300">Payment for: <span className="font-normal">{transactionDetails.description}</span></p>
                         <div className="flex justify-between text-gray-700 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Amount:</span><span>₹{baseAmount.toFixed(2)}</span></div>
@@ -175,7 +147,7 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         
         {status !== 'processing' && (
           <div className="p-6 bg-gray-50 dark:bg-gray-700/50 rounded-b-2xl">
-              <button onClick={handleInitPayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-green-500 to-teal-600 rounded-lg shadow-md hover:shadow-lg">
+              <button onClick={handleInitPayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300">
                   {`Proceed to Pay ₹${totalPayable.toFixed(2)}`}
               </button>
           </div>

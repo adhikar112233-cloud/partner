@@ -75,6 +75,9 @@ const createOrderHandler = async (req, res) => {
             return res.status(404).send({ message: 'User not found.' });
         }
         const userData = userDoc.data();
+        
+        logger.info(`Creating order for user ${userId}. Received phone from body: '${phone}'. User profile phone: '${userData.mobileNumber}'`);
+
 
         await db.collection('transactions').doc(orderId).set({
             userId,
@@ -89,17 +92,25 @@ const createOrderHandler = async (req, res) => {
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             paymentGateway: 'cashfree'
         });
-
+        
         let customerPhone = '';
-        if (userData.mobileNumber && String(userData.mobileNumber).trim()) {
-            customerPhone = String(userData.mobileNumber).trim();
-        } else if (phone && String(phone).trim()) {
-            customerPhone = String(phone).trim();
+        const phoneFromRequest = phone ? String(phone).trim() : '';
+        const phoneFromProfile = userData.mobileNumber ? String(userData.mobileNumber).trim() : '';
+
+        // 1. Prioritize the number just entered by the user (from request body) if it is valid.
+        if (/^\d{10,15}$/.test(phoneFromRequest)) {
+            customerPhone = phoneFromRequest;
+            logger.info(`Using valid phone number from request body: ${customerPhone}`);
+        } 
+        // 2. Else, try the number from the user's saved profile if it is valid.
+        else if (/^\d{10,15}$/.test(phoneFromProfile)) {
+            customerPhone = phoneFromProfile;
+            logger.info(`Using valid phone number from user profile: ${customerPhone}`);
         }
 
-        // Use a regex to validate. It must be a string of 10 to 15 digits.
-        if (!/^\d{10,15}$/.test(customerPhone)) {
-            logger.warn(`Using fallback phone number for user ${userId}. Received: '${customerPhone}'`);
+        // 3. If neither source provided a valid number, use a fallback to guarantee the request succeeds.
+        if (!customerPhone) {
+            logger.warn(`Using fallback phone number for user ${userId}. No valid number found in request or profile.`);
             customerPhone = "9999999999"; 
         }
         

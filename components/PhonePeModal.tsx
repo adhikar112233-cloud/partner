@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, BACKEND_URL } from '../services/firebase';
+import { auth } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { PaymentIcon, UpiIcon, NetBankingIcon, WalletIcon } from './Icons';
 
@@ -71,8 +71,6 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       
       const idToken = await firebaseUser.getIdToken();
   
-      const CREATE_ORDER_URL = `${BACKEND_URL}/create-order`;
-  
       const body = {
         amount: Number(totalPayable),
         purpose: transactionDetails.description,
@@ -82,7 +80,7 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         phone: needsPhone ? phoneNumber : user.mobileNumber,
       };
   
-      const res = await fetch(CREATE_ORDER_URL, {
+      const res = await fetch("https://partnerpayment-backend.onrender.com/create-order", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -175,7 +173,7 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         
         {status !== 'processing' && (
           <div className="p-6 bg-gray-50 dark:bg-gray-700/50 rounded-b-2xl">
-              <button onClick={handleInitPayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-green-500 to-teal-600 rounded-lg shadow-md hover:shadow-lg">
+              <button onClick={handleInitPayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300">
                   {`Proceed to Pay ₹${totalPayable.toFixed(2)}`}
               </button>
           </div>

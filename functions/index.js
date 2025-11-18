@@ -75,9 +75,6 @@ const createOrderHandler = async (req, res) => {
             return res.status(404).send({ message: 'User not found.' });
         }
         const userData = userDoc.data();
-        
-        logger.info(`Creating order for user ${userId}. Received phone from body: '${phone}'. User profile phone: '${userData.mobileNumber}'`);
-
 
         await db.collection('transactions').doc(orderId).set({
             userId,
@@ -92,29 +89,10 @@ const createOrderHandler = async (req, res) => {
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             paymentGateway: 'cashfree'
         });
-        
-        let customerPhone;
-        const phoneFromRequest = phone ? String(phone).trim() : '';
-        const phoneFromProfile = userData.mobileNumber ? String(userData.mobileNumber).trim() : '';
 
-        // 1. Prioritize the number from the request body if it's valid.
-        if (/^\d{10,15}$/.test(phoneFromRequest)) {
-            customerPhone = phoneFromRequest;
-            logger.info(`Using valid phone number from request body: ${customerPhone}`);
-        } 
-        // 2. Else, try the number from the user's saved profile if it's valid.
-        else if (/^\d{10,15}$/.test(phoneFromProfile)) {
-            customerPhone = phoneFromProfile;
-            logger.info(`Using valid phone number from user profile: ${customerPhone}`);
-        }
-        // 3. If neither source provides a valid number, use the requested fallback.
-        else {
-            logger.warn(`No valid phone number found in request or profile for user ${userId}. Using fallback.`);
-            customerPhone = "1234567890";
-        }
-        
-        const customerEmail = userData.email || 'notprovided@bigyapon.com';
-        const customerName = userData.name || 'Guest User';
+        const customerPhone = userData.mobileNumber || phone;
+        const customerEmail = userData.email;
+        const customerName = userData.name;
 
         const response = await fetch("https://api.cashfree.com/pg/orders", {
             method: "POST",
@@ -130,10 +108,10 @@ const createOrderHandler = async (req, res) => {
                 order_currency: "INR",
                 order_note: purpose || 'Payment for BIGYAPON',
                 customer_details: {
-                    customer_id: "CUST_" + userId,
-                    customer_email: customerEmail,
-                    customer_phone: customerPhone,
-                    customer_name: customerName,
+                    customer_id: "CUST_" + (customerPhone || "0000"),
+                    customer_email: customerEmail || "noemail@test.com",
+                    customer_phone: customerPhone || "9999999999",
+                    customer_name: customerName || "Unknown",
                 },
                 order_meta: {
                     return_url: `https://bigyapon2-cfa39.firebaseapp.com/?order_id={order_id}`,

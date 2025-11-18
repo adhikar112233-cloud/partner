@@ -90,11 +90,19 @@ const createOrderHandler = async (req, res) => {
             paymentGateway: 'cashfree'
         });
 
-        let customerPhone = userData.mobileNumber || phone;
-        // Add a more robust check to ensure a valid phone number is always sent.
-        if (!customerPhone || String(customerPhone).trim().length < 10) {
-            customerPhone = "9999999999";
+        let customerPhone = '';
+        if (userData.mobileNumber && String(userData.mobileNumber).trim()) {
+            customerPhone = String(userData.mobileNumber).trim();
+        } else if (phone && String(phone).trim()) {
+            customerPhone = String(phone).trim();
         }
+
+        // Use a regex to validate. It must be a string of 10 to 15 digits.
+        if (!/^\d{10,15}$/.test(customerPhone)) {
+            logger.warn(`Using fallback phone number for user ${userId}. Received: '${customerPhone}'`);
+            customerPhone = "9999999999"; 
+        }
+        
         const customerEmail = userData.email;
         const customerName = userData.name;
 

@@ -91,9 +91,8 @@ const createOrderHandler = async (req, res) => {
         });
 
         const customerPhone = userData.mobileNumber || phone;
-        if (!customerPhone) {
-            throw new Error("A valid mobile number is required for payment and is missing from your profile.");
-        }
+        const customerEmail = userData.email;
+        const customerName = userData.name;
 
         const response = await fetch("https://api.cashfree.com/pg/orders", {
             method: "POST",
@@ -109,10 +108,10 @@ const createOrderHandler = async (req, res) => {
                 order_currency: "INR",
                 order_note: purpose || 'Payment for BIGYAPON',
                 customer_details: {
-                    customer_id: userId,
-                    customer_email: userData.email,
-                    customer_phone: customerPhone,
-                    customer_name: userData.name,
+                    customer_id: "CUST_" + (customerPhone || "0000"),
+                    customer_email: customerEmail || "noemail@test.com",
+                    customer_phone: customerPhone || "9999999999",
+                    customer_name: customerName || "Unknown",
                 },
                 order_meta: {
                     return_url: `https://bigyapon2-cfa39.firebaseapp.com/?order_id={order_id}`,

@@ -479,16 +479,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 await authService.verifyLoginOtp(confirmationResult, otp);
             }
         } else { // Signup
-            if (!isValidEmail(email)) {
-                setError("Please provide a valid email address.");
-                setIsLoading(false);
-                return;
-            }
-            if (!isValidIndianMobile(signupMobile)) {
-                setError("Please provide a valid 10-digit mobile number starting with 6, 7, 8, or 9.");
-                setIsLoading(false);
-                return;
-            }
             if (password !== confirmPassword) {
                 setError("Passwords do not match.");
                 setIsLoading(false);

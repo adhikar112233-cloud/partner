@@ -142,12 +142,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
     setError(null);
     setSuccess(null);
 
-    if (formData.mobileNumber && !isValidIndianMobile(formData.mobileNumber)) {
-        setError("Please enter a valid 10-digit mobile number.");
-        setIsLoading(false);
-        return;
-    }
-
     try {
       let avatarUrl = user.avatar;
 

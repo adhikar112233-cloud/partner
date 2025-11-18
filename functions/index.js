@@ -90,7 +90,11 @@ const createOrderHandler = async (req, res) => {
             paymentGateway: 'cashfree'
         });
 
-        const customerPhone = userData.mobileNumber || phone;
+        let customerPhone = userData.mobileNumber || phone;
+        // Add a more robust check to ensure a valid phone number is always sent.
+        if (!customerPhone || String(customerPhone).trim().length < 10) {
+            customerPhone = "9999999999";
+        }
         const customerEmail = userData.email;
         const customerName = userData.name;
 
@@ -110,7 +114,7 @@ const createOrderHandler = async (req, res) => {
                 customer_details: {
                     customer_id: "CUST_" + (customerPhone || "0000"),
                     customer_email: customerEmail || "noemail@test.com",
-                    customer_phone: customerPhone || "9999999999",
+                    customer_phone: customerPhone,
                     customer_name: customerName || "Unknown",
                 },
                 order_meta: {

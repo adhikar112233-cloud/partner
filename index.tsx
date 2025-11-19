@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 // Fix: Reverted to a default import to resolve the module error.
-import App from './App';
+import App from './components/App';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

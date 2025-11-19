@@ -1,53 +1,53 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { isFirebaseConfigured, db, auth, firebaseConfig } from './services/firebase';
-import { authService } from './services/authService';
-import { apiService } from './services/apiService';
-import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification } from './types';
-// Fix: Add QueryDocumentSnapshot and DocumentData for pagination types.
+import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
+import { authService } from '../services/authService';
+import { apiService } from '../services/apiService';
+import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification } from '../types';
 import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
-import LoginPage from './components/LoginPage';
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
-import InfluencerCard from './components/InfluencerCard';
-import ChatWindow from './components/ChatWindow';
-import { findInfluencersWithAI } from './services/geminiService';
-import { SparklesIcon, LogoIcon } from './components/Icons';
-import Dashboard from './components/Dashboard';
-import ProfilePage from './components/ProfilePage';
-import SettingsPanel from './components/SettingsPanel';
-import { AdminPanel } from './components/AdminPanel';
-import PostLoginWelcomePage from './components/PostLoginWelcomePage';
-import SendMessageModal from './components/SendMessageModal';
-import CollabRequestModal from './components/CollabRequestModal';
-import CollaborationRequestsPage from './components/CollaborationRequestsPage';
-import ProfileDetailDrawer from './components/ProfileDetailDrawer';
-import CampaignsPage from './components/CampaignsPage';
-import DiscoverCampaignsPage from './components/DiscoverCampaignsPage';
-import LiveTvPageForBrand from './components/LiveTvPageForBrand';
-import AdRequestsPage from './components/AdRequestsPage';
-import BannerAdsPageForBrand from './components/BannerAdsPageForBrand';
-import AdBookingsPage from './components/AdBookingsPage';
-import UserSupportPage from './components/UserSupportPage';
-import SupportAdminPage from './components/SupportAdminPage';
-import MembershipPage from './components/MembershipPage';
-import MyCollaborationsPage from './components/MyCollaborationsPage';
-import { MyApplicationsPage } from './components/MyApplicationsPage';
-import MyAdBookingsPage from './components/MyAdBookingsPage';
-import DailyPayoutRequestModal from './components/DailyPayoutRequestModal';
-import CommunityPage from './components/CommunityPage';
-import SocialMediaFab from './components/SocialMediaFab';
-import PaymentHistoryPage from './components/PaymentHistoryPage';
-import KycPage from './components/KycPage';
-import PayoutRequestPage from './components/PayoutRequestPage';
-import RefundRequestPage from './components/RefundRequestPage';
-import BoostPage from './components/BoostPage';
-import LiveHelpChat from './components/LiveHelpChat';
-import { NotificationManager } from './components/NotificationManager';
-import ClickableImageBanner from './components/ClickableImageBanner';
-import CreatorVerificationPage from './components/CreatorVerificationPage';
-import ActivityFeed from './components/ActivityFeed';
-import OurPartnersPage from './components/OurPartnersPage';
+import LoginPage from './LoginPage';
+import Sidebar from './Sidebar';
+import Header from './Header';
+import InfluencerCard from './InfluencerCard';
+import ChatWindow from './ChatWindow';
+import { findInfluencersWithAI } from '../services/geminiService';
+import { SparklesIcon, LogoIcon } from './Icons';
+import Dashboard from './Dashboard';
+import ProfilePage from './ProfilePage';
+import SettingsPanel from './SettingsPanel';
+import { AdminPanel } from './AdminPanel';
+import PostLoginWelcomePage from './PostLoginWelcomePage';
+import SendMessageModal from './SendMessageModal';
+import CollabRequestModal from './CollabRequestModal';
+import CollaborationRequestsPage from './CollaborationRequestsPage';
+import ProfileDetailDrawer from './ProfileDetailDrawer';
+import CampaignsPage from './CampaignsPage';
+import DiscoverCampaignsPage from './DiscoverCampaignsPage';
+import LiveTvPageForBrand from './LiveTvPageForBrand';
+import AdRequestsPage from './AdRequestsPage';
+import BannerAdsPageForBrand from './BannerAdsPageForBrand';
+import AdBookingsPage from './AdBookingsPage';
+import UserSupportPage from './UserSupportPage';
+import SupportAdminPage from './SupportAdminPage';
+import MembershipPage from './MembershipPage';
+import MyCollaborationsPage from './MyCollaborationsPage';
+import { MyApplicationsPage } from './MyApplicationsPage';
+import MyAdBookingsPage from './MyAdBookingsPage';
+import DailyPayoutRequestModal from './DailyPayoutRequestModal';
+import CommunityPage from './CommunityPage';
+import SocialMediaFab from './SocialMediaFab';
+import PaymentHistoryPage from './PaymentHistoryPage';
+import KycPage from './KycPage';
+import PayoutRequestPage from './PayoutRequestPage';
+import RefundRequestPage from './RefundRequestPage';
+import BoostPage from './BoostPage';
+import LiveHelpChat from './LiveHelpChat';
+import { NotificationManager } from './NotificationManager';
+import ClickableImageBanner from './ClickableImageBanner';
+import CreatorVerificationPage from './CreatorVerificationPage';
+import ActivityFeed from './ActivityFeed';
+import OurPartnersPage from './OurPartnersPage';
+import PaymentSuccessPage from './PaymentSuccessPage';
 
 const FirebaseConfigError: React.FC = () => (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
@@ -252,11 +252,9 @@ const CreatorVerificationBanner: React.FC<{
     );
 };
 
-// Fix: Add pagination limit constant
 const INFLUENCER_PAGE_LIMIT = 12;
 
-// Fix: Changed App to a named export to resolve module loading errors.
-export const App: React.FC = () => {
+const App: React.FC = () => {
   if (!isFirebaseConfigured) {
     return <FirebaseConfigError />;
   }
@@ -290,7 +288,6 @@ export const App: React.FC = () => {
   const [allRefunds, setAllRefunds] = useState<RefundRequest[]>([]);
   const [allDailyPayouts, setAllDailyPayouts] = useState<DailyPayoutRequest[]>([]);
 
-  // Fix: Add state variables for pagination
   const [lastInfluencerDoc, setLastInfluencerDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreInfluencers, setHasMoreInfluencers] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -362,7 +359,6 @@ export const App: React.FC = () => {
       if (user && platformSettings) {
         await apiService.initializeFirestoreData();
         
-        // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
           const influencerResult = await apiService.getInfluencersPaginated(platformSettings, { limit: INFLUENCER_PAGE_LIMIT });
           setInfluencers(influencerResult.influencers);
@@ -374,7 +370,6 @@ export const App: React.FC = () => {
           setLiveTvChannels(channelData);
         }
 
-        // Data for Admin Panel (only for staff)
         if (user.role === 'staff') {
             const [
                 allUserData, transactions, payouts, direct, campaign, adslot, banner, refunds, dailyPayouts
@@ -386,9 +381,7 @@ export const App: React.FC = () => {
                 apiService.getAllCampaignApplications(),
                 apiService.getAllAdSlotRequests(),
                 apiService.getAllBannerAdBookingRequests(),
-                // FIX: Corrected function name from 'getAllRefundRequests' to 'getAllRefunds'.
                 apiService.getAllRefunds(),
-                // FIX: Corrected function name from 'getAllDailyPayoutRequests' to 'getAllDailyPayouts' as suggested by the error.
                 apiService.getAllDailyPayouts(),
             ]);
             setAllUsers(allUserData);
@@ -398,14 +391,12 @@ export const App: React.FC = () => {
             setAllRefunds(refunds);
             setAllDailyPayouts(dailyPayouts);
         } else {
-            // For non-staff, we still need allUsers for things like disputes, so fetch it separately.
             const allUserData = await apiService.getAllUsers();
             setAllUsers(allUserData);
         }
       }
     }, [user, platformSettings]);
 
-  // Fix: Add function to load more influencers for pagination.
   const loadMoreInfluencers = useCallback(async () => {
     if (!platformSettings || !hasMoreInfluencers || isLoadingMore) return;
 
@@ -564,7 +555,6 @@ export const App: React.FC = () => {
         setActiveView(View.PAYOUT_REQUEST);
       } catch (error) {
         console.error("Failed to refresh settings before showing payout page:", error);
-        // Fallback to showing the page with potentially stale settings if the refresh fails
         setPayoutRequestCollab(collab);
         setActiveView(View.PAYOUT_REQUEST);
       }
@@ -701,7 +691,6 @@ export const App: React.FC = () => {
                 />
               ))}
             </div>
-            {/* Fix: Add 'load more' button for pagination */}
             {hasMoreInfluencers && (
                 <div className="mt-8 text-center">
                     <button onClick={loadMoreInfluencers} disabled={isLoadingMore} className="px-6 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 disabled:opacity-50">
@@ -877,3 +866,5 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
+export default App;

@@ -1,10 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
 import { auth } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { PaymentIcon, UpiIcon, NetBankingIcon, WalletIcon } from './Icons';
-
-declare const Cashfree: any;
+import { load } from "@cashfreepayments/cashfree-js";
 
 interface CashfreeModalProps {
   user: User;
@@ -106,12 +106,13 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       if (!data.payment_session_id) {
         throw new Error("Payment session missing in server response.");
       }
-  
-      if (typeof Cashfree === "undefined") {
-        throw new Error("Cashfree SDK not loaded.");
-      }
-  
-      Cashfree.checkout({
+
+      // Initialize Cashfree SDK via module load
+      const cashfree = await load({
+        mode: "production"
+      });
+
+      await cashfree.checkout({
         paymentSessionId: data.payment_session_id,
         redirectTarget: "_self"
       });

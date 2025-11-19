@@ -11,7 +11,7 @@ import Header from './Header';
 import InfluencerCard from './InfluencerCard';
 import ChatWindow from './ChatWindow';
 import { findInfluencersWithAI } from '../services/geminiService';
-import { SparklesIcon, LogoIcon } from './Icons';
+import { SparklesIcon, LogoIcon, SearchIcon } from './Icons';
 import Dashboard from './Dashboard';
 import ProfilePage from './ProfilePage';
 import SettingsPanel from './SettingsPanel';

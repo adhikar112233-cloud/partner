@@ -187,12 +187,13 @@ export const apiService = {
         isMaintenanceModeEnabled: false,
         isCommunityFeedEnabled: true,
         isWelcomeMessageEnabled: true,
-        activePaymentGateway: 'cashfree', // Default
+        activePaymentGateway: 'razorpay', // Default to Razorpay
         paymentGatewayApiId: '',
         paymentGatewayApiSecret: '',
         paymentGatewaySourceCode: '',
-        razorpayKeyId: '', // Default empty
-        razorpayKeySecret: '', // Default empty
+        // Initialize Razorpay Key ID from user-provided value to ensure fallback
+        razorpayKeyId: 'rzp_test_RhsBzbfkYo5DFA', 
+        razorpayKeySecret: '', 
         otpApiId: '',
         otpApiSecret: '',
         otpApiSourceCode: '',

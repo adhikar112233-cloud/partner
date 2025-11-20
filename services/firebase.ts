@@ -22,8 +22,31 @@ export const firebaseConfig = {
 export const CASHFREE_URL = "https://partnerpayment-backend.onrender.com";
 export const RAZORPAY_URL = "https://razorpay-backeb-nd.onrender.com";
 
+// Constants - Helper to get env vars in both Vite and Next.js environments safely
+const getEnv = (key: string, viteKey: string) => {
+  // Check for Vite environment (import.meta.env)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[viteKey]) {
+       // @ts-ignore
+       return import.meta.env[viteKey];
+    }
+  } catch (e) { /* ignore */ }
+
+  // Check for standard process.env (Next.js / CRA)
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+       return process.env[key];
+    }
+  } catch (e) { /* ignore */ }
+
+  return undefined;
+};
+
+export const RAZORPAY_KEY_ID = getEnv('NEXT_PUBLIC_RAZORPAY_KEY_ID', 'VITE_RAZORPAY_KEY_ID') || "rzp_test_RhsBzbfkYo5DFA";
+
 // Default Backend URL (can be used for general operations or fallback)
-export const BACKEND_URL = RAZORPAY_URL;
+export const BACKEND_URL = CASHFREE_URL;
 
 // Declare variables that will hold the Firebase services.
 let app: FirebaseApp;

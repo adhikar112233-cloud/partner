@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, BACKEND_URL, CASHFREE_URL, RAZORPAY_URL } from '../services/firebase';
+import { auth, BACKEND_URL, CASHFREE_URL, RAZORPAY_URL, RAZORPAY_KEY_ID } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { load } from "@cashfreepayments/cashfree-js";
 
@@ -46,10 +46,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
   const needsPhone = !user.mobileNumber;
   
-  // Determine which backend URL to use based on the active gateway setting
+  // Determine which backend URL to use based on the active gateway setting.
+  // This allows using separate backends for different gateways.
   const API_URL = platformSettings.activePaymentGateway === 'razorpay' 
     ? RAZORPAY_URL 
-    : (platformSettings.activePaymentGateway === 'cashfree' ? CASHFREE_URL : BACKEND_URL);
+    : CASHFREE_URL;
 
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
@@ -90,6 +91,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         gateway: platformSettings.activePaymentGateway, // Send preference to backend
       };
   
+      console.log(`Initiating payment via ${platformSettings.activePaymentGateway} at ${API_URL}`);
+
       const response = await fetch(
         `${API_URL}/create-order`,
         {
@@ -114,8 +117,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       // Robust check for payment identifiers
-      // Backend is expected to return 'id' (mapped from order_id or payment_session_id)
+      // Backend ensures 'id' is present for both gateways (mapped from order_id or payment_session_id)
+      // But we also check specifically for order_id (Razorpay) or payment_session_id (Cashfree)
       if (!data || (!data.id && !data.payment_session_id && !data.order_id)) {
+          console.error("Invalid payment response:", data);
           throw new Error("Payment session missing in server response.");
       }
 
@@ -130,7 +135,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           }
 
           const options = {
-              key: data.key_id,
+              key: data.key_id || RAZORPAY_KEY_ID, // Use returned key or fallback
               amount: data.amount,
               currency: data.currency,
               name: "BIGYAPON",
@@ -180,6 +185,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       } else {
           // --- CASHFREE FLOW ---
+          // Backend should ensure data.id is present and equals payment_session_id
           const sessionId = data.payment_session_id || data.id;
           
           if (!sessionId) {
@@ -241,6 +247,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 <div className="text-center p-8">
                     <div className="w-8 h-8 border-2 border-dashed rounded-full animate-spin border-indigo-500 mx-auto"></div>
                     <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Processing payment...</p>
+                    <p className="text-xs text-gray-400 mt-1">Connecting to {platformSettings.activePaymentGateway}...</p>
                 </div>
             )}
 

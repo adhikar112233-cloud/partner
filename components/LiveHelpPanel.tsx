@@ -180,8 +180,10 @@ const ConversationView: React.FC<{
                     </div>
                 )}
                 {messages.map(msg => {
-                     // Check if the sender is ANY staff member (assigned or current admin) to correctly style bubbles
-                     const isStaffMessage = (session.assignedStaffId && msg.senderId === session.assignedStaffId) || msg.senderId === adminUser.id;
+                     // Correct logic: if the sender is the current admin OR the assigned staff, it's a staff message.
+                     // This handles cases where the chat might have been re-assigned.
+                     const isStaffMessage = msg.senderId === adminUser.id || (session.assignedStaffId && msg.senderId === session.assignedStaffId);
+                     
                      return (
                         <div key={msg.id} className={`flex items-end gap-2 ${isStaffMessage ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-md px-4 py-3 rounded-2xl ${isStaffMessage ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-800'}`}>

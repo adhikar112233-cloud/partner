@@ -1,4 +1,5 @@
 
+
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
@@ -54,10 +55,10 @@ const getCollectionNameForCollab = (collabType) => {
 // Helper to get Payment Settings safely
 const getPaymentSettings = async () => {
     let settings = {
-        activePaymentGateway: process.env.ACTIVE_PAYMENT_GATEWAY || 'cashfree',
+        activePaymentGateway: process.env.ACTIVE_PAYMENT_GATEWAY || 'razorpay',
         paymentGatewayApiId: process.env.CASHFREE_ID || '',
         paymentGatewayApiSecret: process.env.CASHFREE_SECRET || '',
-        razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
+        razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_RhsBzbfkYo5DFA',
         razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
     };
 
@@ -236,10 +237,11 @@ const createOrderHandler = async (req, res) => {
         const customerEmail = userData.email || "noemail@example.com";
 
         const settings = await getPaymentSettings();
+        
         // Use frontend preference if valid, else fallback to DB setting, else default to cashfree
         const gateway = (preferredGateway === 'razorpay' || preferredGateway === 'cashfree') 
             ? preferredGateway 
-            : (settings.activePaymentGateway || 'cashfree');
+            : (settings.activePaymentGateway || 'razorpay');
 
         console.log(`Creating order ${orderId} via ${gateway} for amount ${orderAmount}`);
 
@@ -292,11 +294,11 @@ const createOrderHandler = async (req, res) => {
                 key_id: KEY_ID,
                 amount: data.amount,
                 currency: data.currency,
-                id: data.id // Important: Map to 'id' for frontend compatibility
+                id: data.id // Important: Map to 'id' for frontend compatibility check
             });
 
         } else {
-            // CASHFREE (Default)
+            // CASHFREE
             const CASHFREE_ID = settings.paymentGatewayApiId;
             const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
 

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 import { PlatformSettings, SocialMediaLink, MembershipPlan, BoostType, User } from '../types';
@@ -160,15 +161,12 @@ const SettingsPanel: React.FC<{ onSettingsUpdate: () => void }> = ({ onSettingsU
                 </SettingRow>
 
                 <div className="px-6 py-3 bg-gray-100"><h5 className="font-medium text-gray-500">Creator Membership Prices (INR)</h5></div>
-                {/* FIX: Replaced incorrect 'normal_1m' key with 'basic' to match MembershipPlan type. */}
                 <SettingRow label="Basic Plan (1 Month)">
                     <input type="number" value={settings.membershipPrices.basic} onChange={(e) => handlePriceChange('basic', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" />
                 </SettingRow>
-                {/* FIX: Replaced incorrect 'normal_6m' key with 'pro' to match MembershipPlan type. */}
                 <SettingRow label="Pro Plan (6 Months)">
                     <input type="number" value={settings.membershipPrices.pro} onChange={(e) => handlePriceChange('pro', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" />
                 </SettingRow>
-                {/* FIX: Replaced incorrect 'normal_1y' key with 'premium' to match MembershipPlan type. */}
                 <SettingRow label="Premium Plan (1 Year)">
                     <input type="number" value={settings.membershipPrices.premium} onChange={(e) => handlePriceChange('premium', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" />
                 </SettingRow>
@@ -223,8 +221,26 @@ const SettingsPanel: React.FC<{ onSettingsUpdate: () => void }> = ({ onSettingsU
                 </SettingRow>
 
                 <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Payment Gateway</h4></div>
+                <SettingRow label="Active Gateway">
+                    <select 
+                        value={settings.activePaymentGateway || 'cashfree'} 
+                        onChange={(e) => handleSettingChange('activePaymentGateway', e.target.value)} 
+                        className="w-full rounded-md border-gray-300 shadow-sm"
+                    >
+                        <option value="cashfree">Cashfree</option>
+                        <option value="razorpay">Razorpay</option>
+                    </select>
+                </SettingRow>
+                
+                <div className="px-6 py-3 bg-gray-100"><h5 className="font-medium text-gray-500">Cashfree Config</h5></div>
                 <SettingRow label="Gateway API ID"><input type="password" value={settings.paymentGatewayApiId} onChange={(e) => handleSettingChange('paymentGatewayApiId', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
                 <SettingRow label="Gateway Secret"><input type="password" value={settings.paymentGatewayApiSecret} onChange={(e) => handleSettingChange('paymentGatewayApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
+                
+                <div className="px-6 py-3 bg-gray-100"><h5 className="font-medium text-gray-500">Razorpay Config</h5></div>
+                <SettingRow label="Key ID"><input type="password" value={settings.razorpayKeyId || ''} onChange={(e) => handleSettingChange('razorpayKeyId', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
+                <SettingRow label="Key Secret"><input type="password" value={settings.razorpayKeySecret || ''} onChange={(e) => handleSettingChange('razorpayKeySecret', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
+
+                <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Other APIs</h4></div>
                 <SettingRow label="Gateway Source Code"><textarea value={settings.paymentGatewaySourceCode} onChange={(e) => handleSettingChange('paymentGatewaySourceCode', e.target.value)} rows={2} className="w-full rounded-md border-gray-300 shadow-sm font-mono text-xs" /></SettingRow>
                 <SettingRow label="OTP API ID"><input type="password" value={settings.otpApiId} onChange={(e) => handleSettingChange('otpApiId', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
                 <SettingRow label="OTP API Secret"><input type="password" value={settings.otpApiSecret} onChange={(e) => handleSettingChange('otpApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>

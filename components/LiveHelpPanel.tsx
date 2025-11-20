@@ -1,3 +1,5 @@
+
+// ... (imports)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, LiveHelpSession, LiveHelpMessage, QuickReply } from '../types';
 import { db } from '../services/firebase';
@@ -5,11 +7,13 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, serverTi
 import { apiService } from '../services/apiService';
 import { CogIcon, TrashIcon, PencilIcon } from './Icons';
 
+// ... (ManageQuickRepliesModal remains same)
 const ManageQuickRepliesModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     quickReplies: QuickReply[];
 }> = ({ isOpen, onClose, quickReplies }) => {
+    // ... (content same as before)
     const [newReplyText, setNewReplyText] = useState('');
     const [editingReply, setEditingReply] = useState<{ id: string; text: string } | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -175,16 +179,18 @@ const ConversationView: React.FC<{
                         </button>
                     </div>
                 )}
-                {messages.map(msg => (
-                    <div key={msg.id} className={`flex items-end gap-2 ${msg.senderId === adminUser.id ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-md px-4 py-3 rounded-2xl ${
-// FIX: Replaced `msg.senderRole === 'staff'` with `msg.senderId === adminUser.id` because LiveHelpMessage does not have a senderRole property. This correctly styles messages from the current admin.
-                            msg.senderId === adminUser.id ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-800'}`}>
-                            <p className="text-sm font-bold">{msg.senderName}</p>
-                            <p className="text-sm mt-1">{msg.text}</p>
+                {messages.map(msg => {
+                     // Check if the sender is ANY staff member (assigned or current admin) to correctly style bubbles
+                     const isStaffMessage = (session.assignedStaffId && msg.senderId === session.assignedStaffId) || msg.senderId === adminUser.id;
+                     return (
+                        <div key={msg.id} className={`flex items-end gap-2 ${isStaffMessage ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-md px-4 py-3 rounded-2xl ${isStaffMessage ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-800'}`}>
+                                <p className="text-sm font-bold">{msg.senderName}</p>
+                                <p className="text-sm mt-1">{msg.text}</p>
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
                 <div ref={messagesEndRef} />
             </div>
             <div className="p-4 border-t">
@@ -253,12 +259,12 @@ const ConversationView: React.FC<{
 
 type Tab = 'new' | 'my' | 'all' | 'closed';
 
-// Fix: Add props interface definition to resolve TypeScript error.
 interface LiveHelpPanelProps {
     adminUser: User;
 }
 
 const LiveHelpPanel: React.FC<LiveHelpPanelProps> = ({ adminUser }) => {
+    // ... (rest of the component remains same)
     const [allSessions, setAllSessions] = useState<LiveHelpSession[]>([]);
     const [selectedSession, setSelectedSession] = useState<LiveHelpSession | null>(null);
     const [isLoading, setIsLoading] = useState(true);

@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 
 // Fix: Define application-wide types to resolve import errors across multiple components and services.
@@ -296,9 +295,16 @@ export interface PlatformSettings {
   isMaintenanceModeEnabled: boolean;
   isCommunityFeedEnabled: boolean;
   isWelcomeMessageEnabled: boolean;
-  paymentGatewayApiId: string;
-  paymentGatewayApiSecret: string;
-  paymentGatewaySourceCode: string;
+  
+  // Payment Gateway Settings
+  activePaymentGateway: 'cashfree' | 'razorpay';
+  paymentGatewayApiId: string; // Cashfree App ID
+  paymentGatewayApiSecret: string; // Cashfree Secret Key
+  paymentGatewaySourceCode: string; // Misc config
+  
+  razorpayKeyId?: string; // Razorpay Key ID
+  razorpayKeySecret?: string; // Razorpay Key Secret
+
   otpApiId: string;
   otpApiSecret: string;
   otpApiSourceCode: string;

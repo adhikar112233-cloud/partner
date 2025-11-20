@@ -1,3 +1,4 @@
+
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth, RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
@@ -17,8 +18,12 @@ export const firebaseConfig = {
   measurementId: "G-QW74JFCEQ3"
 };
 
-// Centralized backend URL
-export const BACKEND_URL = "https://partnerpayment-backend.onrender.com";
+// Backend URLs for different Payment Gateways
+export const CASHFREE_URL = "https://partnerpayment-backend.onrender.com";
+export const RAZORPAY_URL = "https://razorpay-backeb-nd.onrender.com";
+
+// Default Backend URL (can be used for general operations or fallback)
+export const BACKEND_URL = RAZORPAY_URL;
 
 // Declare variables that will hold the Firebase services.
 let app: FirebaseApp;

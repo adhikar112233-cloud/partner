@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, BACKEND_URL } from '../services/firebase';
+import { auth, BACKEND_URL, CASHFREE_URL, RAZORPAY_URL } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { load } from "@cashfreepayments/cashfree-js";
 
-interface CashfreeModalProps {
+interface PaymentModalProps {
   user: User;
   collabType: 
     | 'direct' 
@@ -27,7 +27,13 @@ interface CashfreeModalProps {
   };
 }
 
-const CashfreeModal: React.FC<CashfreeModalProps> = ({
+declare global {
+    interface Window {
+        Razorpay: any;
+    }
+}
+
+const PaymentModal: React.FC<PaymentModalProps> = ({
   user,
   collabType,
   baseAmount,
@@ -40,9 +46,11 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
   const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
   const needsPhone = !user.mobileNumber;
   
-  const API_URL = BACKEND_URL;
+  // Determine which backend URL to use based on the active gateway setting
+  const API_URL = platformSettings.activePaymentGateway === 'razorpay' 
+    ? RAZORPAY_URL 
+    : (platformSettings.activePaymentGateway === 'cashfree' ? CASHFREE_URL : BACKEND_URL);
 
-  // Calculate all fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
     : 0;
@@ -78,7 +86,8 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         relatedId: transactionDetails.relatedId,
         collabId: transactionDetails.collabId,
         collabType: collabType,
-        phone: cleanPhone, // Send sanitized 10-digit phone
+        phone: cleanPhone,
+        gateway: platformSettings.activePaymentGateway, // Send preference to backend
       };
   
       const response = await fetch(
@@ -96,33 +105,100 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       const data = await response.json();
   
       if (!response.ok) {
-        throw new Error(data.message || "Could not create order.");
+        throw new Error(data.message || "Could not create order. Please check your connection.");
       }
 
+      // Update user phone if it was missing
       if (needsPhone) {
-        // Update profile in the background, don't wait for it
-        apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(err => {
-            console.warn("Could not update phone number in user profile:", err);
-        });
-      }
-  
-      if (!data.payment_session_id) {
-        throw new Error("Payment session missing in server response.");
+        apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(console.warn);
       }
 
-      // Use the environment returned by the backend to initialize Cashfree SDK
-      const cashfree = await load({
-        mode: data.environment || "production" 
-      });
+      // Robust check for payment identifiers
+      // Backend is expected to return 'id' (mapped from order_id or payment_session_id)
+      if (!data || (!data.id && !data.payment_session_id && !data.order_id)) {
+          throw new Error("Payment session missing in server response.");
+      }
 
-      await cashfree.checkout({
-        paymentSessionId: data.payment_session_id,
-        redirectTarget: "_self"
-      });
+      // Determine Gateway Logic
+      // Prefer explicit gateway flag from backend, otherwise fall back to settings
+      const isRazorpay = data.gateway === 'razorpay' || platformSettings.activePaymentGateway === 'razorpay';
+
+      if (isRazorpay) {
+          // --- RAZORPAY FLOW ---
+          if (!window.Razorpay) {
+              throw new Error("Razorpay SDK failed to load. Please refresh the page.");
+          }
+
+          const options = {
+              key: data.key_id,
+              amount: data.amount,
+              currency: data.currency,
+              name: "BIGYAPON",
+              description: transactionDetails.description,
+              order_id: data.order_id || data.id, // Use the ID returned
+              handler: async function (response: any) {
+                  try {
+                      const verifyRes = await fetch(`${API_URL}/verify-razorpay`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                              orderId: data.internal_order_id,
+                              razorpayPaymentId: response.razorpay_payment_id,
+                              razorpayOrderId: response.razorpay_order_id,
+                              razorpaySignature: response.razorpay_signature
+                          })
+                      });
+                      
+                      if (verifyRes.ok) {
+                          onClose();
+                          window.location.href = `/?order_id=${data.internal_order_id}`;
+                      } else {
+                          setError("Payment verification failed.");
+                          setStatus("error");
+                      }
+                  } catch (e) {
+                      setError("Verification network error.");
+                      setStatus("error");
+                  }
+              },
+              prefill: {
+                  name: user.name,
+                  email: user.email,
+                  contact: cleanPhone
+              },
+              theme: {
+                  color: "#4F46E5"
+              }
+          };
+
+          const rzp1 = new window.Razorpay(options);
+          rzp1.on('payment.failed', function (response: any){
+                setError(`Payment Failed: ${response.error.description}`);
+                setStatus("error");
+          });
+          rzp1.open();
+
+      } else {
+          // --- CASHFREE FLOW ---
+          const sessionId = data.payment_session_id || data.id;
+          
+          if (!sessionId) {
+            throw new Error("Payment session ID missing for Cashfree transaction.");
+          }
+
+          const cashfree = await load({
+            mode: data.environment || "production" 
+          });
+
+          await cashfree.checkout({
+            paymentSessionId: sessionId,
+            redirectTarget: "_self"
+          });
+      }
   
     } catch (err: any) {
       console.error("Payment error:", err);
-      setError(err.message);
+      setError(err.message || "An unknown error occurred.");
       setStatus("error");
     }
   };
@@ -187,4 +263,4 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
   );
 };
 
-export default CashfreeModal;
+export default PaymentModal;

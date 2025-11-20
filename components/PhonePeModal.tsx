@@ -70,10 +70,6 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         throw new Error("You must be logged in to make a payment.");
       }
 
-      const cashfree = await load({
-        mode: "production"
-      });
-
       const idToken = await firebaseUser.getIdToken();
   
       const body = {
@@ -113,6 +109,11 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       if (!data.payment_session_id) {
         throw new Error("Payment session missing in server response.");
       }
+
+      // Use the environment returned by the backend to initialize Cashfree SDK
+      const cashfree = await load({
+        mode: data.environment || "production" 
+      });
 
       await cashfree.checkout({
         paymentSessionId: data.payment_session_id,

@@ -68,6 +68,13 @@ const createOrderHandler = async (req, res) => {
         return res.status(500).send({ message: 'Server configuration error.' });
     }
 
+    // Smart Environment Detection
+    // If the Client ID starts with "TEST", we switch to the Sandbox URL.
+    const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
+    const cashfreeBaseUrl = isSandbox 
+        ? "https://sandbox.cashfree.com/pg/orders" 
+        : "https://api.cashfree.com/pg/orders";
+
     const orderId = `order_${Date.now()}`;
     try {
         const userDoc = await db.collection('users').doc(userId).get();
@@ -87,14 +94,15 @@ const createOrderHandler = async (req, res) => {
             status: 'pending',
             transactionId: orderId,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            paymentGateway: 'cashfree'
+            paymentGateway: 'cashfree',
+            environment: isSandbox ? 'sandbox' : 'production'
         });
 
         const customerPhone = userData.mobileNumber || phone;
         const customerEmail = userData.email;
         const customerName = userData.name;
 
-        const response = await fetch("https://api.cashfree.com/pg/orders", {
+        const response = await fetch(cashfreeBaseUrl, {
             method: "POST",
             headers: {
                 "x-api-version": "2023-08-01",
@@ -108,9 +116,9 @@ const createOrderHandler = async (req, res) => {
                 order_currency: "INR",
                 order_note: purpose || 'Payment for BIGYAPON',
                 customer_details: {
-                    customer_id: "CUST_" + (customerPhone || "0000"),
+                    customer_id: "CUST_" + (customerPhone || "0000").replace(/\D/g, ''),
                     customer_email: customerEmail || "noemail@test.com",
-                    customer_phone: customerPhone || "9999999999",
+                    customer_phone: (customerPhone || "9999999999").replace(/\D/g, '').slice(-10),
                     customer_name: customerName || "Unknown",
                 },
                 order_meta: {
@@ -135,7 +143,12 @@ const createOrderHandler = async (req, res) => {
         }
 
         const data = await response.json();
-        return res.status(200).send(data);
+        
+        // Return the environment to the frontend so it can initialize the SDK correctly
+        return res.status(200).send({ 
+            ...data, 
+            environment: isSandbox ? 'sandbox' : 'production' 
+        });
 
     } catch (error) {
         logger.error(`Error creating Cashfree order ${orderId}:`, error);

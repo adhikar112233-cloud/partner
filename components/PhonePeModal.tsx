@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth } from '../services/firebase';
+import { auth, BACKEND_URL } from '../services/firebase';
 import { apiService } from '../services/apiService';
-import { PaymentIcon, UpiIcon, NetBankingIcon, WalletIcon } from './Icons';
 import { load } from "@cashfreepayments/cashfree-js";
 
 interface CashfreeModalProps {
@@ -40,6 +39,8 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
   const needsPhone = !user.mobileNumber;
+  
+  const API_URL = BACKEND_URL;
 
   // Calculate all fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
@@ -52,12 +53,12 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
 
   const totalPayable = baseAmount + processingCharge + gstOnFees;
 
-  const handleInitPayment = async () => {
-    if (needsPhone) {
-        if (!/^\d{10,15}$/.test(phoneNumber.replace(/\s+/g, ''))) {
-            setError("Please enter a valid mobile number.");
-            return;
-        }
+  const handlePayment = async () => {
+    const cleanPhone = (needsPhone ? phoneNumber : user.mobileNumber).replace(/\D/g, '').slice(-10);
+
+    if (needsPhone && cleanPhone.length !== 10) {
+        setError("Please enter a valid 10-digit mobile number.");
+        return;
     }
     
     setStatus("processing");
@@ -68,31 +69,37 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       if (!firebaseUser) {
         throw new Error("You must be logged in to make a payment.");
       }
-      
+
+      const cashfree = await load({
+        mode: "production"
+      });
+
       const idToken = await firebaseUser.getIdToken();
   
       const body = {
-        amount: Number(totalPayable),
+        amount: Number(totalPayable.toFixed(2)),
         purpose: transactionDetails.description,
         relatedId: transactionDetails.relatedId,
         collabId: transactionDetails.collabId,
         collabType: collabType,
-        phone: needsPhone ? phoneNumber : user.mobileNumber,
+        phone: cleanPhone, // Send sanitized 10-digit phone
       };
   
-      const res = await fetch("https://partnerpayment-backend.onrender.com/create-order", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + idToken,
-        },
-        body: JSON.stringify(body)
-      });
+      const response = await fetch(
+        `${API_URL}/create-order`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + idToken,
+          },
+          body: JSON.stringify(body)
+        }
+      );
   
-      const data = await res.json();
+      const data = await response.json();
   
-      if (!res.ok) {
-        // The backend sends a 'message' property on error, not 'error'.
+      if (!response.ok) {
         throw new Error(data.message || "Could not create order.");
       }
 
@@ -106,11 +113,6 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
       if (!data.payment_session_id) {
         throw new Error("Payment session missing in server response.");
       }
-
-      // Initialize Cashfree SDK via module load
-      const cashfree = await load({
-        mode: "production"
-      });
 
       await cashfree.checkout({
         paymentSessionId: data.payment_session_id,
@@ -174,7 +176,7 @@ const CashfreeModal: React.FC<CashfreeModalProps> = ({
         
         {status !== 'processing' && (
           <div className="p-6 bg-gray-50 dark:bg-gray-700/50 rounded-b-2xl">
-              <button onClick={handleInitPayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300">
+              <button onClick={handlePayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300">
                   {`Proceed to Pay ₹${totalPayable.toFixed(2)}`}
               </button>
           </div>

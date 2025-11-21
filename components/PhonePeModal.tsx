@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, CASHFREE_URL, RAZORPAY_URL, RAZORPAY_KEY_ID } from '../services/firebase';
+import { auth, BACKEND_URL, RAZORPAY_KEY_ID } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { load } from "@cashfreepayments/cashfree-js";
 
@@ -78,12 +78,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const idToken = await firebaseUser.getIdToken();
 
       // Determine gateway and API URL logic
-      // Default to Razorpay unless 'cashfree' is explicitly selected
       const activeGateway = platformSettings.activePaymentGateway?.toLowerCase();
       const selectedGateway = activeGateway === 'cashfree' ? 'cashfree' : 'razorpay';
       
-      // Select the specific backend URL for the chosen gateway
-      const API_URL = selectedGateway === 'razorpay' ? RAZORPAY_URL : CASHFREE_URL;
+      // Always use BACKEND_URL (Firebase Function) to ensure DB logic is accessible
+      const API_URL = BACKEND_URL;
 
       const body = {
         amount: Number(totalPayable.toFixed(2)),
@@ -119,8 +118,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         console.warn("Order creation failed. Attempting fallback logic.", creationErr);
 
         // Robust Fallback Logic for Razorpay
-        // If the backend is unreachable (e.g. Render cold start timeout or Network Error),
-        // we fall back to client-side initialization for Razorpay using the Key ID.
         if (selectedGateway === "razorpay") {
           console.log("Using Razorpay Client Fallback");
           data = {
@@ -128,11 +125,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             key_id: platformSettings.razorpayKeyId || RAZORPAY_KEY_ID,
             amount: Math.round(totalPayable * 100), // amount in paise
             currency: "INR",
-            id: undefined, // No order_id available in fallback
+            id: undefined,
             fallbackMode: true,
           };
         } else {
-          // Cashfree requires a session ID from backend, so we cannot fallback.
           throw new Error("Unable to connect to payment server. Please try again later.");
         }
       }
@@ -164,55 +160,48 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           currency: data.currency || "INR",
           name: "BIGYAPON",
           description: transactionDetails.description,
-          // Only include order_id if it exists and is not fallback
           ...(razorpayOrderId && !data.fallbackMode ? { order_id: razorpayOrderId } : {}),
 
           handler: async function (response: any) {
-            // In fallback mode, we don't have a backend order to verify against immediately.
-            // We redirect to success page which handles post-verification or simple confirmation.
             if (data.fallbackMode) {
               console.log("Payment successful (Fallback Mode)");
               setStatus("idle");
               onClose();
-              // Generate a client-side reference for UI flow
               const fallbackOrderId = `rzp_fallback_${Date.now()}`;
               window.location.href = `/?order_id=${fallbackOrderId}&gateway=razorpay`;
               return;
             }
 
             try {
-              // Use the specific RAZORPAY URL for verification: /verify-payment
-              const verifyRes = await fetch(`${RAZORPAY_URL}/verify-payment`, {
+              // Correctly call the Firebase Function endpoint for verification
+              const verifyRes = await fetch(`${BACKEND_URL}/verify-razorpay`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                  // Include our internal tracking order_id if available from creation response
-                  internal_order_id: data.internal_order_id 
+                  razorpayOrderId: response.razorpay_order_id,
+                  razorpayPaymentId: response.razorpay_payment_id,
+                  razorpaySignature: response.razorpay_signature,
+                  // Use 'orderId' as expected by the backend function
+                  orderId: data.internal_order_id 
                 }),
               });
 
               const result = await verifyRes.json();
 
-              // Check for success based on backend response format (handling various possible success flags)
-              if (verifyRes.ok && (result.success || result.status === 'success' || result.message === 'Payment verified successfully')) {
+              if (verifyRes.ok && result.success) {
                 setStatus("idle");
                 onClose();
-                window.location.href = `/?order_id=${response.razorpay_order_id}&gateway=razorpay`;
+                window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
               } else {
                 console.error("Verification failed response:", result);
-                setError("Payment verification failed via server.");
-                setStatus("error");
+                // Even if backend verification fails temporarily, we redirect to let the success page check again
+                window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
               }
             } catch (err) {
-              // If verification request fails (network error), we still redirect user to success page
-              // to avoid blocking them, assuming the payment itself on Razorpay was successful.
               console.error("Verification fetch failed", err);
               setStatus("idle");
               onClose();
-              window.location.href = `/?order_id=${response.razorpay_order_id}&gateway=razorpay`;
+              window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
             }
           },
 
@@ -279,8 +268,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md">
         <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-          <h2 className="text-xl font-bold">Complete Payment</h2>
-          <button onClick={onClose} className="text-2xl">&times;</button>
+          <h2 className="text-xl font-bold dark:text-gray-100">Complete Payment</h2>
+          <button onClick={onClose} className="text-2xl dark:text-gray-400">&times;</button>
         </div>
 
         <div className="p-6 min-h-[250px]">
@@ -299,7 +288,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
               )}
 
-              <div className="space-y-2 text-sm mt-4">
+              <div className="space-y-2 text-sm mt-4 dark:text-gray-300">
                 <div className="flex justify-between">
                   <span>Amount:</span>
                   <span>₹{baseAmount.toFixed(2)}</span>
@@ -319,7 +308,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   </div>
                 )}
 
-                <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                <div className="flex justify-between font-bold text-lg pt-2 border-t dark:border-gray-700">
                   <span>Total Payable:</span>
                   <span>₹{totalPayable.toFixed(2)}</span>
                 </div>
@@ -327,7 +316,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             </>
           ) : (
             <div className="text-center p-8">
-              <div className="w-8 h-8 border-2 border-dashed rounded-full animate-spin mx-auto"></div>
+              <div className="w-8 h-8 border-2 border-dashed rounded-full animate-spin mx-auto border-indigo-600"></div>
               <p className="mt-2 text-gray-500">Processing payment...</p>
               <p className="text-xs text-gray-400 mt-1">Connecting to secure gateway...</p>
             </div>
@@ -341,7 +330,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         </div>
 
         {status !== "processing" && (
-          <div className="p-6 bg-gray-50 rounded-b-2xl">
+          <div className="p-6 bg-gray-50 dark:bg-gray-700 rounded-b-2xl">
             <button
               onClick={handlePayment}
               className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-all"

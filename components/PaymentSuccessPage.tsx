@@ -26,23 +26,15 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 const idToken = await firebaseUser.getIdToken();
                 const params = new URLSearchParams(window.location.search);
                 const orderId = params.get("order_id");
-                const gateway = params.get("gateway");
-
+                
                 if (!orderId) {
                     setStatus('error');
                     setErrorMessage("Order ID not found in URL.");
                     return;
                 }
 
-                // If it's Razorpay, we trust the redirect flow because verification happens 
-                // inside the modal (or it's a client-side fallback which is trusted for UX).
-                // The server doesn't expose a public GET verification endpoint for Razorpay.
-                if (gateway === 'razorpay') {
-                    setStatus('success');
-                    return;
-                }
-
-                // Default flow for Cashfree (checks against the generic BACKEND_URL)
+                // Verify against our backend to ensure DB is updated. 
+                // This is crucial even for Razorpay to ensure 'fulfillOrder' has run.
                 const VERIFY_ORDER_URL = `${BACKEND_URL}/verify-order/${orderId}`;
 
                 const res = await fetch(VERIFY_ORDER_URL, {
@@ -52,9 +44,11 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 const data = await res.json().catch(() => null);
                 setOutput(data);
 
-                if (res.ok && data?.order_status === "PAID") {
+                if (res.ok && (data?.order_status === "PAID" || data?.order_status === "completed")) {
                     setStatus('success');
                 } else {
+                    // If it's a fallback order, we might show a different message, 
+                    // but usually we expect the backend to have the record.
                     setStatus('failed');
                     setErrorMessage(data?.message || `Verification failed. The server responded with status ${res.status}.`);
                 }
@@ -75,6 +69,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 <div className="text-center">
                     <div className="w-12 h-12 border-4 border-dashed rounded-full animate-spin border-indigo-500 mx-auto"></div>
                     <h2 className="mt-4 text-2xl font-bold text-gray-800 dark:text-gray-100">Verifying Payment...</h2>
+                    <p className="text-gray-500 mt-2">Please wait while we confirm your transaction.</p>
                 </div>
             )}
 
@@ -84,7 +79,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <h1 className="mt-4 text-3xl font-bold text-green-600">Payment Success ✔</h1>
-                    <p className="text-gray-600 dark:text-gray-300 mt-2">Your payment has been confirmed. Thank you!</p>
+                    <p className="text-gray-600 dark:text-gray-300 mt-2">Your payment has been confirmed and your account updated.</p>
                 </div>
             )}
 
@@ -94,7 +89,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <h1 className="mt-4 text-3xl font-bold text-red-600">Payment Not Confirmed</h1>
-                    <p className="text-gray-600 dark:text-gray-300 mt-2">{errorMessage || 'Your payment could not be confirmed. Please check your payment provider.'}</p>
+                    <p className="text-gray-600 dark:text-gray-300 mt-2">{errorMessage || 'Your payment could not be confirmed by the server. Please check your payment provider or contact support.'}</p>
                 </div>
             )}
             
@@ -111,7 +106,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
             {output && (
                 <div className="mt-8">
                     <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Server Response:</h3>
-                    <pre id="output" className="mt-2 p-4 bg-gray-100 dark:bg-gray-900 rounded-md text-xs overflow-x-auto">
+                    <pre id="output" className="mt-2 p-4 bg-gray-100 dark:bg-gray-900 rounded-md text-xs overflow-x-auto text-left">
                         {JSON.stringify(output, null, 2)}
                     </pre>
                 </div>

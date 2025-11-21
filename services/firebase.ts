@@ -8,18 +8,15 @@ import { getMessaging, type Messaging } from 'firebase/messaging';
 
 // -------------------- PAYMENT GATEWAY CONFIG --------------------
 
-// Razorpay Backend URL
-export const RAZORPAY_URL =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_RAZORPAY_URL) ||
-  "https://razorpay-backeb-nd.onrender.com";
+// IMPORTANT: This should point to your deployed Firebase Cloud Function URL (e.g., https://us-central1-your-project.cloudfunctions.net/api)
+// The external Render URLs likely do not have access to your Firestore to update Membership/History.
+export const BACKEND_URL =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) ||
+  "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/api"; 
 
-// Cashfree Backend URL
-export const CASHFREE_URL =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_CASHFREE_URL) ||
-  "https://partnerpayment-backend.onrender.com";
-
-// General Backend URL (defaults to Cashfree/Partner backend for general operations)
-export const BACKEND_URL = CASHFREE_URL;
+// Specific Gateway URLs (Only use if they are different from your main logic server)
+export const RAZORPAY_URL = BACKEND_URL; 
+export const CASHFREE_URL = BACKEND_URL;
 
 // Razorpay Public Key (Frontend Safe Only)
 export const RAZORPAY_KEY_ID =

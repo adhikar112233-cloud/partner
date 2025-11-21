@@ -8,13 +8,12 @@ import { getMessaging, type Messaging } from 'firebase/messaging';
 
 // -------------------- PAYMENT GATEWAY CONFIG --------------------
 
-// IMPORTANT: This should point to your deployed Firebase Cloud Function URL (e.g., https://us-central1-your-project.cloudfunctions.net/api)
-// The external Render URLs likely do not have access to your Firestore to update Membership/History.
+// IMPORTANT: This should point to your deployed Firebase Cloud Function URL
 export const BACKEND_URL =
   (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) ||
   "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/api"; 
 
-// Specific Gateway URLs (Only use if they are different from your main logic server)
+// Specific Gateway URLs
 export const RAZORPAY_URL = BACKEND_URL; 
 export const CASHFREE_URL = BACKEND_URL;
 

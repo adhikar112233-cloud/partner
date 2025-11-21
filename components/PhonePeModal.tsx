@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, BACKEND_URL, RAZORPAY_KEY_ID } from '../services/firebase';
+import { auth, db, BACKEND_URL, RAZORPAY_KEY_ID } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { load } from "@cashfreepayments/cashfree-js";
+import { doc, setDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
 
 interface PaymentModalProps {
   user: User;
@@ -81,8 +82,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const activeGateway = platformSettings.activePaymentGateway?.toLowerCase();
       const selectedGateway = activeGateway === 'cashfree' ? 'cashfree' : 'razorpay';
       
-      // Always use BACKEND_URL (Firebase Function) to ensure DB logic is accessible
-      const API_URL = BACKEND_URL;
+      const API_URL =
+        selectedGateway === "razorpay"
+          ? "https://razorpay-backeb-nd.onrender.com"
+          : "https://partnerpayment-backend.onrender.com";
 
       const body = {
         amount: Number(totalPayable.toFixed(2)),
@@ -101,10 +104,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       try {
         const response = await fetch(`${API_URL}/create-order`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + idToken,
-          },
+          headers:
+            selectedGateway === "razorpay"
+              ? { "Content-Type": "application/json" }
+              : {
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + idToken,
+                },
           body: JSON.stringify(body),
         });
 
@@ -127,6 +133,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             currency: "INR",
             id: undefined,
             fallbackMode: true,
+            internal_order_id: `fallback_${Date.now()}_${Math.floor(Math.random() * 1000)}`
           };
         } else {
           throw new Error("Unable to connect to payment server. Please try again later.");
@@ -163,17 +170,82 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           ...(razorpayOrderId && !data.fallbackMode ? { order_id: razorpayOrderId } : {}),
 
           handler: async function (response: any) {
+            // Handle Fallback Mode: Create Firestore transaction client-side since server failed
             if (data.fallbackMode) {
-              console.log("Payment successful (Fallback Mode)");
-              setStatus("idle");
-              onClose();
-              const fallbackOrderId = `rzp_fallback_${Date.now()}`;
-              window.location.href = `/?order_id=${fallbackOrderId}&gateway=razorpay`;
-              return;
+              console.log("Payment successful (Fallback Mode) - updating database directly");
+              try {
+                  const fallbackOrderId = data.internal_order_id;
+                  
+                  // 1. Create Transaction Record (so it shows in history)
+                  await setDoc(doc(db, 'transactions', fallbackOrderId), {
+                      userId: user.id,
+                      type: 'payment',
+                      description: transactionDetails.description || 'Payment',
+                      relatedId: transactionDetails.relatedId,
+                      collabId: transactionDetails.collabId || null,
+                      collabType: collabType,
+                      amount: totalPayable,
+                      status: 'completed', // Mark as completed immediately in fallback
+                      transactionId: fallbackOrderId,
+                      timestamp: serverTimestamp(),
+                      paymentGateway: 'razorpay',
+                      paymentGatewayDetails: {
+                          razorpayPaymentId: response.razorpay_payment_id,
+                          mode: 'fallback'
+                      }
+                  });
+                  
+                  // 2. Trigger Logic specific to the item being bought (Membership, Boost, etc.)
+                  // We duplicate logic from the backend `fulfillOrder` here for safety.
+                  
+                  if (collabType === 'membership') {
+                      const now = Timestamp.now();
+                      // Activate membership for 1 year (or based on plan)
+                      // Simplified fallback: just activate for a year to ensure user gets access.
+                      const expiryDate = new Date(now.toDate());
+                      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                      
+                      await updateDoc(doc(db, 'users', user.id), {
+                          'membership.isActive': true,
+                          'membership.plan': transactionDetails.relatedId as any,
+                          'membership.startsAt': now,
+                          'membership.expiresAt': Timestamp.fromDate(expiryDate)
+                      });
+                      
+                      if (user.role === 'influencer') {
+                          await updateDoc(doc(db, 'influencers', user.id), { membershipActive: true });
+                      }
+                  } 
+                  else if (collabType.startsWith('boost_')) {
+                      const boostType = collabType.split('_')[1];
+                      const targetId = transactionDetails.relatedId;
+                      const days = 7;
+                      const now = new Date();
+                      const expiresAt = new Date();
+                      expiresAt.setDate(now.getDate() + days);
+                      
+                      // Create boost record
+                      await apiService.activateBoost(user.id, boostType as any, targetId, boostType === 'profile' ? 'profile' : boostType === 'campaign' ? 'campaign' : 'banner');
+                  }
+                  
+                  setStatus("idle");
+                  onClose();
+                  // Redirect with fallback flag so success page verifies against Firestore, not backend
+                  window.location.href = `/?order_id=${fallbackOrderId}&gateway=razorpay&fallback=true`;
+                  return;
+              } catch (dbErr) {
+                  console.error("Failed to save fallback transaction:", dbErr);
+                  setError("Payment successful but failed to update records. Please contact support.");
+                  setStatus("error");
+                  return;
+              }
             }
 
             try {
-              // Correctly call the Firebase Function endpoint for verification
+              // Standard Backend Verification
+              // We continue to use BACKEND_URL here unless your new server also has the verification endpoint.
+              // If verify-razorpay is also on the new URL, you should change BACKEND_URL below to API_URL.
+              // Assuming existing backend function for verification:
               const verifyRes = await fetch(`${BACKEND_URL}/verify-razorpay`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },

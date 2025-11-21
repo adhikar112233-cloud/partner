@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { auth, BACKEND_URL } from '../services/firebase';
+import { auth, BACKEND_URL, db } from '../services/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface PaymentSuccessPageProps {
     user: User;
@@ -10,7 +11,7 @@ interface PaymentSuccessPageProps {
 
 const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplete }) => {
     const [status, setStatus] = useState<'verifying' | 'success' | 'failed' | 'error'>('verifying');
-    const [output, setOutput] = useState<object | null>(null);
+    const [output, setOutput] = useState<any | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     useEffect(() => {
@@ -26,11 +27,26 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 const idToken = await firebaseUser.getIdToken();
                 const params = new URLSearchParams(window.location.search);
                 const orderId = params.get("order_id");
+                const isFallback = params.get("fallback") === "true";
                 
                 if (!orderId) {
                     setStatus('error');
                     setErrorMessage("Order ID not found in URL.");
                     return;
+                }
+
+                // If fallback mode was used, verify directly against Firestore
+                if (isFallback) {
+                    const docRef = doc(db, 'transactions', orderId);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists() && docSnap.data().status === 'completed') {
+                        setStatus('success');
+                        return;
+                    } else {
+                        setStatus('failed');
+                        setErrorMessage("Could not verify payment status locally.");
+                        return;
+                    }
                 }
 
                 // Verify against our backend to ensure DB is updated. 
@@ -47,10 +63,15 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 if (res.ok && (data?.order_status === "PAID" || data?.order_status === "completed")) {
                     setStatus('success');
                 } else {
-                    // If it's a fallback order, we might show a different message, 
-                    // but usually we expect the backend to have the record.
-                    setStatus('failed');
-                    setErrorMessage(data?.message || `Verification failed. The server responded with status ${res.status}.`);
+                    // Check Firestore one last time in case backend returned pending but async process finished
+                    const docRef = doc(db, 'transactions', orderId);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists() && docSnap.data().status === 'completed') {
+                        setStatus('success');
+                    } else {
+                        setStatus('failed');
+                        setErrorMessage(data?.message || `Verification failed. The server responded with status ${res.status}.`);
+                    }
                 }
 
             } catch (err: any) {
@@ -103,7 +124,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 </div>
             )}
             
-            {output && (
+            {output && !output.order_status && (
                 <div className="mt-8">
                     <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Server Response:</h3>
                     <pre id="output" className="mt-2 p-4 bg-gray-100 dark:bg-gray-900 rounded-md text-xs overflow-x-auto text-left">

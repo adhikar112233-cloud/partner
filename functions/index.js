@@ -1,5 +1,8 @@
 
 
+
+
+
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
@@ -58,7 +61,7 @@ const getPaymentSettings = async () => {
         activePaymentGateway: process.env.ACTIVE_PAYMENT_GATEWAY || 'razorpay',
         paymentGatewayApiId: process.env.CASHFREE_ID || '',
         paymentGatewayApiSecret: process.env.CASHFREE_SECRET || '',
-        razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_RhsBzbfkYo5DFA',
+        razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_RhsBzExfxY05FA',
         razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
     };
 

@@ -18,10 +18,6 @@ export const firebaseConfig = {
   measurementId: "G-QW74JFCEQ3"
 };
 
-// Backend URLs for different Payment Gateways
-export const CASHFREE_URL = "https://partnerpayment-backend.onrender.com";
-export const RAZORPAY_URL = "https://razorpay-backeb-nd.onrender.com";
-
 // Constants - Helper to get env vars in both Vite and Next.js environments safely
 const getEnv = (key: string, viteKey: string) => {
   // Check for Vite environment (import.meta.env)
@@ -43,10 +39,13 @@ const getEnv = (key: string, viteKey: string) => {
   return undefined;
 };
 
-export const RAZORPAY_KEY_ID = getEnv('NEXT_PUBLIC_RAZORPAY_KEY_ID', 'VITE_RAZORPAY_KEY_ID') || "rzp_test_RhsBzbfkYo5DFA";
+// Export RAZORPAY_KEY_ID with a default value fallback
+export const RAZORPAY_KEY_ID = getEnv('NEXT_PUBLIC_RAZORPAY_KEY_ID', 'VITE_RAZORPAY_KEY_ID') || "rzp_test_RhsBzExfxY05FA";
 
-// Default Backend URL (can be used for general operations or fallback)
-export const BACKEND_URL = CASHFREE_URL;
+// Backend URLs - Explicitly separated for dual backend support
+export const CASHFREE_URL = "https://partnerpayment-backend.onrender.com"; 
+export const RAZORPAY_URL = "https://razorpay-backeb-nd.onrender.com"; 
+export const BACKEND_URL = CASHFREE_URL; // General purpose backend / Partner Payment Backend
 
 // Declare variables that will hold the Firebase services.
 let app: FirebaseApp;
@@ -56,7 +55,6 @@ let storage: FirebaseStorage;
 let messaging: Messaging | null = null;
 
 // A simple check to see if the config has been filled out.
-// This is for developer guidance and allows the app to show a helpful message.
 export const isFirebaseConfigured = !!(
   firebaseConfig &&
   firebaseConfig.apiKey &&
@@ -65,18 +63,12 @@ export const isFirebaseConfigured = !!(
 );
 
 if (isFirebaseConfigured) {
-  // Initialize Firebase. This will throw a specific error from the Firebase SDK
-  // if the config values are present but incorrect (e.g., invalid API key).
-  // This is desirable as it provides a clear, actionable error in the console
-  // instead of causing confusing downstream errors.
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
 
   try {
-    // Messaging can fail in environments where it's not supported.
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       messaging = getMessaging(app);
     }
@@ -84,14 +76,8 @@ if (isFirebaseConfigured) {
     console.warn("Firebase Messaging is not supported in this environment.", e);
   }
 } else {
-    // If the config is not filled out, the isFirebaseConfigured flag will be false,
-    // and the App.tsx component will render an error message guiding the developer.
-    // The services (auth, db) will be undefined, but the app won't try to use them.
-    console.warn("Firebase config is incomplete or contains placeholder values. Firebase has not been initialized.");
+    console.warn("Firebase config is incomplete. Firebase has not been initialized.");
 }
 
-
-// We intentionally export potentially uninitialized variables.
-// The isFirebaseConfigured flag MUST be checked by consumers before using these exports.
 // @ts-ignore
 export { auth, db, storage, messaging, RecaptchaVerifier, signInWithPhoneNumber };

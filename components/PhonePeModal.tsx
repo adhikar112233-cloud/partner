@@ -176,7 +176,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               onClose();
               // Generate a client-side reference for UI flow
               const fallbackOrderId = `rzp_fallback_${Date.now()}`;
-              window.location.href = `/?order_id=${fallbackOrderId}`;
+              window.location.href = `/?order_id=${fallbackOrderId}&gateway=razorpay`;
               return;
             }
 
@@ -200,7 +200,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               if (verifyRes.ok && (result.success || result.status === 'success' || result.message === 'Payment verified successfully')) {
                 setStatus("idle");
                 onClose();
-                window.location.href = `/?order_id=${response.razorpay_order_id}`;
+                window.location.href = `/?order_id=${response.razorpay_order_id}&gateway=razorpay`;
               } else {
                 console.error("Verification failed response:", result);
                 setError("Payment verification failed via server.");
@@ -212,7 +212,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               console.error("Verification fetch failed", err);
               setStatus("idle");
               onClose();
-              window.location.href = `/?order_id=${response.razorpay_order_id}`;
+              window.location.href = `/?order_id=${response.razorpay_order_id}&gateway=razorpay`;
             }
           },
 

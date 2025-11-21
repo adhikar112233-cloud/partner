@@ -6,7 +6,28 @@ import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import { getMessaging, type Messaging } from 'firebase/messaging';
 
-// Your web app's Firebase configuration
+// -------------------- PAYMENT GATEWAY CONFIG --------------------
+
+// Razorpay Backend URL
+export const RAZORPAY_URL =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_RAZORPAY_URL) ||
+  "https://razorpay-backeb-nd.onrender.com";
+
+// Cashfree Backend URL
+export const CASHFREE_URL =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_CASHFREE_URL) ||
+  "https://partnerpayment-backend.onrender.com";
+
+// General Backend URL (defaults to Cashfree/Partner backend for general operations)
+export const BACKEND_URL = CASHFREE_URL;
+
+// Razorpay Public Key (Frontend Safe Only)
+export const RAZORPAY_KEY_ID =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_RAZORPAY_KEY_ID) ||
+  "rzp_test_RiFI4JfUCt7mQ9"; 
+
+
+// -------------------- FIREBASE CONFIG --------------------
 export const firebaseConfig = {
   apiKey: "AIzaSyBxqtqQ8QH6vQ_VIiu7bapLCnHveldxSP0",
   authDomain: "bigyapon2-cfa39.firebaseapp.com",
@@ -18,52 +39,25 @@ export const firebaseConfig = {
   measurementId: "G-QW74JFCEQ3"
 };
 
-// Constants - Helper to get env vars in both Vite and Next.js environments safely
-const getEnv = (key: string, viteKey: string) => {
-  // Check for Vite environment (import.meta.env)
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[viteKey]) {
-       // @ts-ignore
-       return import.meta.env[viteKey];
-    }
-  } catch (e) { /* ignore */ }
 
-  // Check for standard process.env (Next.js / CRA)
-  try {
-    if (typeof process !== 'undefined' && process.env && process.env[key]) {
-       return process.env[key];
-    }
-  } catch (e) { /* ignore */ }
-
-  return undefined;
-};
-
-// Export RAZORPAY_KEY_ID with a default value fallback
-export const RAZORPAY_KEY_ID = getEnv('NEXT_PUBLIC_RAZORPAY_KEY_ID', 'VITE_RAZORPAY_KEY_ID') || "rzp_test_RhsBzExfxY05FA";
-
-// Backend URLs - Explicitly separated for dual backend support
-export const CASHFREE_URL = "https://partnerpayment-backend.onrender.com"; 
-export const RAZORPAY_URL = "https://razorpay-backeb-nd.onrender.com"; 
-export const BACKEND_URL = CASHFREE_URL; // General purpose backend / Partner Payment Backend
-
-// Declare variables that will hold the Firebase services.
-let app: FirebaseApp;
-let auth: Auth;
-let db: Firestore;
-let storage: FirebaseStorage;
-let messaging: Messaging | null = null;
+// -------------------- INITIALIZE FIREBASE --------------------
+let app: FirebaseApp | undefined;
+let auth: Auth | undefined;
+let db: Firestore | undefined;
+let storage: FirebaseStorage | undefined;
+let messaging: Messaging | undefined;
 
 // A simple check to see if the config has been filled out.
 export const isFirebaseConfigured = !!(
   firebaseConfig &&
   firebaseConfig.apiKey &&
   firebaseConfig.projectId &&
-  !firebaseConfig.apiKey.includes('YOUR_') 
+  !firebaseConfig.apiKey.includes('YOUR_')
 );
 
 if (isFirebaseConfigured) {
-  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+  app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
@@ -76,8 +70,15 @@ if (isFirebaseConfigured) {
     console.warn("Firebase Messaging is not supported in this environment.", e);
   }
 } else {
-    console.warn("Firebase config is incomplete. Firebase has not been initialized.");
+  console.warn("Firebase config is incomplete.");
 }
 
-// @ts-ignore
-export { auth, db, storage, messaging, RecaptchaVerifier, signInWithPhoneNumber };
+// -------------------- EXPORTS --------------------
+export {
+  auth,
+  db,
+  storage,
+  messaging,
+  RecaptchaVerifier,
+  signInWithPhoneNumber
+};

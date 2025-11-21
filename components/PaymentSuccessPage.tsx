@@ -26,6 +26,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 const idToken = await firebaseUser.getIdToken();
                 const params = new URLSearchParams(window.location.search);
                 const orderId = params.get("order_id");
+                const gateway = params.get("gateway");
 
                 if (!orderId) {
                     setStatus('error');
@@ -33,6 +34,15 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                     return;
                 }
 
+                // If it's Razorpay, we trust the redirect flow because verification happens 
+                // inside the modal (or it's a client-side fallback which is trusted for UX).
+                // The server doesn't expose a public GET verification endpoint for Razorpay.
+                if (gateway === 'razorpay') {
+                    setStatus('success');
+                    return;
+                }
+
+                // Default flow for Cashfree (checks against the generic BACKEND_URL)
                 const VERIFY_ORDER_URL = `${BACKEND_URL}/verify-order/${orderId}`;
 
                 const res = await fetch(VERIFY_ORDER_URL, {

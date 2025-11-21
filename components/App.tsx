@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
-import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification } from '../types';
+import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus } from '../types';
 import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
@@ -225,7 +224,7 @@ const MembershipInactiveBanner: React.FC<{ onUpgrade: () => void }> = ({ onUpgra
 );
 
 const CreatorVerificationBanner: React.FC<{
-    status: 'not_submitted' | 'rejected';
+    status: CreatorVerificationStatus;
     onVerify: () => void;
     reason?: string;
 }> = ({ status, onVerify, reason }) => {

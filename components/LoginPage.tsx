@@ -6,6 +6,10 @@
 
 
 
+
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { LogoIcon, GoogleIcon, ExclamationTriangleIcon } from './Icons';
 import { UserRole, PlatformSettings } from '../types';
@@ -257,7 +261,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
                         </li>
                          <li><strong>Check Other Providers:</strong> While you're there, ensure 'Email/Password' and 'Google' are also enabled for all login methods to function correctly.</li>
                     </ol>
-                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">After enabling the provider, you must <strong>refresh this page</strong>.</p>
+                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">After enabling the provider, you must <strong>refresh this page</strong>.</p>
                 </>
             );
         } else if (error === 'auth/auth-domain-config-required') {

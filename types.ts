@@ -621,24 +621,12 @@ export interface LiveHelpSession {
   assignedStaffName?: string;
   assignedStaffAvatar?: string;
   status: 'unassigned' | 'open' | 'closed';
-  createdAt: any; // Firestore Timestamp
-  updatedAt: any; // Firestore Timestamp
-  userHasUnread: boolean;
-  staffHasUnread: boolean;
-}
-
-export interface LiveHelpMessage {
-  id: string;
-  sessionId: string;
-  senderId: string;
-  senderName: string;
-  text: string;
-  timestamp: any; // Firestore Timestamp
+  createdAt: any;
+  updatedAt: any;
 }
 
 export interface RefundRequest {
-  id: string; // doc id
-  // FIX: Renamed 'collabId' to 'collaborationId' to fix duplicate identifier error and align with other types.
+  id: string;
   collaborationId: string;
   collabType: 'direct' | 'campaign' | 'ad_slot' | 'banner_booking';
   collabTitle: string;
@@ -649,68 +637,59 @@ export interface RefundRequest {
   bankDetails: string;
   panNumber: string;
   description: string;
-  status: 'pending' | 'approved' | 'rejected' | 'on_hold' | 'processing';
-  rejectionReason?: string;
-  timestamp: any; // Firestore Timestamp
   collabId?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'processing';
+  rejectionReason?: string;
+  timestamp: any;
 }
 
-// Fix: Moved CombinedCollabItem from AdminPanel.tsx to types.ts to be shared across components.
-export interface CombinedCollabItem {
+export type NotificationType = 'new_collab_request' | 'collab_update' | 'work_submitted' | 'collab_completed' | 'new_campaign_applicant' | 'application_update' | 'new_message' | 'payment_received' | 'payout_update' | 'system';
+
+export interface AppNotification {
   id: string;
-  type: 'Direct' | 'Campaign' | 'Live TV' | 'Banner Ad';
+  userId: string;
   title: string;
-  customerName: string;
-  customerAvatar: string;
-  customerPiNumber?: string;
-  providerName: string;
-  providerAvatar: string;
-  providerPiNumber?: string;
-  date: Date | undefined;
-  status: CollabRequestStatus | CampaignApplicationStatus | AdBookingStatus;
-  paymentStatus: 'Paid' | 'Unpaid';
-  payoutStatus: 'N/A' | 'Requested' | 'Completed';
-  originalData: AnyCollaboration;
+  body: string;
+  type: NotificationType;
+  view: View;
+  timestamp: any;
+  isRead: boolean;
+  relatedId?: string;
+}
+
+export interface LiveHelpMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: any;
 }
 
 export interface QuickReply {
   id: string;
   text: string;
-  createdAt: any; // Firestore Timestamp
-}
-
-export type NotificationType = 
-  | 'new_collab_request' 
-  | 'collab_update' 
-  | 'new_campaign_applicant' 
-  | 'application_update' 
-  | 'work_submitted' 
-  | 'collab_completed' 
-  | 'new_message'
-  | 'payout_status' 
-  | 'dispute_update'
-  | 'ad_booking_request'
-  | 'ad_booking_update';
-
-export interface AppNotification {
-  id: string;
-  userId: string; // The user who should receive this notification
-  title: string;
-  body: string;
-  type: NotificationType;
-  relatedId: string; // e.g., the collab request ID
-  view: View; // The view to navigate to on click
-  isRead: boolean;
-  timestamp: any; // Firestore Timestamp
-  actor?: { // The person who performed the action
-    name: string;
-    avatar: string;
-  };
 }
 
 export interface Partner {
   id: string;
   name: string;
   logoUrl: string;
-  createdAt: any; // Firestore Timestamp
+  createdAt: any;
+}
+
+export interface CombinedCollabItem {
+    id: string;
+    type: string;
+    title: string;
+    customerName: string;
+    customerAvatar: string;
+    customerPiNumber?: string;
+    providerName: string;
+    providerAvatar: string;
+    providerPiNumber?: string;
+    date: Date | undefined;
+    status: string;
+    paymentStatus: string;
+    payoutStatus: string;
+    originalData: AnyCollaboration;
 }

@@ -40,6 +40,24 @@ const StatusBadge: React.FC<{ status: PayoutQueueItem['status'] }> = ({ status }
     return <span className={`${base} ${colors[status]}`}>{status.replace('_', ' ')}</span>;
 };
 
+const getTime = (ts: any): number => {
+    if (!ts) return 0;
+    if (ts instanceof Date) return ts.getTime();
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts).getTime();
+    return 0;
+};
+
+const safeToLocaleString = (ts: any): string => {
+    if (!ts) return 'N/A';
+    if (ts instanceof Date) return ts.toLocaleString();
+    if (typeof ts.toDate === 'function') return ts.toDate().toLocaleString();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis()).toLocaleString();
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts).toLocaleString();
+    return 'Invalid Date';
+}
+
 const ActionDropdown: React.FC<{ item: PayoutQueueItem, onRequestAction: (item: PayoutQueueItem, status: PayoutQueueItem['status']) => void }> = ({ item, onRequestAction }) => {
     const [isOpen, setIsOpen] = useState(false);
     
@@ -88,7 +106,7 @@ const RequestDetailsModal: React.FC<{ item: PayoutQueueItem, onClose: () => void
                         <DetailRow label="Type">{item.requestType}</DetailRow>
                         <DetailRow label="Status"><StatusBadge status={item.status} /></DetailRow>
                         <DetailRow label="Amount">₹{item.amount.toLocaleString('en-IN')}</DetailRow>
-                        <DetailRow label="Date">{item.timestamp?.toDate?.().toLocaleString()}</DetailRow>
+                        <DetailRow label="Date">{safeToLocaleString(item.timestamp)}</DetailRow>
                     </dl>
                     
                     <h3 className="font-bold text-lg mt-6 mb-4 border-t pt-4">User Information</h3>
@@ -371,7 +389,7 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
             }
         });
 
-        return [...p, ...r, ...d].sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+        return [...p, ...r, ...d].sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
     }, [payouts, refunds, dailyPayouts, collaborations, userMap]);
     
     const filteredRequests = useMemo(() => {
@@ -525,7 +543,7 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
                                     </div>
                                 </td>
                                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                    {item.timestamp?.toDate?.().toLocaleDateString()}
+                                    {safeToLocaleString(item.timestamp)}
                                 </td>
                                 <td className="px-4 py-3 whitespace-nowrap text-sm">
                                     <StatusBadge status={item.status} />

@@ -1,5 +1,10 @@
 
 
+
+
+
+
+
 import { User, UserRole, PlatformSettings, Membership } from '../types';
 import { auth, db, isFirebaseConfigured, RecaptchaVerifier, signInWithPhoneNumber } from './firebase';
 import { apiService } from './apiService';
@@ -74,13 +79,16 @@ const getUserProfile = async (uid: string): Promise<Omit<User, 'id' | 'email'>> 
             creatorVerificationDetails: data.creatorVerificationDetails || {},
             msmeRegistrationNumber: data.msmeRegistrationNumber || '',
             staffPermissions: data.staffPermissions || (data.role === 'staff' ? ['super_admin'] : []),
+            referralCode: data.referralCode,
+            referredBy: data.referredBy,
+            coins: data.coins || 0,
         };
     }
     throw new Error('User profile not found.');
 };
 
 export const authService = {
-    register: async (email: string, password: string, role: UserRole, name: string, companyName: string, mobileNumber: string): Promise<User> => {
+    register: async (email: string, password: string, role: UserRole, name: string, companyName: string, mobileNumber: string, referralCode?: string): Promise<User> => {
         if (!isFirebaseConfigured) throw new Error("Firebase is not configured.");
         
         if (!isValidEmail(email)) {
@@ -126,6 +134,7 @@ export const authService = {
             creatorVerificationStatus: 'not_submitted' as const,
             creatorVerificationDetails: {},
             msmeRegistrationNumber: '',
+            coins: 0,
         };
 
         // Assign default 'super_admin' role to the first staff member
@@ -135,6 +144,21 @@ export const authService = {
 
         // Create a document in Firestore for the user's profile
         await setDoc(doc(db, 'users', firebaseUser.uid), userProfileData);
+
+        // If a referral code was provided, attempt to apply it
+        if (referralCode) {
+            try {
+                await apiService.applyReferralCode(firebaseUser.uid, referralCode);
+                // Update local object to reflect potential coin change if we were to return it immediately
+                // though applyReferralCode is async and transactional. 
+                // For UI consistency, we might rely on the subsequent profile fetch or real-time update.
+                userProfileData.coins = 20; 
+                userProfileData.referredBy = referralCode;
+            } catch (error) {
+                console.error("Failed to apply referral code:", error);
+                // We don't fail registration if referral fails, just log it.
+            }
+        }
 
         // If the new user is an influencer, create a default public profile for them
         if (role === 'influencer') {
@@ -287,6 +311,7 @@ export const authService = {
                     creatorVerificationStatus: 'not_submitted' as const,
                     creatorVerificationDetails: {},
                     msmeRegistrationNumber: '',
+                    coins: 0,
                 };
                 await setDoc(userDocRef, newUserProfile);
 

@@ -1,5 +1,6 @@
 
 
+
 // ... (imports remain same)
 import { Influencer, Message, User, PlatformSettings, Attachment, CollaborationRequest, CollabRequestStatus, Conversation, ConversationParticipant, Campaign, CampaignApplication, LiveTvChannel, AdSlotRequest, BannerAd, BannerAdBookingRequest, SupportTicket, TicketReply, SupportTicketStatus, Membership, UserRole, PayoutRequest, CampaignApplicationStatus, AdBookingStatus, AnyCollaboration, DailyPayoutRequest, Post, Comment, Dispute, MembershipPlan, Transaction, KycDetails, KycStatus, PlatformBanner, PushNotification, Boost, BoostType, LiveHelpMessage, LiveHelpSession, RefundRequest, View, QuickReply, CreatorVerificationDetails, CreatorVerificationStatus, AppNotification, NotificationType, Partner } from '../types';
 import { db, storage, auth, BACKEND_URL, RAZORPAY_KEY_ID } from './firebase';
@@ -26,6 +27,7 @@ import {
   onSnapshot,
   limit,
   startAfter,
+  runTransaction,
   QueryDocumentSnapshot,
   DocumentData,
 } from 'firebase/firestore';
@@ -365,4 +367,110 @@ export const apiService = {
   updatePartner: async (id: string, data: Partial<Omit<Partner, 'id'| 'createdAt'>>): Promise<void> => { /*...*/ },
   deletePartner: async (id: string): Promise<void> => { /*...*/ },
   uploadPartnerLogo: (file: File): Promise<string> => { /*...*/ return Promise.resolve("") },
+
+  // --- Referral System ---
+  generateReferralCode: async (userId: string): Promise<string> => {
+    // 1. Try External API
+    try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("User not logged in");
+        const token = await user.getIdToken();
+
+        // Timeout to prevent long waits
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); 
+
+        const response = await fetch('https://referal-backend-dx82.onrender.com/generateReferral', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ uid: userId }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            const data = await response.json();
+            // Robust check for different response formats
+            const code = data.referralCode || data.referral_code || data.code;
+            if (code && typeof code === 'string') return code;
+        }
+        
+        // If response not ok or no code, throw to trigger fallback
+        throw new Error(`External service returned ${response.status} or invalid data`);
+    } catch (apiError) {
+        console.warn("Referral API failed, using fallback generation:", apiError);
+        
+        // 2. Fallback: Generate local code
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let code = "REF";
+        for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        
+        // 3. Save to Firestore
+        try {
+            const userRef = doc(db, 'users', userId);
+            // Use setDoc with merge to be safe
+            await setDoc(userRef, { referralCode: code }, { merge: true });
+            return code;
+        } catch (dbError) {
+            console.error("Critical: Failed to save referral code locally:", dbError);
+            throw new Error("Failed to generate referral code. Please check your internet connection.");
+        }
+    }
+  },
+
+  applyReferralCode: async (userId: string, code: string): Promise<void> => {
+    // Use a transaction to ensure integrity
+    await runTransaction(db, async (transaction) => {
+        // 1. Validate code: Find user who owns this referral code
+        const q = query(collection(db, 'users'), where('referralCode', '==', code), limit(1));
+        const referrerSnapshot = await getDocs(q);
+        
+        if (referrerSnapshot.empty) {
+            throw new Error("Invalid referral code.");
+        }
+        
+        const referrerDoc = referrerSnapshot.docs[0];
+        const referrerId = referrerDoc.id;
+        const referrerData = referrerDoc.data();
+
+        // 2. Validate User (Self)
+        const userRef = doc(db, 'users', userId);
+        const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists()) throw new Error("User does not exist.");
+        const userData = userDoc.data();
+
+        if (userData.referredBy) throw new Error("You have already been referred.");
+        if (userId === referrerId) throw new Error("You cannot refer yourself.");
+
+        // 3. Update Referrer (Add 50 coins)
+        const newReferrerCoins = (referrerData.coins || 0) + 50;
+        transaction.update(referrerDoc.ref, { coins: newReferrerCoins });
+
+        // 4. Update User (Add 20 coins, set referredBy)
+        const newUserCoins = (userData.coins || 0) + 20;
+        transaction.update(userRef, {
+            coins: newUserCoins,
+            referredBy: code,
+            referralAppliedAt: serverTimestamp()
+        });
+
+        // 5. Create Audit Record
+        const referralRef = doc(collection(db, 'referrals'));
+        transaction.set(referralRef, {
+            referrerUid: referrerId,
+            referredUid: userId,
+            referrerCode: code,
+            referredCode: userData.referralCode || 'PENDING', // Might be null if not generated yet
+            awarded: true,
+            referrerCoins: 50,
+            referredCoins: 20,
+            createdAt: serverTimestamp()
+        });
+    });
+  }
 };

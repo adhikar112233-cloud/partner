@@ -87,6 +87,17 @@ export interface User {
   notificationPreferences?: {
     enabled: boolean;
   };
+  // Referral Fields
+  referralCode?: string;
+  referredBy?: string;
+  referralAppliedAt?: any; // Timestamp
+  coins?: number;
+}
+
+export interface ReferralSettings {
+  referrerCoins: number;
+  referredCoins: number;
+  requireCompleteProfile: boolean;
 }
 
 export interface Influencer {

@@ -10,6 +10,16 @@ interface MembershipPageProps {
     onActivationSuccess: () => void;
 }
 
+const toJsDate = (ts: any): Date | undefined => {
+    if (!ts) return undefined;
+    if (ts instanceof Date) return ts;
+    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
+    return undefined;
+};
+
 const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings, onActivationSuccess }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -60,9 +70,10 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
 
         const { plan, isActive, expiresAt, usage } = effectiveMembership;
         
-        const isCurrentlyActive = effectiveMembership.isActive && expiresAt && (expiresAt as Timestamp).toDate() > new Date();
+        const expiryDateObj = toJsDate(expiresAt);
+        const isCurrentlyActive = effectiveMembership.isActive && expiryDateObj && expiryDateObj > new Date();
 
-        const expiryDate = (expiresAt as Timestamp)?.toDate?.()?.toLocaleDateString() ?? 'N/A';
+        const expiryDate = expiryDateObj?.toLocaleDateString() ?? 'N/A';
 
         const usageLimits: Record<MembershipPlan, number | typeof Infinity> = {
             free: 1,

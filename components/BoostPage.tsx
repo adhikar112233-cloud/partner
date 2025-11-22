@@ -13,6 +13,16 @@ interface BoostPageProps {
     onBoostActivated: () => void;
 }
 
+const toJsDate = (ts: any): Date | undefined => {
+    if (!ts) return undefined;
+    if (ts instanceof Date) return ts;
+    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
+    return undefined;
+};
+
 const BoostPage: React.FC<BoostPageProps> = ({ user, platformSettings, onBoostActivated }) => {
     const [boosts, setBoosts] = useState<Boost[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -27,7 +37,7 @@ const BoostPage: React.FC<BoostPageProps> = ({ user, platformSettings, onBoostAc
             .finally(() => setIsLoading(false));
     }, [user.id]);
 
-    const activeProfileBoost = boosts.find(b => b.targetType === 'profile' && (b.expiresAt as Timestamp).toDate() > new Date());
+    const activeProfileBoost = boosts.find(b => b.targetType === 'profile' && toJsDate(b.expiresAt)! > new Date());
 
     const discountSetting = platformSettings.discountSettings.creatorProfileBoost;
 
@@ -49,7 +59,7 @@ const BoostPage: React.FC<BoostPageProps> = ({ user, platformSettings, onBoostAc
                 activeProfileBoost ? (
                     <div className="mt-4 text-center py-4 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-lg font-semibold text-green-700">Your profile is currently boosted!</p>
-                        <p className="text-gray-600">Expires on: {(activeProfileBoost.expiresAt as Timestamp).toDate().toLocaleDateString()}</p>
+                        <p className="text-gray-600">Expires on: {toJsDate(activeProfileBoost.expiresAt)?.toLocaleDateString()}</p>
                     </div>
                 ) : (
                     <div className="mt-4 text-center py-4 bg-gray-50 border border-gray-200 rounded-lg">

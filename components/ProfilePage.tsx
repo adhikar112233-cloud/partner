@@ -1,8 +1,19 @@
+
+
+
+
+
+
+
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import { Timestamp } from 'firebase/firestore';
+import { GiftIcon, CoinIcon } from './Icons';
 
 interface ProfilePageProps {
   user: User;
@@ -42,6 +53,156 @@ const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) =>
         />
     </button>
 );
+
+const toJsDate = (ts: any): Date | undefined => {
+    if (!ts) return undefined;
+    if (ts instanceof Date) return ts;
+    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
+    return undefined;
+};
+
+// Referral Section Component
+const ReferralSection: React.FC<{ user: User; onUpdateUser: (updates: Partial<User>) => void }> = ({ user, onUpdateUser }) => {
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [redeemCode, setRedeemCode] = useState('');
+    const [redeemStatus, setRedeemStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
+    const [redeemMessage, setRedeemMessage] = useState('');
+
+    const handleGenerate = async () => {
+        setIsGenerating(true);
+        try {
+            const code = await apiService.generateReferralCode(user.id);
+            onUpdateUser({ referralCode: code });
+        } catch (error: any) {
+            console.error("Failed to generate code:", error);
+            alert("Failed to generate referral code. Please check your connection and try again.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleRedeem = async () => {
+        if (!redeemCode.trim()) return;
+        setRedeemStatus('processing');
+        setRedeemMessage('');
+        try {
+            await apiService.applyReferralCode(user.id, redeemCode.trim());
+            setRedeemStatus('success');
+            setRedeemMessage('Code redeemed! +20 Coins added to your wallet.');
+            // Optimistic update, actual data refresh usually happens via parent or refresh logic
+            onUpdateUser({ 
+                referredBy: redeemCode.trim(), 
+                coins: (user.coins || 0) + 20 
+            });
+        } catch (error: any) {
+            console.error("Redeem failed:", error);
+            setRedeemStatus('error');
+            setRedeemMessage(error.message || 'Invalid code or already redeemed.');
+        }
+    };
+
+    const shareLink = user.referralCode ? `${window.location.origin}/?ref=${user.referralCode}` : '';
+
+    const copyLink = () => {
+        if (shareLink) {
+            navigator.clipboard.writeText(shareLink);
+            alert("Referral link copied to clipboard!");
+        }
+    };
+
+    return (
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-gray-800 dark:to-gray-700 rounded-2xl p-6 shadow-inner border border-indigo-100 dark:border-gray-600">
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                    <div className="bg-white p-2 rounded-full shadow-sm">
+                        <GiftIcon className="w-6 h-6 text-purple-600" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">Rewards & Referrals</h3>
+                </div>
+                <div className="flex items-center gap-2 bg-white dark:bg-gray-800 px-4 py-2 rounded-full shadow-sm border border-yellow-200">
+                    <CoinIcon className="w-5 h-5 text-yellow-500" />
+                    <span className="font-bold text-gray-800 dark:text-gray-100">{user.coins || 0} Coins</span>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Share Section */}
+                <div className="space-y-4">
+                    <h4 className="font-semibold text-gray-700 dark:text-gray-300">Share & Earn</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Share your unique code. You get 50 coins, they get 20!</p>
+                    
+                    {user.referralCode ? (
+                        <div className="space-y-3">
+                            <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-dashed border-indigo-300 flex justify-between items-center">
+                                <span className="font-mono font-bold text-lg text-indigo-600 tracking-wider">{user.referralCode}</span>
+                                <span className="text-xs text-green-600 font-medium bg-green-100 px-2 py-1 rounded">Active</span>
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-500 mb-1">Share this link:</p>
+                                <div className="flex gap-2">
+                                    <input 
+                                        id="referralLink" 
+                                        readOnly 
+                                        value={shareLink} 
+                                        className="flex-1 text-xs p-2 border rounded bg-gray-50 dark:bg-gray-800 dark:text-gray-300" 
+                                    />
+                                    <button onClick={copyLink} className="px-3 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">Copy</button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <button 
+                            onClick={handleGenerate} 
+                            disabled={isGenerating}
+                            className="w-full py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        >
+                            {isGenerating ? 'Generating...' : 'Generate Referral Code'}
+                        </button>
+                    )}
+                </div>
+
+                {/* Redeem Section */}
+                <div className="space-y-4 border-t md:border-t-0 md:border-l border-gray-200 dark:border-gray-600 pt-6 md:pt-0 md:pl-8">
+                    <h4 className="font-semibold text-gray-700 dark:text-gray-300">Have a Code?</h4>
+                    
+                    {user.referredBy ? (
+                        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                            <p className="text-green-800 dark:text-green-300 text-sm">
+                                <span className="font-bold">Referral Applied!</span><br/>
+                                You were referred by code: <span className="font-mono">{user.referredBy}</span>
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <input 
+                                type="text" 
+                                placeholder="Enter Referral Code" 
+                                value={redeemCode}
+                                onChange={(e) => setRedeemCode(e.target.value.toUpperCase())}
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                            />
+                            <button 
+                                onClick={handleRedeem}
+                                disabled={!redeemCode || redeemStatus === 'processing'}
+                                className="w-full py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:opacity-50"
+                            >
+                                {redeemStatus === 'processing' ? 'Applying...' : 'Redeem Code'}
+                            </button>
+                            {redeemMessage && (
+                                <p className={`text-xs ${redeemStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                                    {redeemMessage}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoToMembership, platformSettings, onGoToDashboard, setActiveView }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -193,33 +354,20 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
     }
   };
 
-// Fix: Added 'isEditing' to the props interface to resolve TypeScript error.
+  const handleUserUpdate = (updates: Partial<User>) => {
+      onProfileUpdate({ ...user, ...updates });
+  };
+
   const InfoRow: React.FC<{ label: string; value: React.ReactNode; isEditable?: boolean; name?: string; type?: string; multiline?: boolean; children?: React.ReactNode; isEditing?: boolean; }> = ({ label, value, isEditable = false, name = '', type = 'text', multiline = false, children, isEditing }) => (
     <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
-      <dt className="text-sm font-medium text-gray-500">{label}</dt>
-      <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+      <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</dt>
+      <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0">
         {isEditing && isEditable ? (
-          children || (
-          multiline ? (
-            <textarea
-              name={name}
-              id={name}
-              rows={3}
-              value={formData[name as keyof typeof formData]}
-              onChange={handleInputChange}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              placeholder="e.g., https://instagram.com/user, https://youtube.com/user"
-            />
-          ) : (
-            <input
-              type={type}
-              name={name}
-              id={name}
-              value={formData[name as keyof typeof formData]}
-              onChange={handleInputChange}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            />
-          ))
+            children ? children : (
+                multiline ? 
+                <textarea name={name} value={String(value)} onChange={handleInputChange} rows={3} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" /> :
+                <input type={type} name={name} value={String(value)} onChange={handleInputChange} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+            )
         ) : (
           value
         )}
@@ -227,284 +375,161 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
     </div>
   );
 
-  const DailyPayoutSection = () => {
-    if (user.role === 'livetv' || user.role === 'banneragency') {
-      return (
-        <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-xl font-bold leading-6 text-gray-900">Daily Payout</h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">Request a partial payout for active collaborations.</p>
-          </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-            <p className="text-sm text-gray-600 mb-4">
-              You can request a daily payout for any collaboration that is currently in progress.
-            </p>
-            <button
-              onClick={() => setShowDailyPayoutModal(true)}
-              className="w-full sm:w-auto inline-flex justify-center rounded-md border border-transparent bg-teal-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-teal-700"
-            >
-              Request Payout Daily
-            </button>
-          </div>
-        </div>
-      )
-    }
-    return null;
-  }
-
-  const MembershipSection = () => {
-    const { membership } = user;
-    
-    const effectiveMembership = membership || {
-        plan: 'free' as MembershipPlan,
-        isActive: false,
-        expiresAt: null,
-        usage: { directCollaborations: 0, campaigns: 0, liveTvBookings: 0, bannerAdBookings: 0 }
-    };
-
-    const { plan, isActive, expiresAt, usage } = effectiveMembership;
-    
-    const isCurrentlyActive = effectiveMembership.isActive && expiresAt && (expiresAt as Timestamp).toDate() > new Date();
-
-    const expiryDate = (expiresAt as Timestamp)?.toDate?.()?.toLocaleDateString() ?? 'N/A';
-
-    // FIX: Replaced incorrect 'normal_*' keys with the correct 'basic', 'pro', and 'premium' from the MembershipPlan type.
-    const usageLimits: Record<MembershipPlan, number | typeof Infinity> = {
-        free: 1,
-        pro_10: 10,
-        pro_20: 20,
-        pro_unlimited: Infinity,
-        basic: Infinity,
-        pro: Infinity,
-        premium: Infinity,
-    };
-    const limit = usageLimits[plan] ?? 0;
-    
-    const getLimitText = () => {
-        if (isCreator) return 'Unlimited Visibility';
-        if (limit === Infinity) return 'Unlimited';
-        return `${limit} / type / year`;
-    }
-
-
-    return (
-        <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
-            <div className="px-4 py-5 sm:px-6 flex justify-between items-center flex-wrap gap-2">
-                <div>
-                    <h3 className="text-xl font-bold leading-6 text-gray-900">My Membership</h3>
-                    <p className="mt-1 max-w-2xl text-sm text-gray-500">Your current subscription and usage details.</p>
-                </div>
-                <button
-                    onClick={onGoToMembership}
-                    className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 whitespace-nowrap"
-                >
-                    Upgrade Plan
-                </button>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-                <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
-                    <div className="sm:col-span-1">
-                        <dt className="text-sm font-medium text-gray-500">Current Plan</dt>
-                        <dd className="mt-1 text-sm text-gray-900 capitalize font-semibold">{plan.replace(/_/g, ' ')}</dd>
-                    </div>
-                    <div className="sm:col-span-1">
-                        <dt className="text-sm font-medium text-gray-500">Status</dt>
-                        <dd className="mt-1 text-sm text-gray-900">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isCurrentlyActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                {isCurrentlyActive ? 'Active' : 'Inactive'}
-                            </span>
-                        </dd>
-                    </div>
-                    <div className="sm:col-span-1">
-                        <dt className="text-sm font-medium text-gray-500">Expires On</dt>
-                        <dd className="mt-1 text-sm text-gray-900">{expiryDate}</dd>
-                    </div>
-                     <div className="sm:col-span-1">
-                        <dt className="text-sm font-medium text-gray-500">Limit</dt>
-                        <dd className="mt-1 text-sm text-gray-900 font-semibold">{getLimitText()}</dd>
-                    </div>
-                    
-                    <div className="sm:col-span-2">
-                        {user.role === 'brand' && usage && (
-                            <>
-                                <dt className="text-sm font-medium text-gray-500">Usage this cycle</dt>
-                                <dd className="mt-2 text-sm text-gray-900 space-y-1">
-                                    <p>Direct Collaborations: {usage.directCollaborations} / {limit === Infinity ? '∞' : limit}</p>
-                                    <p>Campaigns Created: {usage.campaigns} / {limit === Infinity ? '∞' : limit}</p>
-                                    <p>Live TV Bookings: {usage.liveTvBookings} / {limit === Infinity ? '∞' : limit}</p>
-                                    <p>Banner Ad Bookings: {usage.bannerAdBookings} / {limit === Infinity ? '∞' : limit}</p>
-                                </dd>
-                            </>
-                        )}
-                        
-                        {isCreator && isCurrentlyActive && (
-                            <>
-                                <dt className="text-sm font-medium text-gray-500">Benefit</dt>
-                                <dd className="mt-1 text-sm text-green-700 font-semibold">Your profile is visible to all brands on the platform.</dd>
-                            </>
-                        )}
-
-                        {!isCurrentlyActive && (
-                            <div className="p-3 bg-yellow-50 text-yellow-800 rounded-md text-sm">
-                                {isCreator 
-                                    ? "Your profile is not visible to brands with an inactive membership. Activate a plan to start receiving collaboration requests."
-                                    : "Your free plan has limits. Upgrade to a Pro plan to unlock more features and collaborations."
-                                }
-                            </div>
-                        )}
-                    </div>
-                </dl>
-            </div>
-        </div>
-    );
-  };
-
-  const CreatorVerificationSection = () => {
-    const status = user.creatorVerificationStatus || 'not_submitted';
-    const statusMap = {
-      not_submitted: { text: "Not Verified", color: "bg-gray-100 text-gray-800" },
-      pending: { text: "Pending Review", color: "bg-yellow-100 text-yellow-800" },
-      approved: { text: "Verified", color: "bg-green-100 text-green-800" },
-      rejected: { text: "Rejected", color: "bg-red-100 text-red-800" },
-    };
-
-    return (
-         <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
-            <div className="px-4 py-5 sm:px-6">
-                <h3 className="text-xl font-bold leading-6 text-gray-900">Creator Verification</h3>
-                 <p className="mt-1 max-w-2xl text-sm text-gray-500">Verify your identity to build trust with brands.</p>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <p className="text-sm font-medium text-gray-500">Your Status</p>
-                        <span className={`mt-1 px-3 py-1 text-sm font-semibold rounded-full ${statusMap[status].color}`}>
-                            {statusMap[status].text}
-                        </span>
-                    </div>
-                    <button
-                        onClick={() => setActiveView(View.CREATOR_VERIFICATION)}
-                        className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
-                    >
-                        {status === 'not_submitted' || status === 'rejected' ? 'Submit Details' : 'View/Update Details'}
-                    </button>
-                </div>
-                 {status === 'rejected' && user.creatorVerificationDetails?.rejectionReason && (
-                    <div className="mt-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
-                        <p className="font-semibold">Reason for rejection:</p>
-                        <p>{user.creatorVerificationDetails.rejectionReason}</p>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-  };
-
-  const isCreator = ['influencer', 'livetv', 'banneragency'].includes(user.role);
-
+  const isMembershipActive = user.membership?.isActive && user.membership.expiresAt && toJsDate(user.membership.expiresAt)! > new Date();
+  
   return (
-    <>
-    <div className="space-y-6 w-full">
-      <form onSubmit={handleSave}>
-        <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
-          <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
-            <div className="flex items-center gap-4">
-                <button 
-                    onClick={onGoToDashboard} 
-                    type="button"
-                    className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-lg hover:bg-indigo-200 transition-colors dark:bg-gray-700 dark:text-indigo-300 dark:hover:bg-gray-600"
-                >
-                    &larr; Back to Dashboard
-                </button>
-                <div>
-                  <h3 className="text-xl font-bold leading-6 text-gray-900">My Profile</h3>
-                  <p className="mt-1 max-w-2xl text-sm text-gray-500">Your personal details.</p>
+    <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
+      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 sm:p-10 text-white relative">
+         <button onClick={onGoToDashboard} className="absolute top-4 left-4 text-white opacity-80 hover:opacity-100">
+            &larr; Dashboard
+         </button>
+        <div className="flex flex-col sm:flex-row items-center">
+          <div className="relative group">
+            <img 
+              src={imagePreview || user.avatar} 
+              alt={user.name} 
+              className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border-4 border-white object-cover shadow-md"
+            />
+            {isEditing && (
+                <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    <span className="text-xs font-semibold">Change</span>
+                    <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
                 </div>
-            </div>
-            {!isEditing && (
-              <button
-                type="button"
-                onClick={() => { setIsEditing(true); setSuccess(null); }}
-                className="ml-4 flex-shrink-0 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors whitespace-nowrap"
-              >
-                Edit
-              </button>
             )}
           </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-            <dl className="sm:divide-y sm:divide-gray-200">
-                <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
-                    <dt className="text-sm font-medium text-gray-500">Avatar</dt>
-                    <dd className="mt-1 flex text-sm text-gray-900 sm:col-span-2 sm:mt-0 items-center">
-                        <span className="h-16 w-16 overflow-hidden rounded-full bg-gray-100">
-                            <img src={imagePreview || user.avatar || DEFAULT_AVATAR_URL} alt="User avatar" className="h-full w-full object-cover" />
-                        </span>
-                        {isEditing && (
-                            <button type="button" onClick={() => fileInputRef.current?.click()} className="ml-5 rounded-md border border-gray-300 bg-white py-2 px-3 text-sm font-medium leading-4 text-gray-700 shadow-sm hover:bg-gray-50">
-                                Change
-                            </button>
-                        )}
-                        <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
-                    </dd>
-                </div>
-              <InfoRow label="Full Name" value={formData.name} isEditable name="name" isEditing={isEditing} />
-              <InfoRow label="Email Address" value={user.email} isEditing={isEditing} />
-              <InfoRow label="Profile ID" value={<span className="font-mono">{user.piNumber || 'N/A'}</span>} isEditing={false} />
-              <InfoRow label="Mobile Number" value={formData.mobileNumber} isEditable name="mobileNumber" type="tel" isEditing={isEditing}>
-                  <div>
-                      <input
-                          type="tel"
-                          name="mobileNumber"
-                          id="mobileNumber"
-                          value={formData.mobileNumber}
-                          onChange={handleInputChange}
-                          className={`block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${mobileError ? 'border-red-500' : 'border-gray-300'}`}
-                      />
-                      {mobileError && <p className="mt-1 text-xs text-red-500">{mobileError}</p>}
-                  </div>
-              </InfoRow>
-              {(user.role === 'brand' || user.role === 'livetv' || user.role === 'banneragency') && <InfoRow label="Company Name" value={formData.companyName} isEditable name="companyName" isEditing={isEditing} />}
-              {user.role === 'influencer' && <InfoRow label="Social Media Links" value={formData.socialMediaLinks || 'Not provided'} isEditable name="socialMediaLinks" multiline isEditing={isEditing} />}
-              {(user.role === 'livetv' || user.role === 'banneragency') && <InfoRow label="MSME Registration No." value={formData.msmeRegistrationNumber || 'Not provided'} isEditable name="msmeRegistrationNumber" isEditing={isEditing} />}
-              
-                <InfoRow label="Location" value={formData.location || 'Not Set'} isEditable name="location" isEditing={isEditing}>
-                    <select name="location" value={formData.location} onChange={handleInputChange} className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <option value="">Select City</option>
-                        {indianCities.sort().map(city => <option key={city} value={city}>{city}</option>)}
-                    </select>
-                </InfoRow>
-
-            </dl>
+          
+          <div className="mt-4 sm:mt-0 sm:ml-6 text-center sm:text-left">
+            <h1 className="text-3xl font-bold">{user.name}</h1>
+            <p className="text-indigo-100 font-medium">{user.email}</p>
+            <p className="text-indigo-200 text-sm mt-1 capitalize">{user.role}</p>
+            {user.role === 'influencer' && (
+               <button onClick={() => setActiveView(View.BOOST_PROFILE)} className="mt-2 text-xs bg-purple-500 hover:bg-purple-400 px-3 py-1 rounded-full font-semibold transition-colors shadow-sm">
+                   Boost Profile 🚀
+               </button>
+            )}
           </div>
-          {isEditing && (
-            <div className="bg-gray-50 px-4 py-4 sm:px-6 text-right flex justify-end gap-2">
-              <button type="button" onClick={handleCancel} className="rounded-md border border-gray-300 bg-white py-2 px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
-                Cancel
+          
+          <div className="mt-6 sm:mt-0 sm:ml-auto flex flex-col gap-2">
+            {!isEditing ? (
+              <button onClick={() => setIsEditing(true)} className="bg-white text-indigo-600 px-6 py-2 rounded-full font-semibold shadow-md hover:bg-gray-100 transition-all">
+                Edit Profile
               </button>
-              <button type="submit" disabled={isLoading || !!mobileError} className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50">
-                {isLoading ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          )}
+            ) : (
+              <div className="flex space-x-2">
+                <button onClick={handleSave} disabled={isLoading} className="bg-green-500 text-white px-4 py-2 rounded-full font-semibold shadow-md hover:bg-green-600 disabled:opacity-50">
+                  {isLoading ? 'Saving...' : 'Save'}
+                </button>
+                <button onClick={handleCancel} disabled={isLoading} className="bg-white text-gray-600 px-4 py-2 rounded-full font-semibold shadow-md hover:bg-gray-100">
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </form>
+      </div>
 
-      {success && <div className="mt-4 p-4 text-sm text-green-700 bg-green-100 rounded-lg">{success}</div>}
-      {error && <div className="mt-4 p-4 text-sm text-red-700 bg-red-100 rounded-lg">{error}</div>}
+      {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 m-4" role="alert"><p>{error}</p></div>}
+      {mobileError && <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 m-4" role="alert"><p>{mobileError}</p></div>}
+      {success && <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 m-4" role="alert"><p>{success}</p></div>}
 
-      <MembershipSection />
-      {isCreator && <CreatorVerificationSection />}
-      <DailyPayoutSection />
-      
-      {showDailyPayoutModal && (
-        <DailyPayoutRequestModal 
-          user={user}
-          onClose={() => setShowDailyPayoutModal(false)}
-          platformSettings={platformSettings}
-        />
-      )}
+      {/* Referral Section */}
+      <div className="px-4 py-5 sm:px-6">
+          <ReferralSection user={user} onUpdateUser={handleUserUpdate} />
+      </div>
+
+      <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-5 sm:p-0">
+        <dl className="sm:divide-y sm:divide-gray-200 dark:sm:divide-gray-700">
+          <InfoRow label="Full Name" value={user.name} name="name" isEditable={true} isEditing={isEditing} />
+          <InfoRow label="Profile ID" value={<span className="font-mono text-gray-600 dark:text-gray-400">{user.piNumber}</span>} />
+          <InfoRow label="Email Address" value={user.email} />
+          <InfoRow label="Mobile Number" value={user.mobileNumber || 'Not provided'} name="mobileNumber" isEditable={true} isEditing={isEditing} />
+          <InfoRow label="Company / Channel Name" value={user.companyName || 'N/A'} name="companyName" isEditable={true} isEditing={isEditing} />
+          <InfoRow label="Location" value={user.location || 'Not specified'} name="location" isEditable={true} isEditing={isEditing}>
+             <select name="location" value={formData.location} onChange={handleInputChange} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                <option value="">Select Location</option>
+                {indianCities.sort().map(city => <option key={city} value={city}>{city}</option>)}
+             </select>
+          </InfoRow>
+          
+          {user.role === 'influencer' && (
+             <InfoRow label="Social Media Links" value={formData.socialMediaLinks || 'No links added'} name="socialMediaLinks" isEditable={true} multiline={true} isEditing={isEditing} />
+          )}
+
+          <InfoRow label="MSME Registration" value={user.msmeRegistrationNumber || 'N/A'} name="msmeRegistrationNumber" isEditable={true} isEditing={isEditing} />
+
+          <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
+            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Account Status</dt>
+            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center space-x-2">
+                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${!user.isBlocked ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {user.isBlocked ? 'Blocked' : 'Active'}
+                </span>
+            </dd>
+          </div>
+          
+          <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6 bg-gray-50 dark:bg-gray-700/50">
+            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Membership Plan</dt>
+            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center justify-between">
+                <div>
+                    <span className="font-semibold capitalize">{user.membership?.plan.replace(/_/g, ' ')}</span>
+                    {isMembershipActive && <span className="ml-2 text-green-600 text-xs">(Active)</span>}
+                    {!isMembershipActive && <span className="ml-2 text-red-500 text-xs">(Inactive)</span>}
+                    {user.membership?.expiresAt && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Expires: {toJsDate(user.membership.expiresAt)?.toLocaleDateString()}</p>
+                    )}
+                </div>
+                <button onClick={onGoToMembership} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-medium">
+                    {isMembershipActive ? 'Manage Plan' : 'Upgrade'}
+                </button>
+            </dd>
+          </div>
+
+          <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
+            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">KYC Verification</dt>
+            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center justify-between">
+               <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                    user.kycStatus === 'approved' ? 'bg-green-100 text-green-800' : 
+                    user.kycStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
+                    'bg-red-100 text-red-800'
+                }`}>
+                    {user.kycStatus === 'not_submitted' ? 'Not Submitted' : user.kycStatus.replace('_', ' ')}
+                </span>
+                {user.kycStatus !== 'approved' && user.kycStatus !== 'pending' && (
+                    <button onClick={() => setActiveView(View.KYC)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 text-sm font-medium">Verify Now</button>
+                )}
+            </dd>
+          </div>
+          
+          {(user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') && (
+             <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6 bg-gray-50 dark:bg-gray-700/50">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Creator Verification</dt>
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center justify-between">
+                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        user.creatorVerificationStatus === 'approved' ? 'bg-green-100 text-green-800' : 
+                        user.creatorVerificationStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
+                        'bg-gray-100 text-gray-800'
+                    }`}>
+                        {user.creatorVerificationStatus === 'not_submitted' ? 'Not Verified' : user.creatorVerificationStatus?.replace('_', ' ')}
+                    </span>
+                    {user.creatorVerificationStatus !== 'approved' && user.creatorVerificationStatus !== 'pending' && (
+                        <button onClick={() => setActiveView(View.CREATOR_VERIFICATION)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 text-sm font-medium">Get Verified Badge</button>
+                    )}
+                </dd>
+              </div>
+          )}
+
+          {(user.role === 'livetv' || user.role === 'banneragency') && (
+             <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Daily Payouts</dt>
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Request payouts for active campaigns</span>
+                    <button onClick={() => setShowDailyPayoutModal(true)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 text-sm font-medium">Request Now</button>
+                </dd>
+             </div>
+          )}
+        </dl>
+      </div>
+      {showDailyPayoutModal && <DailyPayoutRequestModal user={user} onClose={() => setShowDailyPayoutModal(false)} platformSettings={platformSettings} />}
     </div>
-    </>
   );
 };
 

@@ -1,4 +1,5 @@
 
+
 // ... (imports)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, LiveHelpSession, LiveHelpMessage, QuickReply } from '../types';
@@ -265,6 +266,16 @@ interface LiveHelpPanelProps {
     adminUser: User;
 }
 
+const toJsDate = (ts: any): Date | undefined => {
+    if (!ts) return undefined;
+    if (ts instanceof Date) return ts;
+    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
+    return undefined;
+};
+
 const LiveHelpPanel: React.FC<LiveHelpPanelProps> = ({ adminUser }) => {
     // ... (rest of the component remains same)
     const [allSessions, setAllSessions] = useState<LiveHelpSession[]>([]);
@@ -340,7 +351,7 @@ const LiveHelpPanel: React.FC<LiveHelpPanelProps> = ({ adminUser }) => {
                                     <div className="flex-1 overflow-hidden">
                                         <p className="font-semibold truncate">{session.userName}</p>
                                         <p className="text-xs text-gray-500">
-                                            {new Date(session.updatedAt?.toDate()).toLocaleTimeString()}
+                                            {toJsDate(session.updatedAt)?.toLocaleTimeString()}
                                         </p>
                                     </div>
                                 </button>

@@ -16,13 +16,13 @@ interface CombinedHistoryItem {
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     const s = status.toLowerCase();
-    let colorClasses = "bg-gray-100 text-gray-800";
+    let colorClasses = "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300";
     if (s === 'completed' || s === 'approved') {
-        colorClasses = "bg-green-100 text-green-800";
+        colorClasses = "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300";
     } else if (s === 'pending') {
-        colorClasses = "bg-yellow-100 text-yellow-800";
+        colorClasses = "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300";
     } else if (s === 'rejected' || s === 'failed') {
-        colorClasses = "bg-red-100 text-red-800";
+        colorClasses = "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300";
     }
     return <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${colorClasses} capitalize`}>{status.replace('_', ' ')}</span>;
 };
@@ -57,13 +57,12 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
 
     const combinedHistory = useMemo<CombinedHistoryItem[]>(() => {
         const safeToDate = (ts: any): Date | undefined => {
-            if (ts && typeof ts.toDate === 'function') {
-                try {
-                    return ts.toDate();
-                } catch (e) {
-                    return undefined;
-                }
-            }
+            if (!ts) return undefined;
+            if (ts instanceof Date) return ts;
+            if (typeof ts.toDate === 'function') return ts.toDate();
+            if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+            if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+            if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
             return undefined;
         };
 
@@ -95,81 +94,81 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             return timeB - timeA;
         });
     }, [transactions, payouts]);
-    
-    const filteredHistory = useMemo(() => {
-        if (activeTab === 'payments') {
-            return combinedHistory.filter(item => item.type === 'Payment Made');
-        }
-        if (activeTab === 'payouts') {
-            return combinedHistory.filter(item => item.type === 'Payout');
-        }
-        return combinedHistory;
-    }, [combinedHistory, activeTab]);
 
-    const TabButton: React.FC<{ tab: typeof activeTab, children: React.ReactNode }> = ({ tab, children }) => (
-        <button
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium rounded-md ${activeTab === tab ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'}`}
-        >
-            {children}
-        </button>
-    );
+    const filteredHistory = useMemo(() => {
+        if (activeTab === 'payments') return combinedHistory.filter(item => item.type === 'Payment Made');
+        if (activeTab === 'payouts') return combinedHistory.filter(item => item.type === 'Payout');
+        return combinedHistory;
+    }, [activeTab, combinedHistory]);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 h-full flex flex-col">
             <div>
-                <h1 className="text-3xl font-bold text-gray-800">Payment History</h1>
-                <p className="text-gray-500 mt-1">Review all your payments and payouts on BIGYAPON.</p>
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Payment History</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions and payouts.</p>
             </div>
-            <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
-                <div className="p-4 border-b">
-                    <nav className="flex space-x-2">
-                        <TabButton tab="all">All</TabButton>
-                        <TabButton tab="payments">Payments Made</TabButton>
-                        <TabButton tab="payouts">Payouts</TabButton>
-                    </nav>
+
+            <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700">
+                <button 
+                    onClick={() => setActiveTab('all')} 
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'all' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
+                >
+                    All
+                </button>
+                <button 
+                    onClick={() => setActiveTab('payments')} 
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'payments' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
+                >
+                    Payments Made
+                </button>
+                <button 
+                    onClick={() => setActiveTab('payouts')} 
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'payouts' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
+                >
+                    Payouts
+                </button>
+            </div>
+
+            {isLoading ? <p className="text-center py-10 dark:text-gray-300">Loading history...</p> : 
+            error ? <p className="text-center py-10 text-red-500">{error}</p> :
+            filteredHistory.length === 0 ? (
+                <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <p className="text-gray-500 dark:text-gray-400">No history found.</p>
                 </div>
-                {isLoading ? (
-                    <p className="p-6 text-center text-gray-500">Loading history...</p>
-                ) : error ? (
-                    <p className="p-6 text-center text-red-500">{error}</p>
-                ) : filteredHistory.length === 0 ? (
-                    <p className="p-6 text-center text-gray-500">No transactions found.</p>
-                ) : (
+            ) : (
+                <div className="bg-white dark:bg-gray-800 shadow-lg rounded-2xl overflow-hidden flex-1">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead className="bg-gray-50 dark:bg-gray-700/50">
                                 <tr>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Collab ID</th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction ID</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Description</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Type</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                 {filteredHistory.map((item, index) => (
-                                    <tr key={index}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.date?.toLocaleString() || 'Invalid Date'}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.description}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{item.collabId || 'N/A'}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <span className={`font-semibold ${item.type === 'Payment Made' ? 'text-red-600' : 'text-green-600'}`}>{item.type}</span>
+                                    <tr key={`${item.transactionId}-${index}`}>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.date?.toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 max-w-xs truncate" title={item.description}>{item.description}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono dark:text-gray-400">{item.collabId || 'N/A'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <span className={`font-semibold ${item.type === 'Payment Made' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{item.type}</span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
-                                            {item.type === 'Payment Made' ? '-' : '+'} ₹{(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-semibold">
+                                            {item.type === 'Payment Made' ? '-' : '+'} ₹{item.amount.toLocaleString('en-IN')}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap"><StatusBadge status={item.status} /></td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{item.transactionId}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 };

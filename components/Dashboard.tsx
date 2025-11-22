@@ -105,6 +105,14 @@ const CollabListSection: React.FC<{
     </div>
 );
 
+const getTime = (ts: any): number => {
+    if (!ts) return 0;
+    if (ts instanceof Date) return ts.getTime();
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts).getTime();
+    return 0;
+};
 
 const Dashboard: React.FC<DashboardProps> = ({ user, setActiveView, platformSettings, banners }) => {
     const [aiTip, setAiTip] = useState<string>('');
@@ -182,7 +190,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, setActiveView, platformSett
                     return null;
                 }).filter((i): i is CollaborationStatusItem => i !== null);
                 
-                mappedItems.sort((a, b) => ((b.timestamp as Timestamp)?.toMillis() || 0) - ((a.timestamp as Timestamp)?.toMillis() || 0));
+                mappedItems.sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
                 setCollabItems(mappedItems);
 
             } catch (error) {

@@ -51,6 +51,16 @@ const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) =>
     </button>
 );
 
+const toJsDate = (ts: any): Date | undefined => {
+    if (!ts) return undefined;
+    if (ts instanceof Date) return ts;
+    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
+    return undefined;
+};
+
 type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands';
 
 
@@ -786,8 +796,8 @@ const UserDetailsModal: React.FC<{
         const userPayouts = allPayouts.filter(p => p.userId === user.id);
         
         const combined = [
-            ...userTransactions.map(t => ({ ...t, type: 'Payment', date: t.timestamp?.toDate() })),
-            ...userPayouts.map(p => ({ ...p, type: 'Payout', date: p.timestamp?.toDate() })),
+            ...userTransactions.map(t => ({ ...t, type: 'Payment', date: toJsDate(t.timestamp) })),
+            ...userPayouts.map(p => ({ ...p, type: 'Payout', date: toJsDate(p.timestamp) })),
         ];
         
         return combined.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
@@ -928,7 +938,7 @@ const UserDetailsModal: React.FC<{
         );
     };
 
-    const isMembershipActive = !!(user.membership?.isActive && user.membership.expiresAt && (user.membership.expiresAt as Timestamp).toDate() > new Date());
+    const isMembershipActive = !!(user.membership?.isActive && user.membership.expiresAt && toJsDate(user.membership.expiresAt)! > new Date());
     
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
@@ -1416,7 +1426,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
                 providerName: (provider as User)?.name || ('influencerName' in collab && collab.influencerName) || ('liveTvName' in collab && collab.liveTvName) || ('agencyName' in collab && collab.agencyName) || 'Unknown',
                 providerAvatar: (provider as User)?.avatar || ('influencerAvatar' in collab && collab.influencerAvatar) || ('liveTvAvatar' in collab && collab.liveTvAvatar) || ('agencyAvatar' in collab && collab.agencyAvatar) || '',
                 providerPiNumber: (provider as User)?.piNumber,
-                date: (collab.timestamp as Timestamp)?.toDate(),
+                date: toJsDate(collab.timestamp),
                 status: collab.status as any,
                 paymentStatus: collab.paymentStatus === 'paid' || collab.paymentStatus === 'payout_requested' || collab.paymentStatus === 'payout_complete' ? 'Paid' : 'Unpaid',
                 payoutStatus: collab.paymentStatus === 'payout_requested' ? 'Requested' : collab.paymentStatus === 'payout_complete' ? 'Completed' : 'N/A',

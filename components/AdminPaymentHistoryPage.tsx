@@ -47,13 +47,12 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
         const userMap: Map<string, User> = new Map(allUsers.map(u => [u.id, u]));
         
         const safeToDate = (ts: any): Date | undefined => {
-            if (ts && typeof ts.toDate === 'function') {
-                try {
-                    return ts.toDate();
-                } catch (e) {
-                    return undefined;
-                }
-            }
+            if (!ts) return undefined;
+            if (ts instanceof Date) return ts;
+            if (typeof ts.toDate === 'function') return ts.toDate();
+            if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+            if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+            if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
             return undefined;
         };
 

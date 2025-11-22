@@ -1,5 +1,11 @@
 
 
+
+
+
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { LogoIcon, GoogleIcon, ExclamationTriangleIcon } from './Icons';
 import { UserRole, PlatformSettings } from '../types';
@@ -380,6 +386,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   const [name, setName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [signupMobile, setSignupMobile] = useState('');
+  const [referralCode, setReferralCode] = useState('');
 
   // State management
   const [error, setError] = useState<string | null>(null);
@@ -389,6 +396,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref') || params.get('code');
+    if (ref) {
+        setReferralCode(ref);
+        setAuthMode('signup');
+    }
+  }, []);
 
   const roles: { id: UserRole; label: string }[] = [
     { id: 'brand', label: "Brand" },
@@ -490,7 +506,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 return;
             }
 
-            await authService.register(email, password, role, name, companyName, signupMobile);
+            await authService.register(email, password, role, name, companyName, signupMobile, referralCode);
             alert("Registration successful! Please log in.");
             setAuthMode('login');
             resetFormFields();
@@ -759,6 +775,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Confirm Password</label>
                                     <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
                                 </div>
+                                {referralCode && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-green-600 dark:text-green-400">Referral Code Applied</label>
+                                        <input type="text" value={referralCode} disabled className="mt-1 block w-full px-3 py-2 bg-green-50 border border-green-300 rounded-md shadow-sm text-green-800" />
+                                    </div>
+                                )}
                                 </div>
                             )}
 

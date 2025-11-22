@@ -12,8 +12,15 @@ const getFileType = (file: File): Attachment['type'] => {
 };
 
 const formatTimeAgo = (timestamp: any) => {
-    if (!timestamp?.toDate) return 'Just now';
-    const date = timestamp.toDate();
+    if (!timestamp) return 'Just now';
+    
+    let date;
+    if (timestamp instanceof Date) date = timestamp;
+    else if (typeof timestamp.toDate === 'function') date = timestamp.toDate();
+    else if (typeof timestamp.toMillis === 'function') date = new Date(timestamp.toMillis());
+    else if (typeof timestamp === 'string' || typeof timestamp === 'number') date = new Date(timestamp);
+    else return 'Just now';
+
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
     let interval = seconds / 31536000;
     if (interval > 1) return Math.floor(interval) + "y ago";
@@ -101,6 +108,14 @@ const TicketConversation: React.FC<{ ticket: SupportTicket, admin: User, onUpdat
         onUpdate();
     };
 
+    const safeToLocaleString = (ts: any) => {
+        if (!ts) return 'Date not available';
+        if (ts instanceof Date) return ts.toLocaleString();
+        if (typeof ts.toDate === 'function') return ts.toDate().toLocaleString();
+        if (typeof ts.toMillis === 'function') return new Date(ts.toMillis()).toLocaleString();
+        return 'Date not available';
+    }
+
     return (
         <div className="bg-white shadow-xl rounded-2xl flex flex-col h-full">
             <div className="p-4 border-b flex justify-between items-center">
@@ -131,7 +146,7 @@ const TicketConversation: React.FC<{ ticket: SupportTicket, admin: User, onUpdat
                                     ))}
                                 </div>
                             )}
-                            <p className="text-xs mt-2 text-right opacity-70">{(reply.timestamp as Timestamp)?.toDate?.()?.toLocaleString() ?? 'Date not available'}</p>
+                            <p className="text-xs mt-2 text-right opacity-70">{safeToLocaleString(reply.timestamp)}</p>
                         </div>
                     </div>
                 ))}

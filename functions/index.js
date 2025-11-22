@@ -103,14 +103,26 @@ const fulfillOrder = async (orderId, transactionData, paymentGatewayDetails) => 
         }
 
         const batch = db.batch();
+        const txData = docSnap.data();
         
+        // Update transaction status
         batch.update(transactionRef, {
             status: "completed",
             paymentGatewayDetails: paymentGatewayDetails || {},
         });
 
-        const { collabType, relatedId, userId } = transactionData;
+        const { collabType, relatedId, userId, coinsUsed } = txData;
 
+        // 1. Deduct Coins if used (Atomic decrement)
+        if (coinsUsed && coinsUsed > 0) {
+            const userRef = db.collection('users').doc(userId);
+            batch.update(userRef, {
+                coins: admin.firestore.FieldValue.increment(-coinsUsed)
+            });
+            console.log(`Deducting ${coinsUsed} coins from user ${userId}`);
+        }
+
+        // 2. Fulfillment Logic
         if (collabType === 'membership') {
              const userRef = db.collection('users').doc(userId);
              const plan = relatedId;
@@ -215,19 +227,66 @@ const createOrderHandler = async (req, res) => {
         return res.status(403).send({ message: 'Invalid Token' });
     }
 
-    const { amount, purpose, relatedId, collabId, collabType, phone, gateway: preferredGateway } = req.body;
+    // coinsUsed is passed from frontend. amount passed should be the final amount (gateway amount)
+    const { amount, purpose, relatedId, collabId, collabType, phone, gateway: preferredGateway, coinsUsed } = req.body;
 
-    if (!amount || !relatedId || !collabType) {
+    if (!relatedId || !collabType) {
         return res.status(400).send({ message: 'Missing fields' });
     }
 
+    // Check User Coin Balance if coins are used
+    if (coinsUsed && coinsUsed > 0) {
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userCoins = userDoc.data().coins || 0;
+        
+        if (userCoins < coinsUsed) {
+            return res.status(400).send({ message: 'Insufficient coin balance' });
+        }
+        if (coinsUsed > 100) {
+            return res.status(400).send({ message: 'Maximum 100 coins allowed per transaction' });
+        }
+    }
+
     let orderAmount = parseFloat(amount);
-    if (isNaN(orderAmount) || orderAmount <= 0) return res.status(400).send({ message: 'Invalid amount' });
-    orderAmount = Number(orderAmount.toFixed(2));
+    // Allow 0 amount only if coins are used
+    if (isNaN(orderAmount) || orderAmount < 0) return res.status(400).send({ message: 'Invalid amount' });
+    if (orderAmount === 0 && (!coinsUsed || coinsUsed <= 0)) return res.status(400).send({ message: 'Invalid amount' });
 
     const orderId = `order_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
     try {
+        // Handle Wallet-Only Payment (Full coverage by coins)
+        if (orderAmount === 0 && coinsUsed > 0) {
+            const transactionData = {
+                userId,
+                type: 'payment',
+                description: purpose || 'Wallet Payment',
+                relatedId,
+                collabId: collabId || null,
+                collabType,
+                amount: 0,
+                coinsUsed: coinsUsed,
+                status: 'pending', // Initially pending, immediately fulfilled
+                transactionId: orderId,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                paymentGateway: 'wallet',
+            };
+            
+            await db.collection('transactions').doc(orderId).set(transactionData);
+            
+            // Fulfill immediately
+            await fulfillOrder(orderId, transactionData, { gateway: 'wallet' });
+            
+            return res.status(200).send({
+                success: true,
+                order_id: orderId,
+                amount: 0,
+                currency: "INR",
+                gateway: 'wallet',
+                id: orderId 
+            });
+        }
+
         const userDoc = await db.collection('users').doc(userId).get();
         if (!userDoc.exists) return res.status(404).send({ message: 'User not found' });
         
@@ -237,14 +296,13 @@ const createOrderHandler = async (req, res) => {
 
         const settings = await getPaymentSettings();
         
-        // Use frontend preference if valid, else fallback to DB setting, else default to cashfree
         const gateway = (preferredGateway === 'razorpay' || preferredGateway === 'cashfree') 
             ? preferredGateway 
             : (settings.activePaymentGateway || 'razorpay');
 
-        console.log(`Creating order ${orderId} via ${gateway} for amount ${orderAmount}`);
+        console.log(`Creating order ${orderId} via ${gateway} for amount ${orderAmount}, coins used: ${coinsUsed || 0}`);
 
-        // Create pending transaction
+        // Create pending transaction with coinsUsed field
         await db.collection('transactions').doc(orderId).set({
             userId,
             type: 'payment',
@@ -252,7 +310,8 @@ const createOrderHandler = async (req, res) => {
             relatedId,
             collabId: collabId || null,
             collabType,
-            amount: orderAmount,
+            amount: orderAmount, // The actual money paid
+            coinsUsed: coinsUsed || 0, // The coins to deduct on success
             status: 'pending',
             transactionId: orderId,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -293,7 +352,8 @@ const createOrderHandler = async (req, res) => {
                 key_id: KEY_ID,
                 amount: data.amount,
                 currency: data.currency,
-                id: data.id // Important: Map to 'id' for frontend compatibility check
+                coinsUsed: coinsUsed || 0,
+                id: data.id 
             });
 
         } else {
@@ -338,7 +398,8 @@ const createOrderHandler = async (req, res) => {
                 gateway: 'cashfree',
                 payment_session_id: data.payment_session_id,
                 environment: isSandbox ? 'sandbox' : 'production',
-                id: data.payment_session_id // Important: Map to 'id' for frontend compatibility
+                id: data.payment_session_id,
+                coinsUsed: coinsUsed || 0
             });
         }
 
@@ -468,11 +529,108 @@ const processPayoutHandler = async (req, res) => {
     }
 };
 
+const applyReferralHandler = async (req, res) => {
+    const { userId, code } = req.body;
+    console.log(`[Referral] Request received: User ${userId} applying code ${code}`);
+
+    if (!userId || !code) return res.status(400).send({ message: "Missing userId or code" });
+
+    try {
+        const usersRef = db.collection('users');
+        const referrerQuery = await usersRef.where('referralCode', '==', code).limit(1).get();
+        
+        if (referrerQuery.empty) {
+            console.log(`[Referral] Invalid code: ${code}`);
+            return res.status(400).send({ message: "Invalid referral code." });
+        }
+        
+        const referrerDoc = referrerQuery.docs[0];
+        const referrerId = referrerDoc.id;
+        
+        if (referrerId === userId) {
+             console.log(`[Referral] Self-referral attempt by ${userId}`);
+             return res.status(400).send({ message: "You cannot refer yourself." });
+        }
+
+        await db.runTransaction(async (t) => {
+            const userRef = usersRef.doc(userId);
+            const userDoc = await t.get(userRef);
+            
+            if (!userDoc.exists) throw new Error("User not found");
+            if (userDoc.data().referredBy) throw new Error("User already referred");
+
+            // Update Referrer
+            const referrerData = referrerDoc.data();
+            const newReferrerCoins = (referrerData.coins || 0) + 50;
+            t.update(referrerDoc.ref, { coins: newReferrerCoins });
+
+            // Update User
+            const userData = userDoc.data();
+            const newUserCoins = (userData.coins || 0) + 20;
+            t.update(userRef, { 
+                coins: newUserCoins,
+                referredBy: code,
+                referralAppliedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            // 1. Referrer Transaction Record
+            const txRef1 = db.collection('transactions').doc();
+            t.set(txRef1, {
+                userId: referrerId,
+                type: 'referral',
+                description: `Reward for referring ${userData.name || 'User'}`,
+                relatedId: userId,
+                amount: 50,
+                status: 'completed',
+                transactionId: txRef1.id,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                isCredit: true,
+                currency: 'COINS'
+            });
+            
+            // 2. Referee Transaction Record
+            const txRef2 = db.collection('transactions').doc();
+            t.set(txRef2, {
+                userId: userId,
+                type: 'referral',
+                description: `Welcome bonus for using code ${code}`,
+                relatedId: referrerId,
+                amount: 20,
+                status: 'completed',
+                transactionId: txRef2.id,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                isCredit: true,
+                currency: 'COINS'
+            });
+
+            // 3. Audit Record
+            const referralRef = db.collection('referrals').doc();
+            t.set(referralRef, {
+                referrerUid: referrerId,
+                referredUid: userId,
+                referrerCode: code,
+                awarded: true,
+                referrerCoins: 50,
+                referredCoins: 20,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        console.log(`[Referral] Success: Code ${code} applied for ${userId}`);
+        return res.status(200).send({ success: true });
+
+    } catch (error) {
+        console.error(`[Referral] Error: ${error.message}`);
+        return res.status(500).send({ message: error.message });
+    }
+};
+
 // Define Routes
 app.post('/create-order', createOrderHandler);
 app.post('/verify-razorpay', verifyRazorpayHandler);
 app.get('/verify-order/:orderId', verifyOrderHandler);
 app.post('/process-payout', processPayoutHandler);
+app.post('/apply-referral', applyReferralHandler);
 
 // Start Server
 app.listen(PORT, () => {

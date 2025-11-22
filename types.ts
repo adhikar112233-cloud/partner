@@ -585,14 +585,18 @@ export interface Dispute {
 export interface Transaction {
   id: string;
   userId: string;
-  type: 'payment';
+  type: 'payment' | 'referral';
   description: string;
   relatedId: string;
   collabId?: string;
+  collabType?: string;
   amount: number;
+  coinsUsed?: number;
   status: 'completed' | 'pending' | 'failed';
   transactionId: string;
   timestamp: any;
+  isCredit?: boolean;
+  currency?: 'INR' | 'COINS';
 }
 
 export interface PlatformBanner {

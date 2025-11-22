@@ -5,6 +5,7 @@ import { auth, db, BACKEND_URL, RAZORPAY_KEY_ID } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { load } from "@cashfreepayments/cashfree-js";
 import { doc, setDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
+import { CoinIcon } from './Icons';
 
 interface PaymentModalProps {
   user: User;
@@ -45,8 +46,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [status, setStatus] = useState<'idle' | 'processing' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
+  const userCoins = user.coins || 0;
+  // Automatically select "Use Coins" if the user has a balance
+  const [useCoins, setUseCoins] = useState(userCoins > 0);
   const needsPhone = !user.mobileNumber;
 
+  // 1. Calculate Base Fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
     : 0;
@@ -55,7 +60,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     ? processingCharge * (platformSettings.gstRate / 100)
     : 0;
 
-  const totalPayable = baseAmount + processingCharge + gstOnFees;
+  const grossTotal = baseAmount + processingCharge + gstOnFees;
+
+  // 2. Calculate Coin Deduction
+  // Rules: 1 Coin = 1 Rupee. Max 100 coins per transaction. Cannot exceed total amount.
+  const maxRedeemableCoins = Math.min(userCoins, 100, Math.floor(grossTotal));
+  
+  const discountAmount = useCoins ? maxRedeemableCoins : 0;
+  const finalPayableAmount = Math.max(0, grossTotal - discountAmount);
 
   const handlePayment = async () => {
     const cleanPhone = (needsPhone ? phoneNumber : user.mobileNumber)
@@ -78,7 +90,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       const idToken = await firebaseUser.getIdToken();
 
-      // Determine gateway and API URL logic
       const activeGateway = platformSettings.activePaymentGateway?.toLowerCase();
       const selectedGateway = activeGateway === 'cashfree' ? 'cashfree' : 'razorpay';
       
@@ -87,8 +98,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           ? "https://razorpay-backeb-nd.onrender.com"
           : "https://partnerpayment-backend.onrender.com";
 
+      // Pass original amount (for records) and coinsUsed (for deduction)
       const body = {
-        amount: Number(totalPayable.toFixed(2)),
+        amount: Number(finalPayableAmount.toFixed(2)), // Amount sent to Gateway
+        originalAmount: Number(grossTotal.toFixed(2)), // Total value before discount
+        coinsUsed: useCoins ? maxRedeemableCoins : 0,
         purpose: transactionDetails.description,
         relatedId: transactionDetails.relatedId,
         collabId: transactionDetails.collabId,
@@ -129,10 +143,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           data = {
             gateway: "razorpay",
             key_id: platformSettings.razorpayKeyId || RAZORPAY_KEY_ID,
-            amount: Math.round(totalPayable * 100), // amount in paise
+            amount: Math.round(finalPayableAmount * 100), // amount in paise
             currency: "INR",
             id: undefined,
             fallbackMode: true,
+            coinsUsed: useCoins ? maxRedeemableCoins : 0, // Track coins for fallback
             internal_order_id: `fallback_${Date.now()}_${Math.floor(Math.random() * 1000)}`
           };
         } else {
@@ -142,6 +157,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       if (needsPhone) {
         apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(console.warn);
+      }
+      
+      // If the entire amount was covered by coins (amount = 0), the backend should return gateway: 'wallet'
+      if (data.gateway === 'wallet') {
+          setStatus("idle");
+          onClose();
+          window.location.href = `/?order_id=${data.order_id}&gateway=wallet`;
+          return;
       }
 
       const razorpayOrderId =
@@ -175,8 +198,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               console.log("Payment successful (Fallback Mode) - updating database directly");
               try {
                   const fallbackOrderId = data.internal_order_id;
+                  const coinsToDeduct = data.coinsUsed || 0;
                   
-                  // 1. Create Transaction Record (so it shows in history)
+                  // 1. Create Transaction Record
                   await setDoc(doc(db, 'transactions', fallbackOrderId), {
                       userId: user.id,
                       type: 'payment',
@@ -184,8 +208,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                       relatedId: transactionDetails.relatedId,
                       collabId: transactionDetails.collabId || null,
                       collabType: collabType,
-                      amount: totalPayable,
-                      status: 'completed', // Mark as completed immediately in fallback
+                      amount: finalPayableAmount, // Net amount paid
+                      coinsUsed: coinsToDeduct,
+                      status: 'completed',
                       transactionId: fallbackOrderId,
                       timestamp: serverTimestamp(),
                       paymentGateway: 'razorpay',
@@ -195,13 +220,18 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                       }
                   });
                   
-                  // 2. Trigger Logic specific to the item being bought (Membership, Boost, etc.)
-                  // We duplicate logic from the backend `fulfillOrder` here for safety.
-                  
+                  // 2. Deduct Coins (Client Side Fallback)
+                  if (coinsToDeduct > 0) {
+                      // Using API service update which merges
+                      const freshUserSnap = await apiService.getUserByEmail(user.email);
+                      if(freshUserSnap) {
+                          await apiService.updateUser(user.id, { coins: Math.max(0, (freshUserSnap.coins || 0) - coinsToDeduct) });
+                      }
+                  }
+
+                  // 3. Trigger Logic specific to the item being bought
                   if (collabType === 'membership') {
                       const now = Timestamp.now();
-                      // Activate membership for 1 year (or based on plan)
-                      // Simplified fallback: just activate for a year to ensure user gets access.
                       const expiryDate = new Date(now.toDate());
                       expiryDate.setFullYear(expiryDate.getFullYear() + 1);
                       
@@ -219,18 +249,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   else if (collabType.startsWith('boost_')) {
                       const boostType = collabType.split('_')[1];
                       const targetId = transactionDetails.relatedId;
-                      const days = 7;
-                      const now = new Date();
-                      const expiresAt = new Date();
-                      expiresAt.setDate(now.getDate() + days);
                       
-                      // Create boost record
                       await apiService.activateBoost(user.id, boostType as any, targetId, boostType === 'profile' ? 'profile' : boostType === 'campaign' ? 'campaign' : 'banner');
                   }
                   
                   setStatus("idle");
                   onClose();
-                  // Redirect with fallback flag so success page verifies against Firestore, not backend
                   window.location.href = `/?order_id=${fallbackOrderId}&gateway=razorpay&fallback=true`;
                   return;
               } catch (dbErr) {
@@ -243,9 +267,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
             try {
               // Standard Backend Verification
-              // We continue to use BACKEND_URL here unless your new server also has the verification endpoint.
-              // If verify-razorpay is also on the new URL, you should change BACKEND_URL below to API_URL.
-              // Assuming existing backend function for verification:
               const verifyRes = await fetch(`${BACKEND_URL}/verify-razorpay`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -253,7 +274,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   razorpayOrderId: response.razorpay_order_id,
                   razorpayPaymentId: response.razorpay_payment_id,
                   razorpaySignature: response.razorpay_signature,
-                  // Use 'orderId' as expected by the backend function
                   orderId: data.internal_order_id 
                 }),
               });
@@ -266,7 +286,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
               } else {
                 console.error("Verification failed response:", result);
-                // Even if backend verification fails temporarily, we redirect to let the success page check again
                 window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
               }
             } catch (err) {
@@ -360,29 +379,54 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
               )}
 
-              <div className="space-y-2 text-sm mt-4 dark:text-gray-300">
+              <div className="space-y-3 text-sm mt-4 dark:text-gray-300">
                 <div className="flex justify-between">
-                  <span>Amount:</span>
+                  <span>Subtotal:</span>
                   <span>₹{baseAmount.toFixed(2)}</span>
                 </div>
 
                 {processingCharge > 0 && (
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-gray-500">
                     <span>Processing Fee:</span>
                     <span>₹{processingCharge.toFixed(2)}</span>
                   </div>
                 )}
 
                 {gstOnFees > 0 && (
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-gray-500">
                     <span>GST on Fees:</span>
                     <span>₹{gstOnFees.toFixed(2)}</span>
                   </div>
                 )}
 
-                <div className="flex justify-between font-bold text-lg pt-2 border-t dark:border-gray-700">
+                {/* Coin Redemption Section */}
+                {userCoins > 0 && (
+                    <div className="p-3 bg-indigo-50 dark:bg-gray-700 rounded-lg border border-indigo-100 dark:border-gray-600 mt-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <CoinIcon className="w-5 h-5 text-yellow-500" />
+                                <div>
+                                    <p className="font-semibold text-gray-800 dark:text-white">Use Coins</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Balance: {userCoins}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">- ₹{useCoins ? maxRedeemableCoins : 0}</span>
+                                <input 
+                                    type="checkbox" 
+                                    checked={useCoins}
+                                    onChange={(e) => setUseCoins(e.target.checked)}
+                                    className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
+                                />
+                            </div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Max redeemable: 100 coins per transaction (1 Coin = ₹1)</p>
+                    </div>
+                )}
+
+                <div className="flex justify-between font-bold text-lg pt-4 border-t dark:border-gray-700">
                   <span>Total Payable:</span>
-                  <span>₹{totalPayable.toFixed(2)}</span>
+                  <span>₹{finalPayableAmount.toFixed(2)}</span>
                 </div>
               </div>
             </>
@@ -407,7 +451,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               onClick={handlePayment}
               className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-all"
             >
-              Pay ₹{totalPayable.toFixed(2)}
+              Pay ₹{finalPayableAmount.toFixed(2)}
             </button>
           </div>
         )}

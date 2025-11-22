@@ -1,24 +1,22 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
-// Fix: Import `CombinedCollabItem` from the central types file.
 import { PlatformSettings, User, PayoutRequest, Post, Influencer, SocialMediaLink, Transaction, KycStatus, KycDetails, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, CollabRequestStatus, CampaignApplicationStatus, AdBookingStatus, PlatformBanner, UserRole, StaffPermission, Message, RefundRequest, DailyPayoutRequest, Dispute, DiscountSetting, Membership, CombinedCollabItem, CreatorVerificationStatus, CreatorVerificationDetails, Partner } from '../types';
-import { Timestamp, doc, updateDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import { Timestamp, doc, updateDoc, QueryDocumentSnapshot, DocumentData, setDoc } from 'firebase/firestore';
 import PostCard from './PostCard';
 import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
 import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, ChatBubbleLeftEllipsisIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, LockClosedIcon, LockOpenIcon, KeyIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, EnvelopeIcon, ProfileIcon, ShareIcon as SocialsIcon, TrashIcon, PencilIcon } from './Icons';
 import LiveHelpPanel from './LiveHelpPanel';
-import { db } from '../services/firebase';
+import { db, firebaseConfig } from '../services/firebase';
 import PayoutsPanel from './PayoutsPanel';
-// FIX: Cleaned up the geminiService import to only include what's used in this file.
-// FIX: Added filterDisputesWithAI import for the new DisputesPanel component.
 import { filterPostsWithAI, filterDisputesWithAI } from '../services/geminiService';
 import MarketingPanel from './MarketingPanel';
 import PlatformBannerPanel from './PlatformBannerPanel';
-// FIX: Add missing import for authService.
 import { authService } from '../services/authService';
 import PartnersPanel from './PartnersPanel';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 
-// Fix: Add props passed from App.tsx to the interface to resolve type error.
 interface AdminPanelProps {
     user: User;
     allUsers: User[];
@@ -31,7 +29,6 @@ interface AdminPanelProps {
     onUpdate: () => void;
 }
 
-// Fix: Defined ToggleSwitch at the module level so it can be used by multiple components within this file.
 const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void }> = ({ enabled, onChange }) => (
     <button
         type="button"
@@ -64,7 +61,6 @@ const toJsDate = (ts: any): Date | undefined => {
 type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands';
 
 
-// --- KYC Detail Modal ---
 const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const { kycDetails } = user;
@@ -73,7 +69,7 @@ const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComple
         let reason: string | undefined;
         if (status === 'rejected') {
             reason = prompt("Please provide a reason for rejection:");
-            if (!reason) return; // User cancelled the prompt
+            if (!reason) return; 
         }
 
         if (!window.confirm(`Are you sure you want to ${status} this KYC submission?`)) return;
@@ -136,7 +132,6 @@ const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComple
     );
 };
 
-// --- KYC Panel ---
 const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
     const [submissions, setSubmissions] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -189,13 +184,11 @@ const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
 const PayoutStatusBadge: React.FC<{ status: PayoutRequest['status'] | Transaction['status'] }> = ({ status }) => {
     const baseClasses = "px-2 py-1 text-xs font-medium rounded-full capitalize";
     const statusMap: Record<string, { text: string; classes: string }> = {
-        // PayoutRequest statuses
         pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100 dark:text-yellow-200 dark:bg-yellow-900/50" },
         on_hold: { text: "On Hold", classes: "text-blue-800 bg-blue-100 dark:text-blue-200 dark:bg-blue-900/50" },
         processing: { text: "Processing", classes: "text-purple-800 bg-purple-100 dark:text-purple-200 dark:bg-purple-900/50" },
         approved: { text: "Approved", classes: "text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50" },
         rejected: { text: "Rejected", classes: "text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50" },
-        // Transaction statuses
         completed: { text: "Completed", classes: "text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50" },
         failed: { text: "Failed", classes: "text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50" },
     };
@@ -209,30 +202,31 @@ const PayoutStatusBadge: React.FC<{ status: PayoutRequest['status'] | Transactio
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
-// --- Creator Verification Modal ---
 const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const { creatorVerificationDetails: details } = user;
+    const [confirmStatus, setConfirmStatus] = useState<'approved' | 'rejected' | null>(null);
+    const [rejectionReason, setRejectionReason] = useState('');
 
-    const handleAction = async (status: 'approved' | 'rejected') => {
-        let reason: string | undefined;
-        if (status === 'rejected') {
-            reason = prompt("Please provide a reason for rejection:");
-            if (!reason) return; // User cancelled
+    const handleConfirm = async () => {
+        if (!confirmStatus) return;
+        
+        if (confirmStatus === 'rejected' && !rejectionReason.trim()) {
+            alert("Please provide a reason for rejection.");
+            return;
         }
-
-        if (!window.confirm(`Are you sure you want to ${status} this submission?`)) return;
 
         setIsProcessing(true);
         try {
-            await apiService.updateCreatorVerificationStatus(user.id, status, reason);
+            await apiService.updateCreatorVerificationStatus(user.id, confirmStatus, rejectionReason);
             onActionComplete();
             onClose();
         } catch (error) {
-            console.error(`Failed to ${status} verification`, error);
-            alert(`Could not ${status} verification. Please try again.`);
+            console.error(`Failed to ${confirmStatus} verification`, error);
+            alert(`Could not ${confirmStatus} verification. Please try again.`);
         } finally {
             setIsProcessing(false);
+            setConfirmStatus(null);
         }
     };
 
@@ -240,7 +234,7 @@ const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onAc
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col relative">
                 <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
                     <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Creator Verification for {user.name}</h2>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-2xl">&times;</button>
@@ -265,16 +259,62 @@ const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onAc
                     </dl>
                 </div>
                 <div className="p-4 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-end gap-3">
-                    <button onClick={() => handleAction('rejected')} disabled={isProcessing} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Reject</button>
-                    <button onClick={() => handleAction('approved')} disabled={isProcessing} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Approve</button>
+                    <button onClick={() => setConfirmStatus('rejected')} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
+                    <button onClick={() => setConfirmStatus('approved')} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
                 </div>
+
+                {confirmStatus && (
+                    <div className="absolute inset-0 bg-white dark:bg-gray-800 rounded-2xl z-10 flex flex-col p-6 animate-fade-in-down">
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">
+                            Confirm {confirmStatus === 'approved' ? 'Approval' : 'Rejection'}
+                        </h3>
+                        
+                        <div className="flex-1">
+                            {confirmStatus === 'approved' ? (
+                                <p className="text-gray-600 dark:text-gray-300">
+                                    Are you sure you want to approve this verification request? The user will receive a verified badge.
+                                </p>
+                            ) : (
+                                <div>
+                                    <p className="text-gray-600 dark:text-gray-300 mb-2">
+                                        Please provide a reason for rejection:
+                                    </p>
+                                    <textarea
+                                        value={rejectionReason}
+                                        onChange={(e) => setRejectionReason(e.target.value)}
+                                        className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+                                        rows={4}
+                                        placeholder="e.g., Invalid ID proof, blurred documents..."
+                                    />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-3 mt-6">
+                            <button 
+                                onClick={() => { setConfirmStatus(null); setRejectionReason(''); }} 
+                                disabled={isProcessing}
+                                className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleConfirm} 
+                                disabled={isProcessing}
+                                className={`px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 ${
+                                    confirmStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                                }`}
+                            >
+                                {isProcessing ? 'Processing...' : `Confirm ${confirmStatus === 'approved' ? 'Approve' : 'Reject'}`}
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
 };
 
-
-// --- Creator Verification Panel ---
 const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
     const [submissions, setSubmissions] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -324,8 +364,6 @@ const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate
     );
 };
 
-
-// --- Community Management Panel ---
 const CommunityManagementPanel: React.FC = () => {
     const [posts, setPosts] = useState<Post[]>([]);
     const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
@@ -411,8 +449,8 @@ const CommunityManagementPanel: React.FC = () => {
                             currentUser={currentUser}
                             onDelete={handleDelete}
                             onUpdate={handleUpdate}
-                            onToggleLike={() => {}} // Admin doesn't need to like
-                            onCommentChange={() => {}} // Admin doesn't need to comment from this panel
+                            onToggleLike={() => {}} 
+                            onCommentChange={() => {}} 
                         />
                     ))
                 )}
@@ -421,9 +459,81 @@ const CommunityManagementPanel: React.FC = () => {
     );
 };
 
+const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transaction[], onUpdate: () => void }> = ({ disputes, allTransactions, onUpdate }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const getRelatedTransaction = (collabId: string | undefined, docId: string) => {
+        return allTransactions.find(t => t.relatedId === docId || (collabId && t.collabId === collabId));
+    };
+
+    const filteredDisputes = useMemo(() => {
+        if (!searchTerm.trim()) return disputes;
+        const lower = searchTerm.toLowerCase();
+        return disputes.filter(d => 
+            d.disputedByName.toLowerCase().includes(lower) ||
+            d.disputedAgainstName.toLowerCase().includes(lower) ||
+            d.reason.toLowerCase().includes(lower) ||
+            d.collaborationTitle.toLowerCase().includes(lower) ||
+            (d.collabId && d.collabId.toLowerCase().includes(lower))
+        );
+    }, [disputes, searchTerm]);
+
+    return (
+        <div className="p-6 h-full flex flex-col">
+            <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">Disputes Management</h2>
+            <div className="mb-4">
+                <input 
+                    type="text" 
+                    placeholder="Search disputes..." 
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+                />
+            </div>
+            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                        <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Raised By</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Against</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Reason</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Order ID</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Payment Ref ID</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {filteredDisputes.map(dispute => {
+                            const tx = getRelatedTransaction(dispute.collabId, dispute.collaborationId);
+                            const refId = tx?.paymentGatewayDetails?.razorpayPaymentId || tx?.paymentGatewayDetails?.referenceId || tx?.paymentGatewayDetails?.payment_id || 'N/A';
+                            
+                            return (
+                                <tr key={dispute.id}>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{toJsDate(dispute.timestamp)?.toLocaleDateString()}</td>
+                                    <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">{dispute.disputedByName}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{dispute.disputedAgainstName}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={dispute.reason}>{dispute.reason}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">{tx?.transactionId || 'N/A'}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">{refId}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${dispute.status === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
+                                            {dispute.status.replace('_', ' ')}
+                                        </span>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                {filteredDisputes.length === 0 && <p className="p-6 text-center text-gray-500">No disputes found.</p>}
+            </div>
+        </div>
+    );
+};
+
 const DetailsModal: React.FC<{ data: object, onClose: () => void }> = ({ data, onClose }) => {
     const replacer = (key: string, value: any) => {
-        // Convert Firestore Timestamps to ISO strings for readability
         if (value && typeof value === 'object' && value.toDate instanceof Function) {
             return value.toDate().toISOString();
         }
@@ -495,28 +605,15 @@ const ConversationModal: React.FC<{ collab: AnyCollaboration, onClose: () => voi
     );
 };
 
-const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], onUpdate: (id: string, type: string, data: Partial<AnyCollaboration>) => void }> = ({ collaborations, onUpdate }) => {
+const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allTransactions: Transaction[], onUpdate: (id: string, type: string, data: Partial<AnyCollaboration>) => void }> = ({ collaborations, allTransactions, onUpdate }) => {
     const [viewingDetails, setViewingDetails] = useState<AnyCollaboration | null>(null);
     const [viewingConversation, setViewingConversation] = useState<AnyCollaboration | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    const collabRequestStatusValues: CollabRequestStatus[] = [
-        'pending', 'rejected', 'influencer_offer', 'brand_offer', 'agreement_reached',
-        'in_progress', 'work_submitted', 'completed', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'
-    ];
-    const campaignApplicationStatusValues: CampaignApplicationStatus[] = [
-        'pending_brand_review', 'rejected', 'brand_counter_offer', 'influencer_counter_offer',
-        'agreement_reached', 'in_progress', 'work_submitted', 'completed', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'
-    ];
-    const adBookingStatusValues: AdBookingStatus[] = [
-        'pending_approval', 'rejected', 'agency_offer', 'brand_offer', 'agreement_reached',
-        'in_progress', 'work_submitted', 'completed', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'
-    ];
-    
     const bookingStatuses = [...new Set([
-        ...collabRequestStatusValues,
-        ...campaignApplicationStatusValues,
-        ...adBookingStatusValues
+        'pending', 'rejected', 'influencer_offer', 'brand_offer', 'agreement_reached',
+        'in_progress', 'work_submitted', 'completed', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review',
+        'pending_brand_review', 'brand_counter_offer', 'influencer_counter_offer', 'pending_approval', 'agency_offer'
     ])];
 
     const filteredCollaborations = useMemo(() => {
@@ -550,6 +647,10 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], onUp
         onUpdate(item.id, item.type, { paymentStatus: paymentStatusUpdate });
     };
 
+    const getRelatedTransaction = (collabId: string | undefined, docId: string) => {
+        return allTransactions.find(t => t.relatedId === docId || (collabId && t.collabId === collabId));
+    };
+
     return (
         <div className="h-full overflow-auto p-4">
             <div className="mb-4">
@@ -570,6 +671,8 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], onUp
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Provider</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collab ID</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order ID</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gateway Ref</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Booking Status</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payout</th>
@@ -603,6 +706,19 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], onUp
                                         <div className="text-xs font-mono" title={item.id}>
                                             {item.originalData.collabId || item.id}
                                         </div>
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        {(() => {
+                                            const tx = getRelatedTransaction(item.originalData.collabId, item.id);
+                                            return tx ? <span className="font-mono text-xs">{tx.transactionId}</span> : '-';
+                                        })()}
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        {(() => {
+                                            const tx = getRelatedTransaction(item.originalData.collabId, item.id);
+                                            const ref = tx?.paymentGatewayDetails?.razorpayPaymentId || tx?.paymentGatewayDetails?.referenceId;
+                                            return ref ? <span className="font-mono text-xs">{ref}</span> : '-';
+                                        })()}
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm">
                                         <select value={item.status} onChange={(e) => handleStatusChange(item, e.target.value)} className="w-full text-sm rounded-md border-gray-300 dark:bg-gray-600 dark:border-gray-500 capitalize">
@@ -745,7 +861,7 @@ const ConfirmationModal: React.FC<{
                 <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">Confirm Action</h3>
                 <p className="my-4 text-gray-600 dark:text-gray-300">{message}</p>
                 <div className="flex justify-end gap-4 mt-6">
-                    <button onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">Cancel</button>
+                    <button onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-50">Cancel</button>
                     <button onClick={onConfirm} className={`px-4 py-2 text-white rounded-lg ${confirmClass}`}>{confirmText}</button>
                 </div>
             </div>
@@ -764,7 +880,7 @@ const UserDetailsModal: React.FC<{
     influencerProfile: Influencer | null;
     onUpdate: () => void;
 }> = ({ user, onClose, onSendReset, onToggleBlock, allTransactions, allPayouts, allCollabs, influencerProfile, onUpdate }) => {
-    const [activeTab, setActiveTab] = useState<'profile' | 'financials' | 'collaborations' | 'socials' | 'kyc'>('profile');
+    const [activeTab, setActiveTab] = useState<'profile' | 'financials' | 'collaborations' | 'socials' | 'kyc' | 'verification'>('profile');
     const [confirmationAction, setConfirmationAction] = useState<{ action: 'block' | 'unblock' | 'reset' | 'activate_membership' | 'deactivate_membership', user: User } | null>(null);
 
     const handleToggleMembership = async (userToUpdate: User, activate: boolean) => {
@@ -818,6 +934,10 @@ const UserDetailsModal: React.FC<{
         return allCollabs.filter(c => c.originalData.brandId === user.id || ('influencerId' in c.originalData && c.originalData.influencerId === user.id) || ('agencyId' in c.originalData && c.originalData.agencyId === user.id) || ('liveTvId' in c.originalData && c.originalData.liveTvId === user.id));
     }, [user, allCollabs]);
 
+    const getRelatedTransaction = (collabId: string | undefined, docId: string) => {
+        return allTransactions.find(t => t.relatedId === docId || (collabId && t.collabId === collabId));
+    };
+
     const socialLinks = useMemo(() => {
         if (!influencerProfile || !influencerProfile.socialMediaLinks) return [];
         return influencerProfile.socialMediaLinks.split(',').map(s => s.trim()).filter(Boolean);
@@ -826,7 +946,7 @@ const UserDetailsModal: React.FC<{
     if (!user) return null;
 
     const tabs: {
-        id: 'profile' | 'financials' | 'collaborations' | 'socials' | 'kyc';
+        id: 'profile' | 'financials' | 'collaborations' | 'socials' | 'kyc' | 'verification';
         label: string;
         icon: React.FC<{ className?: string }>;
     }[] = [
@@ -839,6 +959,9 @@ const UserDetailsModal: React.FC<{
     }
     if (user.kycStatus !== 'not_submitted') {
         tabs.push({ id: 'kyc', label: 'KYC Details', icon: KycIcon });
+    }
+    if (user.creatorVerificationStatus && user.creatorVerificationStatus !== 'not_submitted') {
+        tabs.push({ id: 'verification', label: 'Verification Info', icon: SparklesIcon });
     }
 
     const DetailRow: React.FC<{ label: string; value?: React.ReactNode; children?: React.ReactNode }> = ({ label, value, children }) => (
@@ -938,6 +1061,65 @@ const UserDetailsModal: React.FC<{
         );
     };
 
+    const CreatorVerificationView: React.FC<{ user: User, onAction: () => void }> = ({ user, onAction }) => {
+        const [isProcessing, setIsProcessing] = useState(false);
+        const details = user.creatorVerificationDetails;
+
+        const handleVerificationAction = async (status: 'approved' | 'rejected') => {
+            let reason: string | undefined;
+            if (status === 'rejected') {
+                reason = prompt("Please provide a reason for rejection:");
+                if (reason === null) return; // User cancelled
+            }
+
+            if (!window.confirm(`Are you sure you want to ${status} this verification?`)) return;
+
+            setIsProcessing(true);
+            try {
+                await apiService.updateCreatorVerificationStatus(user.id, status, reason);
+                onAction(); 
+            } catch (error) {
+                console.error(`Failed to ${status} verification`, error);
+                alert(`Could not ${status} verification. Please try again.`);
+            } finally {
+                setIsProcessing(false);
+            }
+        };
+
+        if (!details) {
+            return <p className="p-4 text-gray-500">No verification details have been submitted for this user.</p>;
+        }
+
+        return (
+            <div className="space-y-6">
+                <dl className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {user.role === 'influencer' && (
+                        <>
+                             <DetailRow label="Social Media Links" value={<pre className="whitespace-pre-wrap font-sans">{details.socialMediaLinks}</pre>} />
+                             <DetailRow label="ID Number" value={details.idNumber} />
+                        </>
+                    )}
+                    {(user.role === 'livetv' || user.role === 'banneragency') && (
+                        <>
+                            <DetailRow label="Registration No." value={details.registrationNo} />
+                            <DetailRow label="MSME No." value={details.msmeNo} />
+                            <DetailRow label="Business PAN" value={details.businessPan} />
+                            <DetailRow label="Trade License" value={details.tradeLicenseNo} />
+                        </>
+                    )}
+                    {details.rejectionReason && <DetailRow label="Rejection Reason"><span className="text-red-600">{details.rejectionReason}</span></DetailRow>}
+                </dl>
+
+                {user.creatorVerificationStatus === 'pending' && (
+                    <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-600">
+                        <button onClick={() => handleVerificationAction('rejected')} disabled={isProcessing} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Reject</button>
+                        <button onClick={() => handleVerificationAction('approved')} disabled={isProcessing} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Approve</button>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const isMembershipActive = !!(user.membership?.isActive && user.membership.expiresAt && toJsDate(user.membership.expiresAt)! > new Date());
     
     return (
@@ -1000,6 +1182,12 @@ const UserDetailsModal: React.FC<{
                                     items={paymentHistory}
                                     columns={[
                                         { header: 'Date', accessor: item => item.date?.toLocaleDateString() },
+                                        { header: 'Order ID', accessor: item => <span className="font-mono text-xs">{item.transactionId}</span> },
+                                        { header: 'Gateway Ref', accessor: item => {
+                                             const ref = item.paymentGatewayDetails?.razorpayPaymentId || item.paymentGatewayDetails?.referenceId;
+                                             return ref ? <span className="font-mono text-xs">{ref}</span> : '-';
+                                        }},
+                                        { header: 'Collab ID', accessor: item => <span className="font-mono text-xs">{item.collabId || '-'}</span> },
                                         { header: 'Type', accessor: item => <span className={`font-semibold ${item.type === 'Payment' ? 'text-red-600' : 'text-green-600'}`}>{item.type}</span> },
                                         { header: 'Amount', accessor: item => `₹${item.amount.toLocaleString()}` },
                                         { header: 'Status', accessor: item => <PayoutStatusBadge status={item.status} /> },
@@ -1016,7 +1204,17 @@ const UserDetailsModal: React.FC<{
                                     items={collaborationHistory}
                                     columns={[
                                         { header: 'Date', accessor: item => item.date?.toLocaleDateString() },
+                                        { header: 'Collab ID', accessor: item => <span className="font-mono text-xs" title={item.id}>{item.originalData.collabId || item.id}</span> },
                                         { header: 'Title', accessor: item => item.title },
+                                        { header: 'Order ID', accessor: item => {
+                                            const tx = getRelatedTransaction(item.originalData.collabId, item.id);
+                                            return tx ? <span className="font-mono text-xs">{tx.transactionId}</span> : '-';
+                                        }},
+                                        { header: 'Gateway Ref', accessor: item => {
+                                            const tx = getRelatedTransaction(item.originalData.collabId, item.id);
+                                            const ref = tx?.paymentGatewayDetails?.razorpayPaymentId || tx?.paymentGatewayDetails?.referenceId;
+                                            return ref ? <span className="font-mono text-xs">{ref}</span> : '-';
+                                        }},
                                         { header: 'Type', accessor: item => item.type },
                                         { header: 'Status', accessor: item => <span className="capitalize">{item.status.replace(/_/g, ' ')}</span> },
                                         { header: 'Payment', accessor: item => item.paymentStatus },
@@ -1037,6 +1235,7 @@ const UserDetailsModal: React.FC<{
                         </div>
                     )}
                     {activeTab === 'kyc' && <KycDetailsView user={user} onAction={() => { onUpdate(); onClose(); }} />}
+                    {activeTab === 'verification' && <CreatorVerificationView user={user} onAction={() => { onUpdate(); onClose(); }} />}
                 </div>
                 
                 <div className="p-4 bg-gray-50 border-t flex justify-between items-center">
@@ -1072,8 +1271,6 @@ const UserDetailsModal: React.FC<{
         </div>
     );
 };
-
-// --- START: User Management Components ---
 
 const UserManagementPanel: React.FC<{
     users: User[];
@@ -1212,12 +1409,141 @@ const StaffPermissionsModal: React.FC<{
     );
 };
 
+const AddStaffModal: React.FC<{
+    onClose: () => void;
+    onSuccess: () => void;
+}> = ({ onClose, onSuccess }) => {
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        setIsLoading(true);
+
+        if (password.length < 8) {
+            setError("Password must be at least 8 characters.");
+            setIsLoading(false);
+            return;
+        }
+
+        let secondaryApp;
+        try {
+            const appName = "SecondaryAppForStaffCreation";
+            try {
+                secondaryApp = initializeApp(firebaseConfig, appName);
+            } catch (e: any) {
+                if (e.code === 'app/duplicate-app') {
+                    secondaryApp = initializeApp(firebaseConfig, `${appName}_${Date.now()}`);
+                } else {
+                    throw e;
+                }
+            }
+
+            const secondaryAuth = getAuth(secondaryApp);
+            const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+            
+            await signOut(secondaryAuth);
+
+            await setDoc(doc(db, 'users', cred.user.uid), {
+                name,
+                email,
+                role: 'staff',
+                staffPermissions: [], 
+                isBlocked: false,
+                createdAt: Timestamp.now(),
+                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+                kycStatus: 'not_submitted', 
+            });
+
+            alert("Staff account created successfully.");
+            onSuccess();
+            onClose();
+
+        } catch (err: any) {
+            console.error("Error creating staff:", err);
+            if (err.code === 'auth/email-already-in-use') {
+                setError("This email is already registered.");
+            } else {
+                setError(err.message || "Failed to create staff account.");
+            }
+        } finally {
+            setIsLoading(false);
+            if (secondaryApp) {
+                await deleteApp(secondaryApp).catch(console.error);
+            }
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-100">
+                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                
+                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Add New Staff</h3>
+                
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+                        <input 
+                            type="text" 
+                            value={name} 
+                            onChange={e => setName(e.target.value)} 
+                            required 
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                        <input 
+                            type="email" 
+                            value={email} 
+                            onChange={e => setEmail(e.target.value)} 
+                            required 
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                        <input 
+                            type="password" 
+                            value={password} 
+                            onChange={e => setPassword(e.target.value)} 
+                            required 
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Min. 8 characters.</p>
+                    </div>
+
+                    {error && <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>}
+
+                    <button 
+                        type="submit" 
+                        disabled={isLoading} 
+                        className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                        {isLoading ? 'Creating...' : 'Create Account'}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 const StaffManagementPanel: React.FC<{
     staffUsers: User[];
     onUpdate: () => void;
     platformSettings: PlatformSettings;
 }> = ({ staffUsers, onUpdate, platformSettings }) => {
     const [editingStaff, setEditingStaff] = useState<User | null>(null);
+    const [isAddStaffModalOpen, setIsAddStaffModalOpen] = useState(false);
 
     const handleSavePermissions = async (userId: string, permissions: StaffPermission[]) => {
         await apiService.updateUser(userId, { staffPermissions: permissions });
@@ -1225,30 +1551,19 @@ const StaffManagementPanel: React.FC<{
         setEditingStaff(null);
     };
 
-    const handleRegisterStaff = () => {
+    const handleAddStaffClick = () => {
         if (!platformSettings.isStaffRegistrationEnabled) {
             alert("Staff registration is currently disabled in settings.");
             return;
         }
-        // This simulates opening a simple registration form
-        const email = prompt("Enter new staff member's email:");
-        const password = prompt("Enter a temporary password (min 8 characters):");
-        const name = prompt("Enter new staff member's full name:");
-        if (email && password && name) {
-            authService.register(email, password, 'staff', name, '', '').then(() => {
-                alert("Staff member registered successfully.");
-                onUpdate();
-            }).catch(err => {
-                alert(`Registration failed: ${err.message}`);
-            });
-        }
+        setIsAddStaffModalOpen(true);
     };
 
     return (
         <div className="p-6 h-full flex flex-col bg-gray-100 dark:bg-gray-900">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Staff Management</h2>
-                <button onClick={handleRegisterStaff} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50" disabled={!platformSettings.isStaffRegistrationEnabled} title={!platformSettings.isStaffRegistrationEnabled ? "Enable in Settings to add staff" : ""}>
+                <button onClick={handleAddStaffClick} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50" disabled={!platformSettings.isStaffRegistrationEnabled} title={!platformSettings.isStaffRegistrationEnabled ? "Enable in Settings to add staff" : ""}>
                     Add New Staff
                 </button>
             </div>
@@ -1291,14 +1606,11 @@ const StaffManagementPanel: React.FC<{
                  </table>
             </div>
              {editingStaff && <StaffPermissionsModal staffMember={editingStaff} onClose={() => setEditingStaff(null)} onSave={handleSavePermissions} />}
+             {isAddStaffModalOpen && <AddStaffModal onClose={() => setIsAddStaffModalOpen(false)} onSuccess={onUpdate} />}
         </div>
     );
 };
 
-// --- END: User Management Components ---
-
-
-// FIX: Export the AdminPanel component to be used in App.tsx
 export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTransactions, allPayouts, allCollabs, allRefunds, allDailyPayouts, platformSettings, onUpdate }) => {
     const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -1308,7 +1620,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
     const [disputes, setDisputes] = useState<Dispute[]>([]);
     const [isLoadingDisputes, setIsLoadingDisputes] = useState(false);
     
-    // States for User Management pagination
     const [paginatedUsers, setPaginatedUsers] = useState<User[]>([]);
     const [lastVisibleUser, setLastVisibleUser] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
     const [isFetchingUsers, setIsFetchingUsers] = useState(false);
@@ -1367,7 +1678,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
     const handleToggleBlock = async (userToToggle: User) => {
         try {
             await apiService.updateUser(userToToggle.id, { isBlocked: !userToToggle.isBlocked });
-            onUpdate(); // Refresh all data
+            onUpdate(); 
         } catch (error) {
             console.error(error);
             alert("Failed to update user status.");
@@ -1397,7 +1708,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
         }
     };
     
-    // Memoize the combined collaborations list
     const combinedCollaborations = useMemo<CombinedCollabItem[]>(() => {
         const userMap = new Map(allUsers.map(u => [u.id, u]));
         return allCollabs.map((collab) => {
@@ -1419,7 +1729,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
                 id: collab.id,
                 type: isDirect ? 'Direct' : isCampaign ? 'Campaign' : isLiveTv ? 'Live TV' : 'Banner Ad',
                 title: ('title' in collab ? collab.title : null) || ('campaignTitle' in collab ? collab.campaignTitle : null) || ('campaignName' in collab ? collab.campaignName : 'N/A'),
-                // FIX: Added type assertions to customer and provider variables to resolve 'property does not exist on type unknown' errors. This clarifies the type for the TypeScript compiler where it was incorrectly inferring 'unknown'.
                 customerName: (customer as User)?.name || collab.brandName || 'Unknown',
                 customerAvatar: (customer as User)?.avatar || collab.brandAvatar || '',
                 customerPiNumber: (customer as User)?.piNumber,
@@ -1455,7 +1764,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
     ];
     
     const hasPermission = (permission?: StaffPermission) => {
-        if (!permission) return true; // No specific permission required
+        if (!permission) return true; 
         return user.staffPermissions?.includes('super_admin') || user.staffPermissions?.includes(permission);
     };
 
@@ -1483,16 +1792,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
                 {activeTab === 'dashboard' && <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />}
                 {activeTab === 'user_management' && <UserManagementPanel users={regularUsers} onUserSelect={handleOpenUserDetails} />}
                 {activeTab === 'staff_management' && <StaffManagementPanel staffUsers={staffUsers} onUpdate={onUpdate} platformSettings={platformSettings} />}
-                {activeTab === 'collaborations' && <CollaborationsPanel collaborations={combinedCollaborations} onUpdate={handleCollabUpdate} />}
+                {activeTab === 'collaborations' && <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} />}
                 {activeTab === 'kyc' && <KycPanel onUpdate={onUpdate} />}
                 {activeTab === 'creator_verification' && <CreatorVerificationPanel onUpdate={onUpdate} />}
-                {activeTab === 'payouts' && <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allUsers={allUsers} onUpdate={onUpdate} />}
+                {activeTab === 'payouts' && <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={onUpdate} />}
                 {activeTab === 'payment_history' && <AdminPaymentHistoryPage transactions={allTransactions} payouts={allPayouts} allUsers={allUsers} collaborations={combinedCollaborations} />}
                 {activeTab === 'community' && <CommunityManagementPanel />}
                 {activeTab === 'live_help' && <LiveHelpPanel adminUser={user} />}
                 {activeTab === 'marketing' && <MarketingPanel allUsers={allUsers} platformSettings={platformSettings} onUpdate={onUpdate} />}
-                {activeTab === 'disputes' && <div />}
-                {activeTab === 'discounts' && <div />}
+                {activeTab === 'disputes' && <DisputesPanel disputes={disputes} allTransactions={allTransactions} onUpdate={() => apiService.getDisputes().then(setDisputes)} />}
+                {activeTab === 'discounts' && <DiscountSettingsPanel settings={platformSettings} setSettings={() => {}} setIsDirty={() => {}} />}
                 {activeTab === 'platform_banners' && <PlatformBannerPanel onUpdate={onUpdate} />}
                 {activeTab === 'client_brands' && <PartnersPanel onUpdate={onUpdate} />}
 

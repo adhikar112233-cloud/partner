@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { User, Transaction, PayoutRequest, UserRole } from '../types';
 import { Timestamp } from 'firebase/firestore';
@@ -18,6 +19,7 @@ interface CombinedHistoryItem {
     amount: number;
     status: string;
     transactionId: string;
+    paymentRefId: string;
     userName: string;
     userAvatar: string;
     userRole: UserRole;
@@ -58,6 +60,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
 
         const mappedTransactions: CombinedHistoryItem[] = transactions.map(t => {
             const user = userMap.get(t.userId);
+            const refId = t.paymentGatewayDetails?.razorpayPaymentId || t.paymentGatewayDetails?.referenceId || t.paymentGatewayDetails?.payment_id || '-';
             return {
                 date: safeToDate(t.timestamp),
                 description: t.description,
@@ -65,6 +68,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 amount: t.amount,
                 status: t.status,
                 transactionId: t.transactionId,
+                paymentRefId: refId,
                 userName: user?.name || 'Unknown User',
                 userAvatar: user?.avatar || '',
                 userRole: user?.role || 'brand', // Default to brand for safety
@@ -83,6 +87,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 amount: p.amount,
                 status: p.status,
                 transactionId: p.id,
+                paymentRefId: '-', // Payouts don't have an incoming payment ref ID in this context usually
                 userName: p.userName,
                 userAvatar: p.userAvatar,
                 userRole: user?.role || 'influencer', // Default to influencer for safety
@@ -122,6 +127,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 item.description.toLowerCase().includes(lowercasedQuery) ||
                 (item.collabId && item.collabId.toLowerCase().includes(lowercasedQuery)) ||
                 item.transactionId.toLowerCase().includes(lowercasedQuery) ||
+                item.paymentRefId.toLowerCase().includes(lowercasedQuery) ||
                 item.type.toLowerCase().includes(lowercasedQuery) ||
                 item.status.toLowerCase().includes(lowercasedQuery) ||
                 String(item.amount).includes(lowercasedQuery)
@@ -155,7 +161,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                      <div className="relative w-full sm:w-auto sm:max-w-md">
                         <input
                             type="text"
-                            placeholder="Search by user, description, ID, status, amount..."
+                            placeholder="Search by user, ID, Ref ID, amount..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
@@ -174,11 +180,10 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Description</th>
-                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
-                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Type</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Transaction ID</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Order ID</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Payment Ref ID</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -196,15 +201,12 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 max-w-xs truncate">{item.description}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono dark:text-gray-400">{item.collabId || 'N/A'}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                                <span className={`font-semibold ${item.type === 'Payment Made' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{item.type}</span>
-                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-semibold">
                                                 {item.type === 'Payment Made' ? '-' : '+'} ₹{(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap"><StatusBadge status={item.status} /></td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono max-w-[100px] truncate">{item.transactionId}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono max-w-[100px] truncate" title={item.transactionId}>{item.transactionId}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono max-w-[100px] truncate" title={item.paymentRefId}>{item.paymentRefId}</td>
                                         </tr>
                                     ))}
                                 </tbody>

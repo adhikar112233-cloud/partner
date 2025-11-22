@@ -1,7 +1,6 @@
 
-
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { PayoutRequest, RefundRequest, DailyPayoutRequest, UserRole, CombinedCollabItem, User } from '../types';
+import { PayoutRequest, RefundRequest, DailyPayoutRequest, UserRole, CombinedCollabItem, User, Transaction } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
 import { SparklesIcon } from './Icons';
@@ -84,13 +83,27 @@ const ActionDropdown: React.FC<{ item: PayoutQueueItem, onRequestAction: (item: 
     );
 };
 
-const RequestDetailsModal: React.FC<{ item: PayoutQueueItem, onClose: () => void }> = ({ item, onClose }) => {
+const RequestDetailsModal: React.FC<{ item: PayoutQueueItem, allTransactions: Transaction[], onClose: () => void }> = ({ item, allTransactions, onClose }) => {
     const DetailRow: React.FC<{ label: string; children: React.ReactNode; className?: string }> = ({ label, children, className }) => (
         <div className={`py-2 grid grid-cols-3 gap-4 ${className}`}>
             <dt className="text-sm font-medium text-gray-500">{label}</dt>
             <dd className="mt-1 text-sm text-gray-900 col-span-2 sm:mt-0">{children}</dd>
         </div>
     );
+
+    // Attempt to find the payment transaction related to the work being paid out/refunded
+    const relatedTransaction = useMemo(() => {
+        return allTransactions.find(t => 
+            t.relatedId === item.collaborationId || 
+            (item.collabId && t.collabId === item.collabId) ||
+            (item.requestType === 'Daily Payout' && t.collabId === item.collabId) // Daily payout logic if stored differently
+        );
+    }, [item, allTransactions]);
+
+    const paymentRefId = relatedTransaction?.paymentGatewayDetails?.razorpayPaymentId 
+        || relatedTransaction?.paymentGatewayDetails?.referenceId 
+        || relatedTransaction?.paymentGatewayDetails?.payment_id 
+        || '-';
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[60] p-4">
@@ -116,14 +129,23 @@ const RequestDetailsModal: React.FC<{ item: PayoutQueueItem, onClose: () => void
                         {item.userPiNumber && <DetailRow label="Profile ID"><span className="font-mono">{item.userPiNumber}</span></DetailRow>}
                     </dl>
                     
-                    <h3 className="font-bold text-lg mt-6 mb-4 border-t pt-4">Collaboration</h3>
+                    <h3 className="font-bold text-lg mt-6 mb-4 border-t pt-4">Collaboration & Payment Source</h3>
                     <dl>
                         <DetailRow label="Title">{item.collabTitle}</DetailRow>
                         <DetailRow label="Collab ID">{item.collabId || 'N/A'}</DetailRow>
-                        <DetailRow label="Document ID"><span className="font-mono text-xs">{item.collaborationId}</span></DetailRow>
+                        <DetailRow label="Order ID (Txn)">
+                            <span className="font-mono text-xs bg-gray-100 p-1 rounded">
+                                {relatedTransaction ? relatedTransaction.transactionId : 'Not Found'}
+                            </span>
+                        </DetailRow>
+                        <DetailRow label="Payment Ref ID">
+                            <span className="font-mono text-xs bg-gray-100 p-1 rounded">
+                                {paymentRefId}
+                            </span>
+                        </DetailRow>
                     </dl>
 
-                    <h3 className="font-bold text-lg mt-6 mb-4 border-t pt-4">Payment Information</h3>
+                    <h3 className="font-bold text-lg mt-6 mb-4 border-t pt-4">Payout Destination</h3>
                     <dl>
                         {item.requestType === 'Payout' && (
                             <>
@@ -336,11 +358,12 @@ interface PayoutsPanelProps {
     refunds: RefundRequest[];
     dailyPayouts: DailyPayoutRequest[];
     collaborations: CombinedCollabItem[];
+    allTransactions: Transaction[];
     allUsers: User[];
     onUpdate: () => void;
 }
 
-const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayouts, collaborations, allUsers, onUpdate }) => {
+const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayouts, collaborations, allTransactions, allUsers, onUpdate }) => {
     const [filter, setFilter] = useState<'all' | 'pending' | 'processing'>('pending');
     const [editingItem, setEditingItem] = useState<PayoutQueueItem | null>(null);
     const [viewingDetails, setViewingDetails] = useState<PayoutQueueItem | null>(null);
@@ -380,7 +403,6 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
         
         const d: PayoutQueueItem[] = dailyPayouts.map(r => {
             const user = userMap.get(r.userId);
-            // FIX: Add missing 'originalRequest' property to satisfy the PayoutQueueItem type.
             return {
                 id: r.id, requestType: 'Daily Payout', status: r.status, amount: r.approvedAmount || 0, userName: r.userName,
                 userAvatar: '', userRole: r.userRole, userPiNumber: user?.piNumber, collabTitle: `Daily Payout for ${r.collaborationId}`,
@@ -569,7 +591,7 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
                 />
             )}
             {viewingDetails && (
-                 <RequestDetailsModal item={viewingDetails} onClose={() => setViewingDetails(null)} />
+                 <RequestDetailsModal item={viewingDetails} allTransactions={allTransactions} onClose={() => setViewingDetails(null)} />
             )}
             {confirmation && (
                 <ConfirmationModal 

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { auth, BACKEND_URL, db } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 interface PaymentSuccessPageProps {
@@ -24,7 +24,6 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                     return;
                 }
 
-                const idToken = await firebaseUser.getIdToken();
                 const params = new URLSearchParams(window.location.search);
                 const orderId = params.get("order_id");
                 const isFallback = params.get("fallback") === "true";
@@ -49,30 +48,28 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                     }
                 }
 
-                // Verify against our backend to ensure DB is updated. 
-                // This is crucial even for Razorpay to ensure 'fulfillOrder' has run.
-                const VERIFY_ORDER_URL = `${BACKEND_URL}/verify-order/${orderId}`;
+                // Polling function for payment status
+                const checkPaymentStatus = async () => {
+                    try {
+                        const response = await fetch(`https://partnerpayment-backend.onrender.com/payment-status/${orderId}`);
+                        const data = await response.json();
+                        setOutput(data);
 
-                const res = await fetch(VERIFY_ORDER_URL, {
-                    headers: { "Authorization": "Bearer " + idToken }
-                });
-
-                const data = await res.json().catch(() => null);
-                setOutput(data);
-
-                if (res.ok && (data?.order_status === "PAID" || data?.order_status === "completed")) {
-                    setStatus('success');
-                } else {
-                    // Check Firestore one last time in case backend returned pending but async process finished
-                    const docRef = doc(db, 'transactions', orderId);
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists() && docSnap.data().status === 'completed') {
-                        setStatus('success');
-                    } else {
-                        setStatus('failed');
-                        setErrorMessage(data?.message || `Verification failed. The server responded with status ${res.status}.`);
+                        if (data.success || data.status === 'SUCCESS' || data.order_status === 'PAID' || data.order_status === 'completed') {
+                            setStatus('success');
+                        } else {
+                            // Retry after 3 seconds
+                            setTimeout(checkPaymentStatus, 3000);
+                        }
+                    } catch (err: any) {
+                        console.error("Error polling status:", err);
+                        // Continue polling even on error, might be temporary network issue
+                        setTimeout(checkPaymentStatus, 3000);
                     }
-                }
+                };
+
+                // Start verification process
+                checkPaymentStatus();
 
             } catch (err: any) {
                 console.error("Verification failed:", err);
@@ -90,7 +87,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 <div className="text-center">
                     <div className="w-12 h-12 border-4 border-dashed rounded-full animate-spin border-indigo-500 mx-auto"></div>
                     <h2 className="mt-4 text-2xl font-bold text-gray-800 dark:text-gray-100">Verifying Payment...</h2>
-                    <p className="text-gray-500 mt-2">Please wait while we confirm your transaction.</p>
+                    <p className="text-gray-500 mt-2" id="status">⏳ Waiting for payment update...</p>
                 </div>
             )}
 
@@ -100,7 +97,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <h1 className="mt-4 text-3xl font-bold text-green-600">Payment Success ✔</h1>
-                    <p className="text-gray-600 dark:text-gray-300 mt-2">Your payment has been confirmed and your account updated.</p>
+                    <p className="text-gray-600 dark:text-gray-300 mt-2">🎉 Payment Successful! Your account has been updated.</p>
                 </div>
             )}
 
@@ -110,7 +107,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <h1 className="mt-4 text-3xl font-bold text-red-600">Payment Not Confirmed</h1>
-                    <p className="text-gray-600 dark:text-gray-300 mt-2">{errorMessage || 'Your payment could not be confirmed by the server. Please check your payment provider or contact support.'}</p>
+                    <p className="text-gray-600 dark:text-gray-300 mt-2">{errorMessage || 'Your payment could not be confirmed. Please check with support.'}</p>
                 </div>
             )}
             
@@ -124,7 +121,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 </div>
             )}
             
-            {output && !output.order_status && (
+            {output && !output.success && status !== 'success' && (
                 <div className="mt-8">
                     <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Server Response:</h3>
                     <pre id="output" className="mt-2 p-4 bg-gray-100 dark:bg-gray-900 rounded-md text-xs overflow-x-auto text-left">

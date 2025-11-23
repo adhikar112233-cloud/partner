@@ -386,7 +386,8 @@ const createOrderHandler = async (req, res) => {
                         customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                     },
                     order_meta: {
-                        return_url: `https://bigyapon2-cfa39.firebaseapp.com/?order_id={order_id}`
+                        return_url: `https://www.bigyapon.com/payment-success?order_id={order_id}`,
+                        notify_url: `https://partnerpayment-backend.onrender.com/cashfree-webhook`
                     }
                 }),
             });

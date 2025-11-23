@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
@@ -136,7 +135,7 @@ service cloud.firestore {
             fixTitle: "Troubleshooting Steps",
             fixSteps: (
                  <ol className="list-decimal list-inside space-y-2">
-                    <li>Verify the <strong>projectId</strong> in <code>services/firebase.ts</code> matches your Firebase project.</li>
+                    <li>Verify the <strong>projectId</strong> in <code>../services/firebase.ts</code> matches your Firebase project.</li>
                     <li>Ensure you have an active internet connection.</li>
                     <li>Check the <a href="https://status.firebase.google.com/" target="_blank" rel="noreferrer" className="text-indigo-600 underline">Firebase Status Dashboard</a> for outages.</li>
                 </ol>
@@ -662,7 +661,6 @@ const App: React.FC = () => {
       case View.PAYMENT_SUCCESS:
         return <PaymentSuccessPage user={user} onComplete={() => {
             window.history.replaceState({}, document.title, window.location.pathname);
-            refreshUser(); // Explicitly refresh user to update membership status immediately
             refreshAllData();
             setActiveView(View.DASHBOARD);
         }} />;

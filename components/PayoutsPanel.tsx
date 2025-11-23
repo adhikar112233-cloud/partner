@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { PayoutRequest, RefundRequest, DailyPayoutRequest, UserRole, CombinedCollabItem, User, Transaction } from '../types';
 import { apiService } from '../services/apiService';
@@ -6,7 +7,7 @@ import { apiService } from '../services/apiService';
 interface PayoutQueueItem {
     id: string;
     requestType: 'Payout' | 'Refund' | 'Daily Payout';
-    status: 'pending' | 'approved' | 'rejected' | 'on_hold' | 'processing';
+    status: 'pending' | 'approved' | 'rejected' | 'on_hold' | 'processing' | 'completed';
     amount: number;
     userName: string;
     userAvatar: string;
@@ -33,6 +34,7 @@ const StatusBadge: React.FC<{ status: PayoutQueueItem['status'] }> = ({ status }
         rejected: "bg-red-100 text-red-800 border-red-200",
         on_hold: "bg-blue-100 text-blue-800 border-blue-200",
         processing: "bg-purple-100 text-purple-800 border-purple-200",
+        completed: "bg-green-100 text-green-800 border-green-200",
     };
     return (
         <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full border ${colors[status] || 'bg-gray-100 text-gray-800'}`}>
@@ -63,7 +65,7 @@ const ActionSelectionModal: React.FC<{
     onClose: () => void; 
     onSelectAction: (status: PayoutQueueItem['status']) => void; 
 }> = ({ item, onClose, onSelectAction }) => {
-    const actions: PayoutQueueItem['status'][] = ['approved', 'processing', 'on_hold', 'rejected'];
+    const actions: PayoutQueueItem['status'][] = ['approved', 'processing', 'on_hold', 'rejected', 'completed'];
     
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[100] p-4 backdrop-blur-sm" onClick={onClose}>
@@ -79,6 +81,7 @@ const ActionSelectionModal: React.FC<{
                             onClick={() => onSelectAction(action)}
                             className={`w-full py-3 px-4 rounded-lg font-medium text-left flex justify-between items-center transition-all transform active:scale-95
                                 ${action === 'approved' ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200' : ''}
+                                ${action === 'completed' ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200' : ''}
                                 ${action === 'processing' ? 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200' : ''}
                                 ${action === 'on_hold' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200' : ''}
                                 ${action === 'rejected' ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200' : ''}

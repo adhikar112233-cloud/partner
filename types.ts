@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 
 // Fix: Define application-wide types to resolve import errors across multiple components and services.
@@ -514,7 +515,7 @@ export interface PayoutRequest {
   bankDetails?: string;
   upiId?: string;
   amount: number;
-  status: 'pending' | 'approved' | 'rejected' | 'on_hold' | 'processing';
+  status: 'pending' | 'approved' | 'rejected' | 'on_hold' | 'processing' | 'completed';
   rejectionReason?: string;
   timestamp: any;
   idProofSelfieUrl?: string;
@@ -530,7 +531,7 @@ export interface DailyPayoutRequest {
   collabId?: string;
   collaborationType: 'ad_slot' | 'banner_booking';
   videoUrl?: string;
-  status: 'pending' | 'approved' | 'rejected' | 'on_hold' | 'processing';
+  status: 'pending' | 'approved' | 'rejected' | 'on_hold' | 'processing' | 'completed';
   rejectionReason?: string;
   approvedAmount?: number;
   timestamp: any; // Firestore Timestamp
@@ -642,7 +643,7 @@ export interface RefundRequest {
   panNumber: string;
   description: string;
   collabId?: string;
-  status: 'pending' | 'approved' | 'rejected' | 'processing';
+  status: 'pending' | 'approved' | 'rejected' | 'processing' | 'on_hold' | 'completed';
   rejectionReason?: string;
   timestamp: any;
 }

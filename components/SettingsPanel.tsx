@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 import { PlatformSettings, SocialMediaLink, MembershipPlan, BoostType, User } from '../types';
@@ -232,28 +231,12 @@ const SettingsPanel: React.FC<{ onSettingsUpdate: () => void }> = ({ onSettingsU
                     </select>
                 </SettingRow>
                 
-                <div className="px-6 py-3 bg-gray-100"><h5 className="font-medium text-gray-500">Cashfree Config</h5></div>
-                <SettingRow label="Gateway API ID"><input type="password" value={settings.paymentGatewayApiId} onChange={(e) => handleSettingChange('paymentGatewayApiId', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
-                <SettingRow label="Gateway Secret"><input type="password" value={settings.paymentGatewayApiSecret} onChange={(e) => handleSettingChange('paymentGatewayApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
-                
-                <div className="px-6 py-3 bg-gray-100"><h5 className="font-medium text-gray-500">Razorpay Config</h5></div>
-                <SettingRow label="Key ID"><input type="password" value={settings.razorpayKeyId || ''} onChange={(e) => handleSettingChange('razorpayKeyId', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
-                <SettingRow label="Key Secret"><input type="password" value={settings.razorpayKeySecret || ''} onChange={(e) => handleSettingChange('razorpayKeySecret', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
-
-                <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Other APIs</h4></div>
-                <SettingRow label="Gateway Source Code"><textarea value={settings.paymentGatewaySourceCode} onChange={(e) => handleSettingChange('paymentGatewaySourceCode', e.target.value)} rows={2} className="w-full rounded-md border-gray-300 shadow-sm font-mono text-xs" /></SettingRow>
-                <SettingRow label="OTP API ID"><input type="password" value={settings.otpApiId} onChange={(e) => handleSettingChange('otpApiId', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
-                <SettingRow label="OTP API Secret"><input type="password" value={settings.otpApiSecret} onChange={(e) => handleSettingChange('otpApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
-                <SettingRow label="OTP API Source Code"><textarea value={settings.otpApiSourceCode} onChange={(e) => handleSettingChange('otpApiSourceCode', e.target.value)} rows={2} className="w-full rounded-md border-gray-300 shadow-sm font-mono text-xs" /></SettingRow>
-
                 <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Manual KYC Settings</h4></div>
                 <SettingRow label="Require ID Proof Upload"><ToggleSwitch enabled={settings.isKycIdProofRequired} onChange={(val) => handleSettingChange('isKycIdProofRequired', val)} /></SettingRow>
                 <SettingRow label="Require Live Selfie"><ToggleSwitch enabled={settings.isKycSelfieRequired} onChange={(val) => handleSettingChange('isKycSelfieRequired', val)} /></SettingRow>
 
                 <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">DigiLocker KYC</h4></div>
                 <SettingRow label="Enable DigiLocker KYC"><ToggleSwitch enabled={settings.isDigilockerKycEnabled} onChange={(val) => handleSettingChange('isDigilockerKycEnabled', val)} /></SettingRow>
-                <SettingRow label="DigiLocker Client ID"><input type="text" value={settings.digilockerClientId} onChange={(e) => handleSettingChange('digilockerClientId', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
-                <SettingRow label="DigiLocker Client Secret"><input type="password" value={settings.digilockerClientSecret} onChange={(e) => handleSettingChange('digilockerClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm" /></SettingRow>
 
                  <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Marketing</h4></div>
                  <SettingRow label="Enable Notification Banner"><ToggleSwitch enabled={settings.isNotificationBannerEnabled} onChange={(val) => handleSettingChange('isNotificationBannerEnabled', val)} /></SettingRow>

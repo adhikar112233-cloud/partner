@@ -48,7 +48,7 @@ const getCollectionNameForCollab = (collabType) => {
       boost_campaign: null,
       boost_banner: null,
     };
-    return collectionMap[collabType];
+    return collectionMap[collabType] || null;
 };
 
 // Helper to get Payment Settings safely
@@ -196,10 +196,16 @@ const fulfillOrder = async (orderId, transactionData, paymentGatewayDetails) => 
              const collectionName = getCollectionNameForCollab(collabType);
              if (collectionName && relatedId) {
                  const collabRef = db.collection(collectionName).doc(relatedId);
-                 batch.update(collabRef, {
-                     status: 'in_progress',
-                     paymentStatus: 'paid'
-                 });
+                 // Check if document exists before update to prevent crash
+                 const collabDoc = await collabRef.get();
+                 if (collabDoc.exists) {
+                     batch.update(collabRef, {
+                         status: 'in_progress',
+                         paymentStatus: 'paid'
+                     });
+                 } else {
+                     console.error(`Related collaboration document ${relatedId} not found in ${collectionName}`);
+                 }
              }
         }
 
@@ -345,6 +351,11 @@ const createOrderHandler = async (req, res) => {
             const data = await response.json();
             if (!response.ok) throw new Error(data.error?.description || 'Razorpay Error');
 
+            // Update transaction with providerOrderId to allow verification later
+            await db.collection('transactions').doc(orderId).update({
+                providerOrderId: data.id
+            });
+
             return res.status(200).send({
                 gateway: 'razorpay',
                 order_id: data.id, // Razorpay ID
@@ -394,6 +405,11 @@ const createOrderHandler = async (req, res) => {
 
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'Cashfree Error');
+
+            // Update transaction with providerOrderId
+            await db.collection('transactions').doc(orderId).update({
+                providerOrderId: data.payment_session_id
+            });
 
             return res.status(200).send({ 
                 gateway: 'cashfree',
@@ -469,30 +485,62 @@ const verifyOrderHandler = async (req, res) => {
         const transactionData = transactionDoc.data();
         if (transactionData.userId !== decoded.uid) return res.status(403).send({ message: 'Forbidden.' });
         
-        // If still pending and Cashfree, try checking status from Cashfree API
-        if (transactionData.status === 'pending' && transactionData.paymentGateway === 'cashfree') {
+        if (transactionData.status === 'pending') {
              const settings = await getPaymentSettings();
-             const CASHFREE_ID = settings.paymentGatewayApiId;
-             const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
-             
-             if (CASHFREE_ID && CASHFREE_SECRET) {
-                 const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
-                 const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
+
+             // CASHFREE LOGIC
+             if (transactionData.paymentGateway === 'cashfree') {
+                 const CASHFREE_ID = settings.paymentGatewayApiId;
+                 const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
                  
-                 const response = await fetch(`${baseUrl}/${orderId}`, {
-                     headers: {
-                        "x-api-version": "2023-08-01",
-                        "x-client-id": CASHFREE_ID,
-                        "x-client-secret": CASHFREE_SECRET,
-                     }
-                 });
-                 
-                 if (response.ok) {
-                     const gatewayData = await response.json();
-                     if (gatewayData.order_status === 'PAID') {
-                         await fulfillOrder(orderId, transactionData, gatewayData);
-                         return res.status(200).send({ order_id: orderId, order_status: 'PAID' });
-                     }
+                 if (CASHFREE_ID && CASHFREE_SECRET) {
+                     const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
+                     const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
+                     
+                     try {
+                         const response = await fetch(`${baseUrl}/${orderId}`, {
+                             headers: {
+                                "x-api-version": "2023-08-01",
+                                "x-client-id": CASHFREE_ID,
+                                "x-client-secret": CASHFREE_SECRET,
+                             }
+                         });
+                         
+                         if (response.ok) {
+                             const gatewayData = await response.json();
+                             if (gatewayData.order_status === 'PAID') {
+                                 await fulfillOrder(orderId, transactionData, gatewayData);
+                                 return res.status(200).send({ order_id: orderId, order_status: 'PAID' });
+                             }
+                         }
+                     } catch (e) { console.error("Cashfree verify fetch error", e); }
+                 }
+             }
+
+             // RAZORPAY LOGIC (New Addition)
+             if (transactionData.paymentGateway === 'razorpay' && transactionData.providerOrderId) {
+                 const KEY_ID = settings.razorpayKeyId;
+                 const KEY_SECRET = settings.razorpayKeySecret;
+
+                 if (KEY_ID && KEY_SECRET) {
+                     const authHeader = 'Basic ' + Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
+                     try {
+                         const response = await fetch(`https://api.razorpay.com/v1/orders/${transactionData.providerOrderId}`, {
+                             headers: { "Authorization": authHeader }
+                         });
+                         if (response.ok) {
+                             const data = await response.json();
+                             // Razorpay order status: created, attempted, paid
+                             if (data.status === 'paid') {
+                                 await fulfillOrder(orderId, transactionData, {
+                                     gateway: 'razorpay',
+                                     razorpayOrderId: data.id,
+                                     verifiedViaApi: true
+                                 });
+                                 return res.status(200).send({ order_id: orderId, order_status: 'PAID' });
+                             }
+                         }
+                     } catch (e) { console.error("Razorpay verify fetch error", e); }
                  }
              }
         }

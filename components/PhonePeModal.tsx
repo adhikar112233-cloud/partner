@@ -4,7 +4,7 @@ import { User, PlatformSettings } from '../types';
 import { auth, db, BACKEND_URL, RAZORPAY_KEY_ID } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { load } from "@cashfreepayments/cashfree-js";
-import { doc, setDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, updateDoc, Timestamp, getDoc } from 'firebase/firestore';
 import { CoinIcon } from './Icons';
 
 interface PaymentModalProps {
@@ -47,11 +47,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
   const userCoins = user.coins || 0;
-  // Automatically select "Use Coins" if the user has a balance
   const [useCoins, setUseCoins] = useState(userCoins > 0);
   const needsPhone = !user.mobileNumber;
 
-  // 1. Calculate Base Fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
     : 0;
@@ -61,13 +59,105 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     : 0;
 
   const grossTotal = baseAmount + processingCharge + gstOnFees;
-
-  // 2. Calculate Coin Deduction
-  // Rules: 1 Coin = 1 Rupee. Max 100 coins per transaction. Cannot exceed total amount.
   const maxRedeemableCoins = Math.min(userCoins, 100, Math.floor(grossTotal));
-  
   const discountAmount = useCoins ? maxRedeemableCoins : 0;
   const finalPayableAmount = Math.max(0, grossTotal - discountAmount);
+
+  // Reusable Client-Side Fulfillment Logic
+  const performClientSideFulfillment = async (orderId: string, paymentId: string, coinsDeducted: number) => {
+        console.log(` performing client-side fulfillment for ${orderId}`);
+        try {
+            // 1. Create/Update Transaction Record
+            await setDoc(doc(db, 'transactions', orderId), {
+                userId: user.id,
+                type: 'payment',
+                description: transactionDetails.description || 'Payment',
+                relatedId: transactionDetails.relatedId,
+                collabId: transactionDetails.collabId || null,
+                collabType: collabType,
+                amount: finalPayableAmount,
+                coinsUsed: coinsDeducted,
+                status: 'completed',
+                transactionId: orderId,
+                timestamp: serverTimestamp(),
+                paymentGateway: 'razorpay',
+                paymentGatewayDetails: {
+                    razorpayPaymentId: paymentId,
+                    mode: 'client_side_fallback'
+                }
+            }, { merge: true });
+            
+            // 2. Deduct Coins
+            if (coinsDeducted > 0) {
+                const freshUserSnap = await getDoc(doc(db, 'users', user.id));
+                if(freshUserSnap.exists()) {
+                    const currentCoins = freshUserSnap.data().coins || 0;
+                    await updateDoc(doc(db, 'users', user.id), { coins: Math.max(0, currentCoins - coinsDeducted) });
+                }
+            }
+
+            // 3. Trigger Item Specific Logic
+            if (collabType === 'membership') {
+                const now = Timestamp.now();
+                const expiryDate = new Date(now.toDate());
+                
+                // Determine duration based on plan ID
+                const planId = transactionDetails.relatedId;
+                if (planId === 'basic') {
+                    expiryDate.setMonth(expiryDate.getMonth() + 1);
+                } else if (planId === 'pro') {
+                    expiryDate.setMonth(expiryDate.getMonth() + 6);
+                } else {
+                    // Premium, Pro 10/20/Unlimited usually 1 year
+                    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                }
+                
+                await updateDoc(doc(db, 'users', user.id), {
+                    'membership.isActive': true,
+                    'membership.plan': planId,
+                    'membership.startsAt': now,
+                    'membership.expiresAt': Timestamp.fromDate(expiryDate)
+                });
+                
+                if (user.role === 'influencer') {
+                    await updateDoc(doc(db, 'influencers', user.id), { membershipActive: true });
+                }
+            } 
+            else if (collabType.startsWith('boost_')) {
+                const boostType = collabType.split('_')[1];
+                const targetId = transactionDetails.relatedId;
+                
+                await apiService.activateBoost(
+                    user.id, 
+                    boostType as any, 
+                    targetId, 
+                    boostType === 'profile' ? 'profile' : boostType === 'campaign' ? 'campaign' : 'banner'
+                );
+            }
+            else {
+                // For regular collabs, update status
+                // Map collabType to collection name
+                const collectionMap: any = {
+                    direct: 'collaboration_requests',
+                    campaign: 'campaign_applications',
+                    ad_slot: 'ad_slot_requests',
+                    banner_booking: 'banner_booking_requests'
+                };
+                const collectionName = collectionMap[collabType];
+                if (collectionName && transactionDetails.relatedId) {
+                     await updateDoc(doc(db, collectionName, transactionDetails.relatedId), {
+                         status: 'in_progress',
+                         paymentStatus: 'paid'
+                     });
+                }
+            }
+            
+            return true;
+        } catch (dbErr) {
+            console.error("Client-side fulfillment failed:", dbErr);
+            return false;
+        }
+  };
 
   const handlePayment = async () => {
     const cleanPhone = (needsPhone ? phoneNumber : user.mobileNumber)
@@ -89,7 +179,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       const idToken = await firebaseUser.getIdToken();
-
       const activeGateway = platformSettings.activePaymentGateway?.toLowerCase();
       const selectedGateway = activeGateway === 'cashfree' ? 'cashfree' : 'razorpay';
       
@@ -98,10 +187,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           ? "https://razorpay-backeb-nd.onrender.com"
           : "https://partnerpayment-backend.onrender.com";
 
-      // Pass original amount (for records) and coinsUsed (for deduction)
       const body = {
-        amount: Number(finalPayableAmount.toFixed(2)), // Amount sent to Gateway
-        originalAmount: Number(grossTotal.toFixed(2)), // Total value before discount
+        amount: Number(finalPayableAmount.toFixed(2)),
+        originalAmount: Number(grossTotal.toFixed(2)),
         coinsUsed: useCoins ? maxRedeemableCoins : 0,
         purpose: transactionDetails.description,
         relatedId: transactionDetails.relatedId,
@@ -111,47 +199,36 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         gateway: selectedGateway,
       };
 
-      console.log(`Initiating payment via ${selectedGateway} at ${API_URL}`);
-
       let data;
 
       try {
         const response = await fetch(`${API_URL}/create-order`, {
           method: "POST",
-          headers:
-            selectedGateway === "razorpay"
+          headers: selectedGateway === "razorpay"
               ? { "Content-Type": "application/json" }
-              : {
-                  "Content-Type": "application/json",
-                  Authorization: "Bearer " + idToken,
-                },
+              : { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
           body: JSON.stringify(body),
         });
 
         if (!response.ok) {
-          const errText = await response.text().catch(() => 'Unknown Error');
-          throw new Error(errText || `Server returned ${response.status}`);
+          throw new Error(`Server returned ${response.status}`);
         }
-
         data = await response.json();
       } catch (creationErr: any) {
-        console.warn("Order creation failed. Attempting fallback logic.", creationErr);
-
-        // Robust Fallback Logic for Razorpay
+        console.warn("Order creation failed. Using fallback.", creationErr);
         if (selectedGateway === "razorpay") {
-          console.log("Using Razorpay Client Fallback");
           data = {
             gateway: "razorpay",
             key_id: platformSettings.razorpayKeyId || RAZORPAY_KEY_ID,
-            amount: Math.round(finalPayableAmount * 100), // amount in paise
+            amount: Math.round(finalPayableAmount * 100),
             currency: "INR",
             id: undefined,
             fallbackMode: true,
-            coinsUsed: useCoins ? maxRedeemableCoins : 0, // Track coins for fallback
+            coinsUsed: useCoins ? maxRedeemableCoins : 0,
             internal_order_id: `fallback_${Date.now()}_${Math.floor(Math.random() * 1000)}`
           };
         } else {
-          throw new Error("Unable to connect to payment server. Please try again later.");
+          throw new Error("Payment server unreachable.");
         }
       }
 
@@ -159,7 +236,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(console.warn);
       }
       
-      // If the entire amount was covered by coins (amount = 0), the backend should return gateway: 'wallet'
       if (data.gateway === 'wallet') {
           setStatus("idle");
           onClose();
@@ -167,17 +243,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           return;
       }
 
-      const razorpayOrderId =
-        data.payment_session_id || data.order?.id || data.id || data.order_id;
-
-      const cashfreeSessionId =
-        data.payment_session_id || data.id || data.session?.id;
-
+      const razorpayOrderId = data.payment_session_id || data.order?.id || data.id || data.order_id;
+      const cashfreeSessionId = data.payment_session_id || data.id || data.session?.id;
       const isRazorpay = data.gateway === "razorpay" || selectedGateway === "razorpay";
-
-      // ------------------------------------------------------------------------------------
-      //                          RAZORPAY CHECKOUT
-      // ------------------------------------------------------------------------------------
 
       if (isRazorpay) {
         if (!window.Razorpay) {
@@ -193,163 +261,76 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           ...(razorpayOrderId && !data.fallbackMode ? { order_id: razorpayOrderId } : {}),
 
           handler: async function (response: any) {
-            // Handle Fallback Mode: Create Firestore transaction client-side since server failed
+            const paymentId = response.razorpay_payment_id;
+            const orderIdToUse = data.internal_order_id || razorpayOrderId;
+            const coinsToDeduct = data.coinsUsed || 0;
+
+            // Fallback Mode or Standard Mode failure handler
+            const doClientFulfillment = async () => {
+                const success = await performClientSideFulfillment(orderIdToUse, paymentId, coinsToDeduct);
+                if (success) {
+                    setStatus("idle");
+                    onClose();
+                    window.location.href = `/?order_id=${orderIdToUse}&gateway=razorpay&fallback=true`;
+                } else {
+                    setError("Payment successful but activation failed. Contact support with ID: " + paymentId);
+                    setStatus("error");
+                }
+            };
+
             if (data.fallbackMode) {
-              console.log("Payment successful (Fallback Mode) - updating database directly");
-              try {
-                  const fallbackOrderId = data.internal_order_id;
-                  const coinsToDeduct = data.coinsUsed || 0;
-                  
-                  // 1. Create Transaction Record
-                  await setDoc(doc(db, 'transactions', fallbackOrderId), {
-                      userId: user.id,
-                      type: 'payment',
-                      description: transactionDetails.description || 'Payment',
-                      relatedId: transactionDetails.relatedId,
-                      collabId: transactionDetails.collabId || null,
-                      collabType: collabType,
-                      amount: finalPayableAmount, // Net amount paid
-                      coinsUsed: coinsToDeduct,
-                      status: 'completed',
-                      transactionId: fallbackOrderId,
-                      timestamp: serverTimestamp(),
-                      paymentGateway: 'razorpay',
-                      paymentGatewayDetails: {
-                          razorpayPaymentId: response.razorpay_payment_id,
-                          mode: 'fallback'
-                      }
-                  });
-                  
-                  // 2. Deduct Coins (Client Side Fallback)
-                  if (coinsToDeduct > 0) {
-                      // Using API service update which merges
-                      const freshUserSnap = await apiService.getUserByEmail(user.email);
-                      if(freshUserSnap) {
-                          await apiService.updateUser(user.id, { coins: Math.max(0, (freshUserSnap.coins || 0) - coinsToDeduct) });
-                      }
-                  }
+                await doClientFulfillment();
+            } else {
+                try {
+                    // Attempt Backend Verification
+                    const verifyRes = await fetch(`${BACKEND_URL}/verify-razorpay`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            razorpayOrderId: response.razorpay_order_id,
+                            razorpayPaymentId: response.razorpay_payment_id,
+                            razorpaySignature: response.razorpay_signature,
+                            orderId: data.internal_order_id 
+                        }),
+                    });
 
-                  // 3. Trigger Logic specific to the item being bought
-                  if (collabType === 'membership') {
-                      const now = Timestamp.now();
-                      const expiryDate = new Date(now.toDate());
-                      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-                      
-                      await updateDoc(doc(db, 'users', user.id), {
-                          'membership.isActive': true,
-                          'membership.plan': transactionDetails.relatedId as any,
-                          'membership.startsAt': now,
-                          'membership.expiresAt': Timestamp.fromDate(expiryDate)
-                      });
-                      
-                      if (user.role === 'influencer') {
-                          await updateDoc(doc(db, 'influencers', user.id), { membershipActive: true });
-                      }
-                  } 
-                  else if (collabType.startsWith('boost_')) {
-                      const boostType = collabType.split('_')[1];
-                      const targetId = transactionDetails.relatedId;
-                      
-                      await apiService.activateBoost(user.id, boostType as any, targetId, boostType === 'profile' ? 'profile' : boostType === 'campaign' ? 'campaign' : 'banner');
-                  }
-                  
-                  setStatus("idle");
-                  onClose();
-                  window.location.href = `/?order_id=${fallbackOrderId}&gateway=razorpay&fallback=true`;
-                  return;
-              } catch (dbErr) {
-                  console.error("Failed to save fallback transaction:", dbErr);
-                  setError("Payment successful but failed to update records. Please contact support.");
-                  setStatus("error");
-                  return;
-              }
-            }
+                    const result = await verifyRes.json();
 
-            try {
-              // Standard Backend Verification
-              const verifyRes = await fetch(`${BACKEND_URL}/verify-razorpay`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  razorpayOrderId: response.razorpay_order_id,
-                  razorpayPaymentId: response.razorpay_payment_id,
-                  razorpaySignature: response.razorpay_signature,
-                  orderId: data.internal_order_id 
-                }),
-              });
-
-              const result = await verifyRes.json();
-
-              if (verifyRes.ok && result.success) {
-                setStatus("idle");
-                onClose();
-                window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
-              } else {
-                console.error("Verification failed response:", result);
-                window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
-              }
-            } catch (err) {
-              console.error("Verification fetch failed", err);
-              setStatus("idle");
-              onClose();
-              window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
+                    if (verifyRes.ok && result.success) {
+                        setStatus("idle");
+                        onClose();
+                        window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
+                    } else {
+                        console.warn("Backend verification failed, trying client-side fix.");
+                        await doClientFulfillment();
+                    }
+                } catch (err) {
+                    console.error("Verification fetch failed, using client-side fallback", err);
+                    await doClientFulfillment();
+                }
             }
           },
-
-          prefill: {
-            name: user.name,
-            email: user.email,
-            contact: cleanPhone,
-          },
-
-          theme: {
-            color: "#4F46E5",
-          },
-
-          modal: {
-            ondismiss: function () {
-              setStatus("idle");
-            },
-          },
+          prefill: { name: user.name, email: user.email, contact: cleanPhone },
+          theme: { color: "#4F46E5" },
+          modal: { ondismiss: function () { setStatus("idle"); } },
         };
 
         const rzp1 = new window.Razorpay(options);
-
         rzp1.on("payment.failed", function (response: any) {
           setError(`Payment Failed: ${response.error.description}`);
           setStatus("error");
         });
-
         rzp1.open();
-      }
-
-      // ------------------------------------------------------------------------------------
-      //                            CASHFREE CHECKOUT
-      // ------------------------------------------------------------------------------------
-
-      else {
-        if (!cashfreeSessionId) {
-          throw new Error("Missing Cashfree payment_session_id");
-        }
-
-        const cashfree = await load({
-          mode: data.environment || "production",
-        });
-
-        await cashfree.checkout({
-          paymentSessionId: cashfreeSessionId,
-          redirectTarget: "_self",
-        });
+      } else {
+        if (!cashfreeSessionId) throw new Error("Missing Cashfree session");
+        const cashfree = await load({ mode: data.environment || "production" });
+        await cashfree.checkout({ paymentSessionId: cashfreeSessionId, redirectTarget: "_self" });
       }
 
     } catch (err: any) {
       console.error("Payment error:", err);
       let msg = err.message || "Something went wrong.";
-
-      if (msg.includes("Failed to fetch")) {
-        msg = "Unable to connect to payment server. Please try again later.";
-      }
-
+      if (msg.includes("Failed to fetch")) msg = "Connection error. Please check internet.";
       setError(msg);
       setStatus("error");
     }
@@ -369,64 +350,33 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               {needsPhone && (
                 <div className="p-4 bg-yellow-50 border rounded-lg mb-4">
                   <label className="block font-semibold text-yellow-800">Contact Number Required</label>
-                  <input
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="Enter mobile number"
-                    className="mt-1 w-full p-2 border rounded"
-                  />
+                  <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Enter mobile number" className="mt-1 w-full p-2 border rounded" />
                 </div>
               )}
 
               <div className="space-y-3 text-sm mt-4 dark:text-gray-300">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>₹{baseAmount.toFixed(2)}</span>
-                </div>
+                <div className="flex justify-between"><span>Subtotal:</span><span>₹{baseAmount.toFixed(2)}</span></div>
+                {processingCharge > 0 && <div className="flex justify-between text-gray-500"><span>Processing Fee:</span><span>₹{processingCharge.toFixed(2)}</span></div>}
+                {gstOnFees > 0 && <div className="flex justify-between text-gray-500"><span>GST on Fees:</span><span>₹{gstOnFees.toFixed(2)}</span></div>}
 
-                {processingCharge > 0 && (
-                  <div className="flex justify-between text-gray-500">
-                    <span>Processing Fee:</span>
-                    <span>₹{processingCharge.toFixed(2)}</span>
-                  </div>
-                )}
-
-                {gstOnFees > 0 && (
-                  <div className="flex justify-between text-gray-500">
-                    <span>GST on Fees:</span>
-                    <span>₹{gstOnFees.toFixed(2)}</span>
-                  </div>
-                )}
-
-                {/* Coin Redemption Section */}
                 {userCoins > 0 && (
                     <div className="p-3 bg-indigo-50 dark:bg-gray-700 rounded-lg border border-indigo-100 dark:border-gray-600 mt-2">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <CoinIcon className="w-5 h-5 text-yellow-500" />
-                                <div>
-                                    <p className="font-semibold text-gray-800 dark:text-white">Use Coins</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">Balance: {userCoins}</p>
-                                </div>
+                                <div><p className="font-semibold text-gray-800 dark:text-white">Use Coins</p><p className="text-xs text-gray-500 dark:text-gray-400">Balance: {userCoins}</p></div>
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">- ₹{useCoins ? maxRedeemableCoins : 0}</span>
-                                <input 
-                                    type="checkbox" 
-                                    checked={useCoins}
-                                    onChange={(e) => setUseCoins(e.target.checked)}
-                                    className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
-                                />
+                                <input type="checkbox" checked={useCoins} onChange={(e) => setUseCoins(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"/>
                             </div>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Max redeemable: 100 coins per transaction (1 Coin = ₹1)</p>
+                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Max redeemable: 100 coins (1 Coin = ₹1)</p>
                     </div>
                 )}
 
                 <div className="flex justify-between font-bold text-lg pt-4 border-t dark:border-gray-700">
-                  <span>Total Payable:</span>
-                  <span>₹{finalPayableAmount.toFixed(2)}</span>
+                  <span>Total Payable:</span><span>₹{finalPayableAmount.toFixed(2)}</span>
                 </div>
               </div>
             </>
@@ -439,18 +389,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           )}
 
           {status === "error" && (
-            <div className="mt-4 p-3 bg-red-50 text-red-700 rounded border border-red-200">
-              <strong>Error:</strong> {error}
-            </div>
+            <div className="mt-4 p-3 bg-red-50 text-red-700 rounded border border-red-200"><strong>Error:</strong> {error}</div>
           )}
         </div>
 
         {status !== "processing" && (
           <div className="p-6 bg-gray-50 dark:bg-gray-700 rounded-b-2xl">
-            <button
-              onClick={handlePayment}
-              className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-all"
-            >
+            <button onClick={handlePayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-all">
               Pay ₹{finalPayableAmount.toFixed(2)}
             </button>
           </div>

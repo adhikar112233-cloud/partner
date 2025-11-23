@@ -27,6 +27,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 const params = new URLSearchParams(window.location.search);
                 const orderId = params.get("order_id");
                 const isFallback = params.get("fallback") === "true";
+                const gateway = params.get("gateway");
                 
                 if (!orderId) {
                     setStatus('error');
@@ -34,8 +35,8 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                     return;
                 }
 
-                // If fallback mode was used, verify directly against Firestore
-                if (isFallback) {
+                // If fallback mode or wallet was used, verify directly against Firestore
+                if (isFallback || gateway === 'wallet') {
                     const docRef = doc(db, 'transactions', orderId);
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists() && docSnap.data().status === 'completed') {

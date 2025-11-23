@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { auth, db, BACKEND_URL } from '../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -10,9 +10,13 @@ interface PaymentSuccessPageProps {
 }
 
 const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplete }) => {
-    const [status, setStatus] = useState("⌛ Checking payment...");
+    const [status, setStatus] = useState("⌛ Checking payment status...");
     const [isSuccess, setIsSuccess] = useState(false);
     const [isChecking, setIsChecking] = useState(true);
+    const [retryCount, setRetryCount] = useState(0);
+    const maxRetries = 5;
+    // Fix: Use ReturnType<typeof setTimeout> instead of NodeJS.Timeout to avoid namespace issues
+    const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -27,14 +31,19 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
         // Initial Check
         checkPayment(orderId);
 
+        return () => {
+            if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+        };
     }, [user]);
 
-    const checkPayment = async (orderId: string) => {
+    const checkPayment = async (orderId: string, isManual = false) => {
         const params = new URLSearchParams(window.location.search);
         const isFallback = params.get("fallback") === "true";
         const gateway = params.get("gateway");
 
-        setStatus("⌛ Verifying transaction...");
+        if (isManual) {
+            setStatus("⌛ Verifying transaction...");
+        }
         setIsChecking(true);
 
         // Robustness: Handle local fallback verification if the initial payment used fallback mode
@@ -47,13 +56,14 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 if (docSnap.exists() && docSnap.data().status === 'completed') {
                     setStatus("🎉 Payment Successful!");
                     setIsSuccess(true);
+                    setIsChecking(false);
                 } else {
-                    setStatus("⚠️ Verification pending. Please wait or check again.");
+                    setStatus("⚠️ Verification pending. Please check again.");
+                    setIsChecking(false);
                 }
             } catch (e) {
                 console.error(e);
                 setStatus("⚠️ Error checking local record.");
-            } finally {
                 setIsChecking(false);
             }
             return;
@@ -89,18 +99,23 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
             if (data.order_status === 'PAID' || data.order_status === 'completed') {
                 setStatus("🎉 Payment Successful!");
                 setIsSuccess(true);
+                setIsChecking(false);
             } else {
-                setStatus("⌛ Payment pending... If money was deducted, it will update shortly.");
-                // Retry automatically once after 3 seconds
-                // But rely on user for further retries to avoid infinite loops
-                setTimeout(() => {
-                   // Optional: we could recurse here, but let's let the user click
-                }, 3000);
+                // If not yet paid, decide whether to retry
+                if (!isManual && retryCount < maxRetries) {
+                    setStatus(`⌛ Payment processing... (${retryCount + 1}/${maxRetries})`);
+                    retryTimeoutRef.current = setTimeout(() => {
+                        setRetryCount(prev => prev + 1);
+                        checkPayment(orderId, false);
+                    }, 2000); // Poll every 2 seconds
+                } else {
+                    setStatus("⌛ Payment pending. Click below to refresh.");
+                    setIsChecking(false);
+                }
             }
         } catch (err) {
             console.error(err);
-            setStatus("⚠️ Error verifying payment. Please try checking again.");
-        } finally {
+            setStatus("⚠️ Error verifying payment. Please check again.");
             setIsChecking(false);
         }
     };
@@ -108,7 +123,10 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
     const handleManualCheck = () => {
         const params = new URLSearchParams(window.location.search);
         const orderId = params.get("order_id");
-        if (orderId) checkPayment(orderId);
+        if (orderId) {
+            // Reset retries for manual check to prevent infinite loop but allow user triggered checks
+            checkPayment(orderId, true);
+        }
     };
 
     return (
@@ -126,7 +144,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                      <p className="text-gray-500 dark:text-gray-400 mt-2">
                         Transaction ID: <span className="font-mono text-xs">{new URLSearchParams(window.location.search).get("order_id")}</span>
                         <br/>
-                        If the amount was deducted, please wait a moment or click "Check Again".
+                        Please wait while we confirm your payment.
                      </p>
                 )}
 

@@ -233,8 +233,8 @@ const createOrderHandler = async (req, res) => {
         return res.status(403).send({ message: 'Invalid Token' });
     }
 
-    // coinsUsed is passed from frontend. amount passed should be the final amount (gateway amount)
-    const { amount, purpose, relatedId, collabId, collabType, phone, gateway: preferredGateway, coinsUsed } = req.body;
+    // coinsUsed and returnUrl are passed from frontend. amount passed should be the final amount (gateway amount)
+    const { amount, purpose, relatedId, collabId, collabType, phone, gateway: preferredGateway, coinsUsed, returnUrl } = req.body;
 
     if (!relatedId || !collabType) {
         return res.status(400).send({ message: 'Missing fields' });
@@ -381,6 +381,9 @@ const createOrderHandler = async (req, res) => {
             const projectID = process.env.GCLOUD_PROJECT || 'bigyapon2-cfa39';
             const notifyUrl = `https://us-central1-${projectID}.cloudfunctions.net/api/cashfree-webhook`;
 
+            // Use provided returnUrl or fallback to generic root URL to prevent 404s
+            const finalReturnUrl = returnUrl || `https://www.bigyapon.com/?order_id={order_id}`;
+
             const response = await fetch(baseUrl, {
                 method: "POST",
                 headers: {
@@ -401,7 +404,7 @@ const createOrderHandler = async (req, res) => {
                         customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                     },
                     order_meta: {
-                        return_url: `https://www.bigyapon.com/payment-success?order_id={order_id}`,
+                        return_url: finalReturnUrl,
                         notify_url: notifyUrl
                     }
                 }),
@@ -475,7 +478,6 @@ const verifyRazorpayHandler = async (req, res) => {
 const cashfreeWebhookHandler = async (req, res) => {
     console.log("Received Cashfree Webhook:", JSON.stringify(req.body));
     try {
-        // Cashfree v3 webhook payload structure typically has a 'data' object
         const data = req.body.data;
         
         if (!data || !data.order || !data.payment) {
@@ -642,7 +644,6 @@ const applyReferralHandler = async (req, res) => {
         const referrerQuery = await usersRef.where('referralCode', '==', code).limit(1).get();
         
         if (referrerQuery.empty) {
-            console.log(`[Referral] Invalid code: ${code}`);
             return res.status(400).send({ message: "Invalid referral code." });
         }
         
@@ -650,7 +651,6 @@ const applyReferralHandler = async (req, res) => {
         const referrerId = referrerDoc.id;
         
         if (referrerId === userId) {
-             console.log(`[Referral] Self-referral attempt by ${userId}`);
              return res.status(400).send({ message: "You cannot refer yourself." });
         }
 
@@ -718,7 +718,6 @@ const applyReferralHandler = async (req, res) => {
             });
         });
 
-        console.log(`[Referral] Success: Code ${code} applied for ${userId}`);
         return res.status(200).send({ success: true });
 
     } catch (error) {

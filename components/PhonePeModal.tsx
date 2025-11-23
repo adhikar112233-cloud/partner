@@ -109,6 +109,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         collabType: collabType,
         phone: cleanPhone,
         gateway: selectedGateway,
+        // Fix 404: Pass dynamic return URL matching current environment
+        returnUrl: window.location.origin + '/?order_id={order_id}'
       };
 
       console.log(`Initiating payment via ${selectedGateway} at ${API_URL}`);

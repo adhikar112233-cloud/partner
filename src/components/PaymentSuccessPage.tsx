@@ -1,89 +1,102 @@
 import { useEffect, useState } from "react";
+import { db } from "../services/firebase";
+import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 interface Props {
   user: any;
   onComplete: () => void;
 }
 
-const PaymentSuccessPage: React.FC<Props> = ({ user, onComplete }) => {
-  const [status, setStatus] = useState("⏳ Verifying payment...");
-  const [loading, setLoading] = useState(true);
-  const [allowRetry, setAllowRetry] = useState(false);
+export default function PaymentSuccessPage({ user, onComplete }: Props) {
+  const [status, setStatus] = useState("⏳ Verifying your payment...");
+
+  const BASE_URL = "https://partnerpayment-backend.onrender.com"; // backend URL
 
   const orderId = new URLSearchParams(window.location.search).get("order_id");
 
-  const checkStatus = async () => {
+  useEffect(() => {
     if (!orderId) {
-      setStatus("❌ Invalid Payment — No Order ID");
+      setStatus("❌ No order found.");
       return;
     }
 
-    setLoading(true);
+    async function verify() {
+      try {
+        const res = await fetch(`${BASE_URL}/payment-status/${orderId}`);
+        const data = await res.json();
 
-    try {
-      const response = await fetch(
-        `https://partnerpayment-backend.onrender.com/payment-status/${orderId}`
-      );
+        if (data.success && data.status === "PAID") {
+          setStatus("🎉 Payment Successful! Activating your account...");
 
-      const data = await response.json();
+          await saveTransaction(orderId);
 
-      if (data.success === true || data.status === "PAID") {
-        setStatus("🎉 Payment Successful! Redirecting...");
-        setLoading(false);
-
-        setTimeout(() => {
-          onComplete(); // 🚀 redirects to dashboard automatically
-        }, 2000);
-      } else {
-        setStatus("⌛ Waiting for bank confirmation...");
-        setLoading(false);
-
-        // auto retry every 4 sec
-        setTimeout(checkStatus, 4000);
+          setTimeout(() => {
+            onComplete();
+          }, 2500);
+        } else {
+          setStatus("⏳ Waiting for bank confirmation...");
+          setTimeout(verify, 4000);
+        }
+      } catch {
+        setStatus("⚠️ Network error. Retrying...");
+        setTimeout(verify, 5000);
       }
-    } catch {
-      setStatus("⚠ Network error — Tap retry");
-      setLoading(false);
     }
-  };
 
-  useEffect(() => {
-    checkStatus();
-    setTimeout(() => setAllowRetry(true), 10000);
+    verify();
   }, []);
+
+  async function saveTransaction(orderId: string) {
+    const transactionRef = doc(db, "transactions", orderId);
+
+    await setDoc(transactionRef, {
+      orderId,
+      userId: user.id,
+      email: user.email,
+      status: "success",
+      amount: user.membership?.price || 0,
+      date: serverTimestamp(),
+    });
+
+    // Activate membership
+    if (user && user.membership) {
+      const userRef = doc(db, "users", user.id);
+      await updateDoc(userRef, {
+        "membership.isActive": true,
+        "membership.activatedAt": serverTimestamp(),
+      });
+    }
+  }
 
   return (
     <div
       style={{
-        marginTop: "120px",
+        marginTop: "80px",
         textAlign: "center",
-        padding: "20px",
         fontSize: "24px",
+        padding: "20px",
       }}
     >
-      <h2>{status}</h2>
+      🔍 Checking Status...
+      <br />
+      <br />
+      <strong>{status}</strong>
 
-      {loading && <p>🔄 Checking status...</p>}
-
-      {allowRetry && (
+      {status.includes("bank confirmation") && (
         <button
-          onClick={checkStatus}
+          onClick={() => window.location.reload()}
           style={{
-            marginTop: "20px",
-            padding: "12px 25px",
+            marginTop: "30px",
+            padding: "12px 22px",
             fontSize: "18px",
             borderRadius: "8px",
-            background: "#4f46e5",
+            background: "#4F46E5",
             color: "white",
-            cursor: "pointer",
-            border: "none",
           }}
         >
-          🔁 Retry
+          🔁 Refresh Now
         </button>
       )}
     </div>
   );
-};
-
-export default PaymentSuccessPage;
+}

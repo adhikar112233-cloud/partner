@@ -58,13 +58,13 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         if (data.success || data.status === 'SUCCESS' || data.order_status === 'PAID' || data.order_status === 'completed') {
                             setStatus('success');
                         } else {
-                            // Retry after 3 seconds
-                            setTimeout(checkPaymentStatus, 3000);
+                            // Retry after 5 seconds as requested
+                            setTimeout(checkPaymentStatus, 5000);
                         }
                     } catch (err: any) {
                         console.error("Error polling status:", err);
                         // Continue polling even on error, might be temporary network issue
-                        setTimeout(checkPaymentStatus, 3000);
+                        setTimeout(checkPaymentStatus, 5000);
                     }
                 };
 
@@ -97,7 +97,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <h1 className="mt-4 text-3xl font-bold text-green-600">Payment Success ✔</h1>
-                    <p className="text-gray-600 dark:text-gray-300 mt-2">🎉 Payment Successful! Your account has been updated.</p>
+                    <p className="text-gray-600 dark:text-gray-300 mt-2" id="status">🎉 Payment Successful! Your account has been updated.</p>
                 </div>
             )}
 

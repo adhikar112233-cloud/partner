@@ -98,6 +98,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           ? "https://razorpay-backeb-nd.onrender.com"
           : "https://partnerpayment-backend.onrender.com";
 
+      // Generate dynamic return URL to prevent 404s on different environments (localhost vs prod)
+      // We use a placeholder {order_id} which Cashfree/Backend logic will replace or append to.
+      const currentOrigin = window.location.origin;
+      const returnUrl = `${currentOrigin}/?order_id={order_id}`;
+
       // Pass original amount (for records) and coinsUsed (for deduction)
       const body = {
         amount: Number(finalPayableAmount.toFixed(2)), // Amount sent to Gateway
@@ -109,8 +114,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         collabType: collabType,
         phone: cleanPhone,
         gateway: selectedGateway,
-        // Fix 404: Pass dynamic return URL matching current environment
-        returnUrl: window.location.origin + '/?order_id={order_id}'
+        returnUrl: returnUrl // Pass the dynamic URL
       };
 
       console.log(`Initiating payment via ${selectedGateway} at ${API_URL}`);
@@ -341,6 +345,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         await cashfree.checkout({
           paymentSessionId: cashfreeSessionId,
           redirectTarget: "_self",
+          returnUrl: returnUrl // Explicitly pass return URL to SDK if supported, though usually backend sets it
         });
       }
 

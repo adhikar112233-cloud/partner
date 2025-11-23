@@ -381,7 +381,8 @@ const createOrderHandler = async (req, res) => {
             const projectID = process.env.GCLOUD_PROJECT || 'bigyapon2-cfa39';
             const notifyUrl = `https://us-central1-${projectID}.cloudfunctions.net/api/cashfree-webhook`;
 
-            // Use provided returnUrl or fallback to generic root URL to prevent 404s
+            // Use provided returnUrl from client to handle dynamic environments (dev/prod), 
+            // fallback to generic root URL if missing.
             const finalReturnUrl = returnUrl || `https://www.bigyapon.com/?order_id={order_id}`;
 
             const response = await fetch(baseUrl, {
@@ -537,6 +538,7 @@ const verifyOrderHandler = async (req, res) => {
         if (!transactionDoc.exists) return res.status(404).send({ message: 'Order not found.' });
         
         const transactionData = transactionDoc.data();
+        // Security check: ensure the user requesting verification owns the transaction
         if (transactionData.userId !== decoded.uid) return res.status(403).send({ message: 'Forbidden.' });
         
         // If completed, just return PAID. If pending, try to verify with Gateway API.
@@ -553,6 +555,7 @@ const verifyOrderHandler = async (req, res) => {
                      const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
                      
                      try {
+                         console.log(`Fetching verification from Cashfree for ${orderId}`);
                          const response = await fetch(`${baseUrl}/${orderId}`, {
                              headers: {
                                 "x-api-version": "2023-08-01",
@@ -580,13 +583,15 @@ const verifyOrderHandler = async (req, res) => {
                  if (KEY_ID && KEY_SECRET) {
                      const authHeader = 'Basic ' + Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
                      try {
+                         console.log(`Fetching verification from Razorpay for ${orderId}`);
                          const response = await fetch(`https://api.razorpay.com/v1/orders/${transactionData.providerOrderId}`, {
                              headers: { "Authorization": authHeader }
                          });
                          if (response.ok) {
                              const data = await response.json();
                              // Razorpay order status: created, attempted, paid
-                             if (data.status === 'paid') {
+                             // Check if amount_paid matches (or is greater due to overpayment/currency)
+                             if (data.status === 'paid' || (data.amount_paid > 0 && data.amount_paid >= data.amount)) {
                                  await fulfillOrder(orderId, transactionData, {
                                      gateway: 'razorpay',
                                      razorpayOrderId: data.id,
@@ -606,6 +611,7 @@ const verifyOrderHandler = async (req, res) => {
         });
 
     } catch (error) {
+        console.error(`Verify Error (${req.params.orderId}):`, error);
         return res.status(500).send({ message: error.message });
     }
 };

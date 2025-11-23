@@ -96,7 +96,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const API_URL =
         selectedGateway === "razorpay"
           ? "https://razorpay-backeb-nd.onrender.com"
-          : "https://partnerpayment-backend.onrender.com";
+          : "https://partnerpayment-backend.onrender.com"; // Or Use BACKEND_URL if unified
+
+      // Use the unified BACKEND_URL if specifically configured or fallback to specific URLs
+      const effectiveApiUrl = BACKEND_URL.includes('cloudfunctions') ? BACKEND_URL : API_URL;
 
       // Generate dynamic return URL to prevent 404s on different environments (localhost vs prod)
       // We use a placeholder {order_id} which Cashfree/Backend logic will replace or append to.
@@ -117,15 +120,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         returnUrl: returnUrl // Pass the dynamic URL
       };
 
-      console.log(`Initiating payment via ${selectedGateway} at ${API_URL}`);
+      console.log(`Initiating payment via ${selectedGateway} at ${effectiveApiUrl}`);
 
       let data;
 
       try {
-        const response = await fetch(`${API_URL}/create-order`, {
+        const response = await fetch(`${effectiveApiUrl}/create-order`, {
           method: "POST",
           headers:
-            selectedGateway === "razorpay"
+            selectedGateway === "razorpay" && !effectiveApiUrl.includes('cloudfunctions')
               ? { "Content-Type": "application/json" }
               : {
                   "Content-Type": "application/json",
@@ -239,11 +242,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   if (collabType === 'membership') {
                       const now = Timestamp.now();
                       const expiryDate = new Date(now.toDate());
-                      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                      const plan = transactionDetails.relatedId;
+                      
+                      // Correct Duration Logic for Fallback
+                      if (plan === 'basic') expiryDate.setMonth(expiryDate.getMonth() + 1);
+                      else if (plan === 'pro') expiryDate.setMonth(expiryDate.getMonth() + 6);
+                      else if (plan === 'premium') expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                      else expiryDate.setFullYear(expiryDate.getFullYear() + 1); // Default to 1 year for brand plans
                       
                       await updateDoc(doc(db, 'users', user.id), {
                           'membership.isActive': true,
-                          'membership.plan': transactionDetails.relatedId as any,
+                          'membership.plan': plan as any,
                           'membership.startsAt': now,
                           'membership.expiresAt': Timestamp.fromDate(expiryDate)
                       });
@@ -273,7 +282,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
             try {
               // Standard Backend Verification
-              const verifyRes = await fetch(`${BACKEND_URL}/verify-razorpay`, {
+              const verifyRes = await fetch(`${effectiveApiUrl}/verify-razorpay`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -345,7 +354,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         await cashfree.checkout({
           paymentSessionId: cashfreeSessionId,
           redirectTarget: "_self",
-          returnUrl: returnUrl // Explicitly pass return URL to SDK if supported, though usually backend sets it
+          returnUrl: returnUrl // Explicitly pass return URL to SDK
         });
       }
 

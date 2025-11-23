@@ -147,7 +147,8 @@ const fulfillOrder = async (orderId, transactionData, paymentGatewayDetails) => 
                  'membership.expiresAt': admin.firestore.Timestamp.fromDate(expiryDate),
              };
              
-             batch.set(userRef, updateData, { merge: true });
+             // Use update to ensure nested fields are updated correctly via dot notation
+             batch.update(userRef, updateData);
              
              // If influencer, verify active status
              const userDoc = await userRef.get();
@@ -240,15 +241,18 @@ const createOrderHandler = async (req, res) => {
         return res.status(400).send({ message: 'Missing fields' });
     }
 
+    // Ensure coinsUsed is a valid number, default to 0
+    const coinsToDeduct = coinsUsed ? Number(coinsUsed) : 0;
+
     // Check User Coin Balance if coins are used
-    if (coinsUsed && coinsUsed > 0) {
+    if (coinsToDeduct > 0) {
         const userDoc = await db.collection('users').doc(userId).get();
         const userCoins = userDoc.data().coins || 0;
         
-        if (userCoins < coinsUsed) {
+        if (userCoins < coinsToDeduct) {
             return res.status(400).send({ message: 'Insufficient coin balance' });
         }
-        if (coinsUsed > 100) {
+        if (coinsToDeduct > 100) {
             return res.status(400).send({ message: 'Maximum 100 coins allowed per transaction' });
         }
     }
@@ -256,13 +260,13 @@ const createOrderHandler = async (req, res) => {
     let orderAmount = parseFloat(amount);
     // Allow 0 amount only if coins are used
     if (isNaN(orderAmount) || orderAmount < 0) return res.status(400).send({ message: 'Invalid amount' });
-    if (orderAmount === 0 && (!coinsUsed || coinsUsed <= 0)) return res.status(400).send({ message: 'Invalid amount' });
+    if (orderAmount === 0 && coinsToDeduct <= 0) return res.status(400).send({ message: 'Invalid amount' });
 
     const orderId = `order_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
     try {
         // Handle Wallet-Only Payment (Full coverage by coins)
-        if (orderAmount === 0 && coinsUsed > 0) {
+        if (orderAmount === 0 && coinsToDeduct > 0) {
             const transactionData = {
                 userId,
                 type: 'payment',
@@ -271,7 +275,7 @@ const createOrderHandler = async (req, res) => {
                 collabId: collabId || null,
                 collabType,
                 amount: 0,
-                coinsUsed: coinsUsed,
+                coinsUsed: coinsToDeduct,
                 status: 'pending', // Initially pending, immediately fulfilled
                 transactionId: orderId,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -306,10 +310,11 @@ const createOrderHandler = async (req, res) => {
             ? preferredGateway 
             : (settings.activePaymentGateway || 'razorpay');
 
-        console.log(`Creating order ${orderId} via ${gateway} for amount ${orderAmount}, coins used: ${coinsUsed || 0}`);
+        console.log(`Creating order ${orderId} via ${gateway} for amount ${orderAmount}, coins used: ${coinsToDeduct}`);
 
         // Create pending transaction with coinsUsed field
-        await db.collection('transactions').doc(orderId).set({
+        // NOTE: We will update providerOrderId AFTER getting it from gateway, but within this function
+        const transactionData = {
             userId,
             type: 'payment',
             description: purpose || 'Payment',
@@ -317,12 +322,14 @@ const createOrderHandler = async (req, res) => {
             collabId: collabId || null,
             collabType,
             amount: orderAmount, // The actual money paid
-            coinsUsed: coinsUsed || 0, // The coins to deduct on success
+            coinsUsed: coinsToDeduct, // The coins to deduct on success
             status: 'pending',
             transactionId: orderId,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             paymentGateway: gateway,
-        });
+        };
+        
+        await db.collection('transactions').doc(orderId).set(transactionData);
 
         if (gateway === 'razorpay') {
             // RAZORPAY
@@ -351,7 +358,7 @@ const createOrderHandler = async (req, res) => {
             const data = await response.json();
             if (!response.ok) throw new Error(data.error?.description || 'Razorpay Error');
 
-            // Update transaction with providerOrderId to allow verification later
+            // CRITICAL: Update transaction with providerOrderId immediately so verification works
             await db.collection('transactions').doc(orderId).update({
                 providerOrderId: data.id
             });
@@ -363,7 +370,7 @@ const createOrderHandler = async (req, res) => {
                 key_id: KEY_ID,
                 amount: data.amount,
                 currency: data.currency,
-                coinsUsed: coinsUsed || 0,
+                coinsUsed: coinsToDeduct,
                 id: data.id 
             });
 
@@ -414,7 +421,7 @@ const createOrderHandler = async (req, res) => {
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'Cashfree Error');
 
-            // Update transaction with providerOrderId
+            // CRITICAL: Update transaction with providerOrderId immediately
             await db.collection('transactions').doc(orderId).update({
                 providerOrderId: data.payment_session_id
             });
@@ -424,7 +431,7 @@ const createOrderHandler = async (req, res) => {
                 payment_session_id: data.payment_session_id,
                 environment: isSandbox ? 'sandbox' : 'production',
                 id: data.payment_session_id,
-                coinsUsed: coinsUsed || 0
+                coinsUsed: coinsToDeduct
             });
         }
 

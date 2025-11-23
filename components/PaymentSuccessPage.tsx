@@ -16,23 +16,24 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const orderId = params.get("order_id");
-        const isFallback = params.get("fallback") === "true";
         const gateway = params.get("gateway");
+        const isFallback = params.get("fallback") === "true";
 
         async function check() {
             if (!orderId) {
-                setStatus("⚠️ Order ID missing.");
-                return;
+               setStatus("⚠️ Order ID missing.");
+               return;
             }
 
-            // Robustness: Handle local fallback verification if the initial payment used fallback mode
-            if (isFallback || gateway === 'wallet') {
-                try {
+            // Robustness: Handle local fallback/wallet verification if applicable
+            // This ensures payments made via internal wallet or fallback mode don't hang.
+            if (gateway === 'wallet' || isFallback) {
+                 try {
                     if (!auth.currentUser) throw new Error("User not authenticated");
                     const docRef = doc(db, 'transactions', orderId);
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists() && docSnap.data().status === 'completed') {
-                        setStatus("🎉 Payment Successful!");
+                        setStatus("🎉 Payment Successful! Subscription Activated.");
                         setIsSuccess(true);
                     } else {
                         setStatus("⚠️ Could not verify payment locally.");
@@ -52,13 +53,13 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
 
                 const data = await res.json();
 
-                // Check for success flag from backend response
-                if (data.success || data.status === 'SUCCESS' || data.order_status === 'PAID' || data.order_status === 'completed') {
+                if (data.success) {
                     setStatus("🎉 Payment Successful! Subscription Activated.");
                     setIsSuccess(true);
+                    // TODO: Call your user update API if needed here, 
+                    // though typically the backend webhook handles the DB update.
                 } else {
-                    setStatus("⌛ Payment still processing... retrying...");
-                    // Retry after 4 seconds as requested
+                    setStatus("⏳ Payment still processing... retrying...");
                     setTimeout(check, 4000);
                 }
             } catch (err) {
@@ -68,7 +69,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
         }
 
         check();
-    }, [user]);
+    }, []);
 
     return (
         <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 p-10 rounded-2xl shadow-2xl mt-10 text-center border border-gray-100 dark:border-gray-700">

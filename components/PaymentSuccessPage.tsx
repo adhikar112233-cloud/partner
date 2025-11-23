@@ -10,7 +10,7 @@ interface PaymentSuccessPageProps {
 }
 
 const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplete }) => {
-  const [status, setStatus] = useState("⌛ Checking payment...");
+  const [status, setStatus] = useState("⌛ Verifying payment...");
   const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
@@ -32,7 +32,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 const docRef = doc(db, 'transactions', orderId!);
                 const docSnap = await getDoc(docRef);
                 if (docSnap.exists() && docSnap.data().status === 'completed') {
-                    setStatus("🎉 Payment Successful! Activated.");
+                    setStatus("🎉 Payment Successful! Subscription Activated.");
                     setIsSuccess(true);
                 } else {
                     setStatus("⏳ Verifying local record...");
@@ -57,8 +57,8 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 setStatus("🎉 Payment Successful! Subscription Activated.");
                 setIsSuccess(true);
             } else {
-                setStatus("⏳ Payment still processing... retrying...");
-                setTimeout(check, 4000);
+                setStatus("⏳ Waiting for confirmation...");
+                setTimeout(check, 3000);
             }
         } catch (err) {
             console.error(err);

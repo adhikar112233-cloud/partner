@@ -19,21 +19,20 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
         const gateway = params.get("gateway");
         const isFallback = params.get("fallback") === "true";
 
-        async function check() {
-            if (!orderId) {
-               setStatus("⚠️ Order ID missing.");
-               return;
-            }
+        if (!orderId) {
+            setStatus("⚠️ Order ID missing.");
+            return;
+        }
 
-            // Robustness: Handle local fallback/wallet verification if applicable
-            // This ensures payments made via internal wallet or fallback mode don't hang.
+        async function check() {
+            // 1. Handle Wallet/Fallback payments internally (client-side verification of Firestore)
             if (gateway === 'wallet' || isFallback) {
                  try {
                     if (!auth.currentUser) throw new Error("User not authenticated");
-                    const docRef = doc(db, 'transactions', orderId);
+                    const docRef = doc(db, 'transactions', orderId!);
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists() && docSnap.data().status === 'completed') {
-                        setStatus("🎉 Payment Successful! Subscription Activated.");
+                        setStatus("🎉 Payment Successful! Subscription/Boost Activated.");
                         setIsSuccess(true);
                     } else {
                         setStatus("⚠️ Could not verify payment locally.");
@@ -45,7 +44,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 return;
             }
 
-            // Main Logic: Poll the backend as requested
+            // 2. Main Logic: Poll the external backend as requested
             try {
                 const res = await fetch(
                     `https://partnerpayment-backend.onrender.com/payment-status/${orderId}`
@@ -56,8 +55,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 if (data.success) {
                     setStatus("🎉 Payment Successful! Subscription Activated.");
                     setIsSuccess(true);
-                    // TODO: Call your user update API if needed here, 
-                    // though typically the backend webhook handles the DB update.
+                    // The backend webhook likely handles the DB update, but we confirm success to the user here.
                 } else {
                     setStatus("⏳ Payment still processing... retrying...");
                     setTimeout(check, 4000);

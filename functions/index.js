@@ -376,6 +376,10 @@ const createOrderHandler = async (req, res) => {
 
             const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
             const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
+            
+            // Build the Notify URL pointing to this function instance
+            const projectID = process.env.GCLOUD_PROJECT || 'bigyapon2-cfa39';
+            const notifyUrl = `https://us-central1-${projectID}.cloudfunctions.net/api/cashfree-webhook`;
 
             const response = await fetch(baseUrl, {
                 method: "POST",
@@ -398,7 +402,7 @@ const createOrderHandler = async (req, res) => {
                     },
                     order_meta: {
                         return_url: `https://www.bigyapon.com/payment-success?order_id={order_id}`,
-                        notify_url: `https://partnerpayment-backend.onrender.com/cashfree-webhook`
+                        notify_url: notifyUrl
                     }
                 }),
             });
@@ -467,6 +471,54 @@ const verifyRazorpayHandler = async (req, res) => {
     }
 };
 
+// Cashfree Webhook Handler
+const cashfreeWebhookHandler = async (req, res) => {
+    console.log("Received Cashfree Webhook:", JSON.stringify(req.body));
+    try {
+        // Cashfree v3 webhook payload structure typically has a 'data' object
+        const data = req.body.data;
+        
+        if (!data || !data.order || !data.payment) {
+             console.warn("Ignored Cashfree webhook: missing data/order/payment", req.body);
+             return res.status(200).send('Ignored');
+        }
+
+        const orderId = data.order.order_id;
+        const paymentStatus = data.payment.payment_status;
+
+        if (paymentStatus === 'SUCCESS') {
+             console.log(`Webhook: Order ${orderId} SUCCESS`);
+             
+             if (!db) { 
+                 console.error("DB not ready for webhook"); 
+                 return res.status(500).send('DB Error'); 
+             }
+             
+             const transactionRef = db.collection("transactions").doc(orderId);
+             const docSnap = await transactionRef.get();
+             
+             if (docSnap.exists()) {
+                 await fulfillOrder(orderId, docSnap.data(), {
+                     gateway: 'cashfree',
+                     webhook: true,
+                     payment_group: data.payment.payment_group,
+                     payment_method: data.payment.payment_method,
+                     cf_payment_id: data.payment.cf_payment_id
+                 });
+             } else {
+                 console.error(`Transaction ${orderId} not found via webhook`);
+             }
+        } else {
+             console.log(`Webhook: Order ${orderId} status ${paymentStatus}`);
+        }
+
+        res.status(200).send('OK');
+    } catch (e) {
+        console.error("Cashfree Webhook Error:", e);
+        res.status(500).send('Error');
+    }
+};
+
 const verifyOrderHandler = async (req, res) => {
     if (!db) return res.status(503).send({ message: 'DB Disconnected' });
     
@@ -485,6 +537,7 @@ const verifyOrderHandler = async (req, res) => {
         const transactionData = transactionDoc.data();
         if (transactionData.userId !== decoded.uid) return res.status(403).send({ message: 'Forbidden.' });
         
+        // If completed, just return PAID. If pending, try to verify with Gateway API.
         if (transactionData.status === 'pending') {
              const settings = await getPaymentSettings();
 
@@ -517,7 +570,7 @@ const verifyOrderHandler = async (req, res) => {
                  }
              }
 
-             // RAZORPAY LOGIC (New Addition)
+             // RAZORPAY LOGIC
              if (transactionData.paymentGateway === 'razorpay' && transactionData.providerOrderId) {
                  const KEY_ID = settings.razorpayKeyId;
                  const KEY_SECRET = settings.razorpayKeySecret;
@@ -680,6 +733,7 @@ app.post('/verify-razorpay', verifyRazorpayHandler);
 app.get('/verify-order/:orderId', verifyOrderHandler);
 app.post('/process-payout', processPayoutHandler);
 app.post('/apply-referral', applyReferralHandler);
+app.post('/cashfree-webhook', cashfreeWebhookHandler);
 
 // Start Server
 app.listen(PORT, () => {

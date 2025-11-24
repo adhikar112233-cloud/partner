@@ -330,11 +330,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     refreshPlatformSettings();
-    // Only fetch banners if user is logged in to prevent permission errors
     if (user) {
-        apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
-            console.error("Failed to fetch platform banners:", err);
-        });
+      apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
+          console.error("Failed to fetch platform banners:", err);
+      });
     }
   }, [refreshPlatformSettings, user]);
 

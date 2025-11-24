@@ -213,7 +213,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       // --- ATTEMPT PRIMARY BACKEND FLOW ---
-      const idToken = await firebaseUser.getIdToken(); // Might throw if offline
+      // Note: We use a try/catch inside here specifically for the fetch to enable fallback
+      // even if ID token fails (e.g. offline), though ideally ID token is cached.
+      
+      let idToken = '';
+      try {
+          idToken = await firebaseUser.getIdToken(); 
+      } catch (e) {
+          console.warn("Failed to get ID token, proceeding to fallback immediately.", e);
+          throw new Error("AUTH_FAIL");
+      }
+
       const API_URL = BACKEND_URL;
       const body = {
         orderId: clientOrderId,
@@ -299,18 +309,22 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       console.warn("Primary payment flow failed. Switching to robust fallback.", err);
       
       // --- ROBUST FALLBACK MODE ---
+      // This ensures that if the server is down, payments 'succeed' locally for the user experience.
       try {
           await performFallbackFulfillment(clientOrderId, coinsToUse);
+          
+          // Ideally update user phone if it was collected here, but don't block on it
           if (needsPhone) {
-             apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(console.warn);
+             apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(e => console.warn("Failed to update phone in fallback", e));
           }
+          
           setStatus("idle");
           onClose();
-          // Redirect to success page with fallback flag
+          // Redirect to success page with fallback flag to indicate local verification needed
           window.location.href = `/?order_id=${clientOrderId}&gateway=wallet&fallback=true`;
       } catch (fallbackErr: any) {
-          console.error("Critial: Fallback also failed.", fallbackErr);
-          setError("Payment failed completely. Please check your connection.");
+          console.error("Critical: Fallback also failed.", fallbackErr);
+          setError("Payment failed completely. Please check your internet connection and try again.");
           setStatus("error");
       }
     }

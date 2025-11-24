@@ -35,8 +35,6 @@ const DEFAULT_AVATAR_URL = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3
 
 const generateCollabId = (): string => `CRI${String(Math.floor(Math.random() * 10000000000)).padStart(10, '0')}`;
 
-// ... (helper functions same as before, omitted for brevity in this mental model, I'll output full file content)
-
 export const apiService = {
   // ... (uploadKycFile, submitKyc, submitDigilockerKyc, updateKycStatus, getKycSubmissions)
   uploadKycFile: (userId: string, file: File, type: 'id_proof' | 'selfie'): Promise<string> => {
@@ -174,7 +172,10 @@ export const apiService = {
       try {
         const influencersCol = collection(db, 'influencers');
         let q = query(influencersCol);
-        q = query(q, orderBy('isBoosted', 'desc'), orderBy('name'));
+        // Fix: Removed secondary orderBy('name') to avoid "composite index required" error.
+        // Firestore will default to Document ID for tie-breaking which works with single-field index.
+        q = query(q, orderBy('isBoosted', 'desc'));
+        
         if (options.startAfterDoc) {
             q = query(q, startAfter(options.startAfterDoc));
         }
@@ -409,9 +410,18 @@ export const apiService = {
   createBannerAd: async (data: any) => { await addDoc(collection(db, 'banner_ads'), { ...data, timestamp: serverTimestamp() }); },
   getBannerAds: async (queryStr: string, settings: PlatformSettings) => {
       const col = collection(db, 'banner_ads');
-      let q = query(col, orderBy('isBoosted', 'desc'), orderBy('timestamp', 'desc'));
+      // Fix: Removed secondary orderBy('timestamp') to avoid "composite index required" error.
+      let q = query(col, orderBy('isBoosted', 'desc'));
       const snapshot = await getDocs(q);
       const allAds = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as BannerAd));
+      
+      // Sort by timestamp client-side as secondary sort
+      allAds.sort((a, b) => {
+          const tA = a.timestamp?.toMillis ? a.timestamp.toMillis() : 0;
+          const tB = b.timestamp?.toMillis ? b.timestamp.toMillis() : 0;
+          return tB - tA;
+      });
+
       if (!queryStr) return allAds;
       const lowerQ = queryStr.toLowerCase();
       return allAds.filter(ad => ad.location.toLowerCase().includes(lowerQ) || ad.address.toLowerCase().includes(lowerQ));

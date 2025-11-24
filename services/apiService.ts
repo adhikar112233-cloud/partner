@@ -1,5 +1,4 @@
 
-
 // ... (imports remain same)
 import { Influencer, Message, User, PlatformSettings, Attachment, CollaborationRequest, CollabRequestStatus, Conversation, ConversationParticipant, Campaign, CampaignApplication, LiveTvChannel, AdSlotRequest, BannerAd, BannerAdBookingRequest, SupportTicket, TicketReply, SupportTicketStatus, Membership, UserRole, PayoutRequest, CampaignApplicationStatus, AdBookingStatus, AnyCollaboration, DailyPayoutRequest, Post, Comment, Dispute, MembershipPlan, Transaction, KycDetails, KycStatus, PlatformBanner, PushNotification, Boost, BoostType, LiveHelpMessage, LiveHelpSession, RefundRequest, View, QuickReply, CreatorVerificationDetails, CreatorVerificationStatus, AppNotification, NotificationType, Partner } from '../types';
 import { db, storage, auth, BACKEND_URL } from './firebase';
@@ -174,8 +173,8 @@ export const apiService = {
         const influencersCol = collection(db, 'influencers');
         let q = query(influencersCol);
         
-        // Fix: Removed secondary orderBy('name') to avoid "composite index required" error.
-        // Firestore will default to Document ID for tie-breaking which works with single-field index.
+        // Fix: Only order by isBoosted to avoid composite index error (isBoosted DESC, name ASC).
+        // Do NOT add orderBy('name') here. Firestore requires a composite index if sorting by multiple fields.
         q = query(q, orderBy('isBoosted', 'desc'));
         
         if (options.startAfterDoc) {
@@ -194,6 +193,7 @@ export const apiService = {
   getAllInfluencers: async (): Promise<Influencer[]> => { const influencersCol = collection(db, 'influencers'); const snapshot = await getDocs(influencersCol); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Influencer)); },
   getLiveTvChannels: async (settings: PlatformSettings): Promise<LiveTvChannel[]> => { 
       const col = collection(db, 'livetv_channels');
+      // Ensure only isBoosted sort to prevent composite index issues
       const q = query(col, orderBy('isBoosted', 'desc'));
       const snapshot = await getDocs(q); 
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel)); 
@@ -412,7 +412,7 @@ export const apiService = {
   createBannerAd: async (data: any) => { await addDoc(collection(db, 'banner_ads'), { ...data, timestamp: serverTimestamp() }); },
   getBannerAds: async (queryStr: string, settings: PlatformSettings) => {
       const col = collection(db, 'banner_ads');
-      // Fix: Removed secondary orderBy('timestamp') to avoid "composite index required" error.
+      // Fix: Only order by isBoosted to avoid composite index error. Timestamp sort moved client-side.
       let q = query(col, orderBy('isBoosted', 'desc'));
       const snapshot = await getDocs(q);
       const allAds = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as BannerAd));

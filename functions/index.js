@@ -1,5 +1,4 @@
 
-
 const functions = require("firebase-functions");
 const express = require("express");
 const cors = require("cors");
@@ -12,6 +11,8 @@ const PORT = process.env.PORT || 8080;
 
 // Enable CORS
 app.use(cors({ origin: true }));
+// Explicitly handle OPTIONS requests
+app.options('*', cors({ origin: true }));
 
 // Parse JSON with rawBody for webhooks
 app.use(express.json({

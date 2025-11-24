@@ -198,33 +198,35 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           // Support both payment_session_id and paymentSessionId
           const sessionId = data.paymentSessionId || data.payment_session_id;
           
-          if (sessionId) {
-              try {
-                  let cashfree;
-                  // Prefer window.Cashfree from script tag if available
-                  if (window.Cashfree) {
-                      cashfree = new window.Cashfree({ mode: "production" });
-                  } else {
-                      cashfree = await load({ mode: "production" });
-                  }
-                  
-                  await cashfree.checkout({
-                      paymentSessionId: sessionId,
-                      redirectTarget: "_self",
-                      returnUrl: data.return_url // Use backend provided return_url if available
-                  });
-              } catch (sdkError) {
-                  console.error("Cashfree SDK Error, falling back to link", sdkError);
-                  if (data.payment_link) {
-                      window.location.href = data.payment_link;
-                  } else {
-                      throw new Error("Cashfree payment failed: " + (sdkError as Error).message);
-                  }
+          if (!sessionId) {
+              throw new Error("Cashfree payment token missing");
+          }
+
+          try {
+              let cashfree;
+              // Prefer window.Cashfree from script tag if available
+              if (window.Cashfree) {
+                  cashfree = new window.Cashfree({ mode: "production" });
+              } else {
+                  cashfree = await load({ mode: "production" });
               }
-          } else if (data.payment_link) {
-              window.location.href = data.payment_link;
-          } else {
-              throw new Error("Cashfree payment info missing from response");
+              
+              const checkoutOptions = {
+                  paymentSessionId: sessionId,
+                  redirectTarget: "_self",
+                  returnUrl: data.return_url
+              };
+              
+              await cashfree.checkout(checkoutOptions);
+              
+          } catch (sdkError) {
+              console.error("Cashfree SDK Error", sdkError);
+              // Fallback to link if SDK fails
+              if (data.payment_link) {
+                  window.location.href = data.payment_link;
+              } else {
+                  throw new Error("Cashfree payment failed: " + (sdkError as Error).message);
+              }
           }
       } else {
           // Handle wallet only or other

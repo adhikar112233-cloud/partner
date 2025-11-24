@@ -118,6 +118,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         collabType: collabType
       };
 
+      // Call the specific Cloud Function Endpoint
       const response = await fetch(BACKEND_URL, {
         method: "POST",
         headers: {
@@ -127,7 +128,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       });
 
       if (!response.ok) {
-         throw new Error(`Payment initiation failed: ${response.statusText}`);
+         const errData = await response.json().catch(() => ({}));
+         throw new Error(errData.message || `Payment initiation failed: ${response.statusText}`);
       }
 
       const data = await response.json();

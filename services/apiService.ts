@@ -172,6 +172,7 @@ export const apiService = {
       try {
         const influencersCol = collection(db, 'influencers');
         let q = query(influencersCol);
+        
         // Fix: Removed secondary orderBy('name') to avoid "composite index required" error.
         // Firestore will default to Document ID for tie-breaking which works with single-field index.
         q = query(q, orderBy('isBoosted', 'desc'));

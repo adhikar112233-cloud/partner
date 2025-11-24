@@ -84,7 +84,7 @@ const SettingsPanel: React.FC<{ onSettingsUpdate: () => void }> = ({ onSettingsU
         if (!settings || !isDirty) return;
         setIsSaving(true); setError(null); setSuccess(null);
         try {
-            // If active gateway changed, use the dedicated API endpoint
+            // If active gateway changed, use the dedicated API endpoint to ensure immediate backend update
             if (settings.activePaymentGateway) {
                 try {
                     await apiService.setPaymentGateway(settings.activePaymentGateway);
@@ -229,11 +229,11 @@ const SettingsPanel: React.FC<{ onSettingsUpdate: () => void }> = ({ onSettingsU
                 </SettingRow>
 
                 <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Payment Gateway</h4></div>
-                <SettingRow label="Active Gateway">
+                <SettingRow label="Active Gateway (Admin Mode)">
                     <select 
                         value={settings.activePaymentGateway || 'paytm'} 
                         onChange={(e) => handleSettingChange('activePaymentGateway', e.target.value)} 
-                        className="w-full rounded-md border-gray-300 shadow-sm"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                     >
                         <option value="paytm">Paytm</option>
                         <option value="cashfree">Cashfree</option>

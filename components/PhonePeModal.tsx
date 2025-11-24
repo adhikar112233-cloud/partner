@@ -4,6 +4,7 @@ import { User, PlatformSettings } from '../types';
 import { auth, db, BACKEND_URL, PAYTM_MID } from '../services/firebase';
 import { doc, serverTimestamp, writeBatch, Timestamp, increment } from 'firebase/firestore';
 import { CoinIcon, LockClosedIcon } from './Icons';
+import { load } from '@cashfreepayments/cashfree-js';
 
 interface PaymentModalProps {
   user: User;
@@ -152,6 +153,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             paymentGateway: gateway,
       });
 
+      // Notify user (as requested)
+      alert("Payment started: " + orderId);
+
       if (method === "PAYTM") {
           if (data.txnToken) {
              const txnToken = data.txnToken;
@@ -198,10 +202,27 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               throw new Error("Paytm Token missing from response");
           }
       } else if (method === "CASHFREE") {
-          if (data.payment_link) {
+          if (data.payment_session_id) {
+              try {
+                  const cashfree = await load({ 
+                      mode: data.environment || "production" 
+                  });
+                  await cashfree.checkout({
+                      paymentSessionId: data.payment_session_id,
+                      returnUrl: data.return_url // Use backend provided return_url if available
+                  });
+              } catch (sdkError) {
+                  console.error("Cashfree SDK Error, falling back to link", sdkError);
+                  if (data.payment_link) {
+                      window.location.href = data.payment_link;
+                  } else {
+                      throw new Error("Cashfree payment failed");
+                  }
+              }
+          } else if (data.payment_link) {
               window.location.href = data.payment_link;
           } else {
-              throw new Error("Cashfree payment link missing from response");
+              throw new Error("Cashfree payment info missing from response");
           }
       } else {
           // Handle wallet only or other

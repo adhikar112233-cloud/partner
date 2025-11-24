@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, db, BACKEND_URL, RAZORPAY_KEY_ID } from '../services/firebase';
+import { auth, db, BACKEND_URL, PAYTM_MID } from '../services/firebase';
 import { apiService } from '../services/apiService';
 import { load } from "@cashfreepayments/cashfree-js";
-import { doc, setDoc, serverTimestamp, updateDoc, Timestamp, getDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
 import { CoinIcon } from './Icons';
 
 interface PaymentModalProps {
@@ -31,7 +31,7 @@ interface PaymentModalProps {
 
 declare global {
   interface Window {
-    Razorpay: any;
+    Paytm: any;
   }
 }
 
@@ -50,6 +50,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [useCoins, setUseCoins] = useState(userCoins > 0);
   const needsPhone = !user.mobileNumber;
 
+  // 1. Calculate Base Fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
     : 0;
@@ -59,105 +60,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     : 0;
 
   const grossTotal = baseAmount + processingCharge + gstOnFees;
+
+  // 2. Calculate Coin Deduction
   const maxRedeemableCoins = Math.min(userCoins, 100, Math.floor(grossTotal));
+  
   const discountAmount = useCoins ? maxRedeemableCoins : 0;
   const finalPayableAmount = Math.max(0, grossTotal - discountAmount);
-
-  // Reusable Client-Side Fulfillment Logic
-  const performClientSideFulfillment = async (orderId: string, paymentId: string, coinsDeducted: number) => {
-        console.log(` performing client-side fulfillment for ${orderId}`);
-        try {
-            // 1. Create/Update Transaction Record
-            await setDoc(doc(db, 'transactions', orderId), {
-                userId: user.id,
-                type: 'payment',
-                description: transactionDetails.description || 'Payment',
-                relatedId: transactionDetails.relatedId,
-                collabId: transactionDetails.collabId || null,
-                collabType: collabType,
-                amount: finalPayableAmount,
-                coinsUsed: coinsDeducted,
-                status: 'completed',
-                transactionId: orderId,
-                timestamp: serverTimestamp(),
-                paymentGateway: 'razorpay',
-                paymentGatewayDetails: {
-                    razorpayPaymentId: paymentId,
-                    mode: 'client_side_fallback'
-                }
-            }, { merge: true });
-            
-            // 2. Deduct Coins
-            if (coinsDeducted > 0) {
-                const freshUserSnap = await getDoc(doc(db, 'users', user.id));
-                if(freshUserSnap.exists()) {
-                    const currentCoins = freshUserSnap.data().coins || 0;
-                    await updateDoc(doc(db, 'users', user.id), { coins: Math.max(0, currentCoins - coinsDeducted) });
-                }
-            }
-
-            // 3. Trigger Item Specific Logic
-            if (collabType === 'membership') {
-                const now = Timestamp.now();
-                const expiryDate = new Date(now.toDate());
-                
-                // Determine duration based on plan ID
-                const planId = transactionDetails.relatedId;
-                if (planId === 'basic') {
-                    expiryDate.setMonth(expiryDate.getMonth() + 1);
-                } else if (planId === 'pro') {
-                    expiryDate.setMonth(expiryDate.getMonth() + 6);
-                } else {
-                    // Premium, Pro 10/20/Unlimited usually 1 year
-                    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-                }
-                
-                await updateDoc(doc(db, 'users', user.id), {
-                    'membership.isActive': true,
-                    'membership.plan': planId,
-                    'membership.startsAt': now,
-                    'membership.expiresAt': Timestamp.fromDate(expiryDate)
-                });
-                
-                if (user.role === 'influencer') {
-                    await updateDoc(doc(db, 'influencers', user.id), { membershipActive: true });
-                }
-            } 
-            else if (collabType.startsWith('boost_')) {
-                const boostType = collabType.split('_')[1];
-                const targetId = transactionDetails.relatedId;
-                
-                await apiService.activateBoost(
-                    user.id, 
-                    boostType as any, 
-                    targetId, 
-                    boostType === 'profile' ? 'profile' : boostType === 'campaign' ? 'campaign' : 'banner'
-                );
-            }
-            else {
-                // For regular collabs, update status
-                // Map collabType to collection name
-                const collectionMap: any = {
-                    direct: 'collaboration_requests',
-                    campaign: 'campaign_applications',
-                    ad_slot: 'ad_slot_requests',
-                    banner_booking: 'banner_booking_requests'
-                };
-                const collectionName = collectionMap[collabType];
-                if (collectionName && transactionDetails.relatedId) {
-                     await updateDoc(doc(db, collectionName, transactionDetails.relatedId), {
-                         status: 'in_progress',
-                         paymentStatus: 'paid'
-                     });
-                }
-            }
-            
-            return true;
-        } catch (dbErr) {
-            console.error("Client-side fulfillment failed:", dbErr);
-            return false;
-        }
-  };
 
   const handlePayment = async () => {
     const cleanPhone = (needsPhone ? phoneNumber : user.mobileNumber)
@@ -179,17 +87,18 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       const idToken = await firebaseUser.getIdToken();
+
       const activeGateway = platformSettings.activePaymentGateway?.toLowerCase();
-      const selectedGateway = activeGateway === 'cashfree' ? 'cashfree' : 'razorpay';
+      const selectedGateway = activeGateway === 'cashfree' ? 'cashfree' : 'paytm';
       
-      const API_URL =
-        selectedGateway === "razorpay"
-          ? "https://razorpay-backeb-nd.onrender.com"
-          : "https://partnerpayment-backend.onrender.com";
+      const API_URL = BACKEND_URL;
+      // Use "ORD_" prefix as requested
+      const orderId = `ORD_${Date.now()}`;
 
       const body = {
+        orderId: orderId,
         amount: Number(finalPayableAmount.toFixed(2)),
-        originalAmount: Number(grossTotal.toFixed(2)),
+        originalAmount: Number(grossTotal.toFixed(2)), 
         coinsUsed: useCoins ? maxRedeemableCoins : 0,
         purpose: transactionDetails.description,
         relatedId: transactionDetails.relatedId,
@@ -199,37 +108,29 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         gateway: selectedGateway,
       };
 
+      console.log(`Initiating payment via ${selectedGateway}`);
+
       let data;
 
       try {
-        const response = await fetch(`${API_URL}/create-order`, {
+        const response = await fetch(`${API_URL}/createOrder`, {
           method: "POST",
-          headers: selectedGateway === "razorpay"
-              ? { "Content-Type": "application/json" }
-              : { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + idToken,
+          },
           body: JSON.stringify(body),
         });
 
         if (!response.ok) {
-          throw new Error(`Server returned ${response.status}`);
+          const errText = await response.text().catch(() => 'Unknown Error');
+          throw new Error(errText || `Server returned ${response.status}`);
         }
+
         data = await response.json();
       } catch (creationErr: any) {
-        console.warn("Order creation failed. Using fallback.", creationErr);
-        if (selectedGateway === "razorpay") {
-          data = {
-            gateway: "razorpay",
-            key_id: platformSettings.razorpayKeyId || RAZORPAY_KEY_ID,
-            amount: Math.round(finalPayableAmount * 100),
-            currency: "INR",
-            id: undefined,
-            fallbackMode: true,
-            coinsUsed: useCoins ? maxRedeemableCoins : 0,
-            internal_order_id: `fallback_${Date.now()}_${Math.floor(Math.random() * 1000)}`
-          };
-        } else {
-          throw new Error("Payment server unreachable.");
-        }
+        console.warn("Order creation failed.", creationErr);
+        throw new Error("Unable to connect to payment server. Please try again later.");
       }
 
       if (needsPhone) {
@@ -243,94 +144,94 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           return;
       }
 
-      const razorpayOrderId = data.payment_session_id || data.order?.id || data.id || data.order_id;
-      const cashfreeSessionId = data.payment_session_id || data.id || data.session?.id;
-      const isRazorpay = data.gateway === "razorpay" || selectedGateway === "razorpay";
+      // ------------------------------------------------------------------------------------
+      //                          PAYTM CHECKOUT
+      // ------------------------------------------------------------------------------------
 
-      if (isRazorpay) {
-        if (!window.Razorpay) {
-          throw new Error("Razorpay SDK failed to load.");
-        }
+      if (data.gateway === "paytm") {
+        // Use MID from settings if available, otherwise fallback to hardcoded or env var in services
+        const paytmMid = platformSettings.paytmMid || PAYTM_MID;
+        
+        if (!paytmMid) throw new Error("Paytm MID not configured");
 
-        const options: any = {
-          key: data.key_id || RAZORPAY_KEY_ID,
-          amount: data.amount,
-          currency: data.currency || "INR",
-          name: "BIGYAPON",
-          description: transactionDetails.description,
-          ...(razorpayOrderId && !data.fallbackMode ? { order_id: razorpayOrderId } : {}),
-
-          handler: async function (response: any) {
-            const paymentId = response.razorpay_payment_id;
-            const orderIdToUse = data.internal_order_id || razorpayOrderId;
-            const coinsToDeduct = data.coinsUsed || 0;
-
-            // Fallback Mode or Standard Mode failure handler
-            const doClientFulfillment = async () => {
-                const success = await performClientSideFulfillment(orderIdToUse, paymentId, coinsToDeduct);
-                if (success) {
-                    setStatus("idle");
-                    onClose();
-                    window.location.href = `/?order_id=${orderIdToUse}&gateway=razorpay&fallback=true`;
-                } else {
-                    setError("Payment successful but activation failed. Contact support with ID: " + paymentId);
-                    setStatus("error");
+        // Dynamically load Paytm Script
+        const script = document.createElement('script');
+        script.src = `https://securegw.paytm.in/merchantpgpui/checkoutjs/merchants/${paytmMid}.js`;
+        script.crossOrigin = "anonymous";
+        script.onload = () => {
+            const config = {
+                "root": "",
+                "flow": "DEFAULT",
+                "data": {
+                    "orderId": data.order_id,
+                    "token": data.txnToken,
+                    "tokenType": "TXN_TOKEN",
+                    "amount": data.amount
+                },
+                "handler": {
+                    "notifyMerchant": function(eventName: string, data: any) {
+                        console.log("notifyMerchant handler function called");
+                        console.log("eventName => ", eventName);
+                        console.log("data => ", data);
+                    },
+                    "transactionStatus": function(paymentStatus: any) {
+                       console.log("transactionStatus => ", paymentStatus);
+                       if (window.Paytm && window.Paytm.CheckoutJS) {
+                           window.Paytm.CheckoutJS.close();
+                       }
+                       // Redirect to verify on success/failure
+                       window.location.href = `/?order_id=${data.internal_order_id}&gateway=paytm`;
+                    }
                 }
             };
 
-            if (data.fallbackMode) {
-                await doClientFulfillment();
+            if (window.Paytm && window.Paytm.CheckoutJS) {
+                window.Paytm.CheckoutJS.init(config).then(function onSuccess() {
+                    window.Paytm.CheckoutJS.invoke();
+                }).catch(function onError(error: any) {
+                    console.log("error => ", error);
+                    setError("Paytm initialization failed.");
+                    setStatus("error");
+                });
             } else {
-                try {
-                    // Attempt Backend Verification
-                    const verifyRes = await fetch(`${BACKEND_URL}/verify-razorpay`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            razorpayOrderId: response.razorpay_order_id,
-                            razorpayPaymentId: response.razorpay_payment_id,
-                            razorpaySignature: response.razorpay_signature,
-                            orderId: data.internal_order_id 
-                        }),
-                    });
-
-                    const result = await verifyRes.json();
-
-                    if (verifyRes.ok && result.success) {
-                        setStatus("idle");
-                        onClose();
-                        window.location.href = `/?order_id=${data.internal_order_id}&gateway=razorpay`;
-                    } else {
-                        console.warn("Backend verification failed, trying client-side fix.");
-                        await doClientFulfillment();
-                    }
-                } catch (err) {
-                    console.error("Verification fetch failed, using client-side fallback", err);
-                    await doClientFulfillment();
-                }
+                setError("Paytm SDK failed to load.");
+                setStatus("error");
             }
-          },
-          prefill: { name: user.name, email: user.email, contact: cleanPhone },
-          theme: { color: "#4F46E5" },
-          modal: { ondismiss: function () { setStatus("idle"); } },
         };
+        script.onerror = () => {
+            setError("Failed to load Paytm script.");
+            setStatus("error");
+        };
+        document.body.appendChild(script);
+      }
 
-        const rzp1 = new window.Razorpay(options);
-        rzp1.on("payment.failed", function (response: any) {
-          setError(`Payment Failed: ${response.error.description}`);
-          setStatus("error");
+      // ------------------------------------------------------------------------------------
+      //                            CASHFREE CHECKOUT
+      // ------------------------------------------------------------------------------------
+
+      else {
+        const cashfreeSessionId = data.payment_session_id;
+        
+        if (!cashfreeSessionId) {
+          throw new Error("Missing Cashfree payment_session_id");
+        }
+
+        const cashfree = await load({
+          mode: data.environment || "production",
         });
-        rzp1.open();
-      } else {
-        if (!cashfreeSessionId) throw new Error("Missing Cashfree session");
-        const cashfree = await load({ mode: data.environment || "production" });
-        await cashfree.checkout({ paymentSessionId: cashfreeSessionId, redirectTarget: "_self" });
+
+        await cashfree.checkout({
+          paymentSessionId: cashfreeSessionId,
+          redirectTarget: "_self",
+        });
       }
 
     } catch (err: any) {
       console.error("Payment error:", err);
       let msg = err.message || "Something went wrong.";
-      if (msg.includes("Failed to fetch")) msg = "Connection error. Please check internet.";
+      if (msg.includes("Failed to fetch")) {
+        msg = "Unable to connect to payment server. Please try again later.";
+      }
       setError(msg);
       setStatus("error");
     }
@@ -350,33 +251,64 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               {needsPhone && (
                 <div className="p-4 bg-yellow-50 border rounded-lg mb-4">
                   <label className="block font-semibold text-yellow-800">Contact Number Required</label>
-                  <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Enter mobile number" className="mt-1 w-full p-2 border rounded" />
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="Enter mobile number"
+                    className="mt-1 w-full p-2 border rounded"
+                  />
                 </div>
               )}
 
               <div className="space-y-3 text-sm mt-4 dark:text-gray-300">
-                <div className="flex justify-between"><span>Subtotal:</span><span>₹{baseAmount.toFixed(2)}</span></div>
-                {processingCharge > 0 && <div className="flex justify-between text-gray-500"><span>Processing Fee:</span><span>₹{processingCharge.toFixed(2)}</span></div>}
-                {gstOnFees > 0 && <div className="flex justify-between text-gray-500"><span>GST on Fees:</span><span>₹{gstOnFees.toFixed(2)}</span></div>}
+                <div className="flex justify-between">
+                  <span>Subtotal:</span>
+                  <span>₹{baseAmount.toFixed(2)}</span>
+                </div>
 
+                {processingCharge > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>Processing Fee:</span>
+                    <span>₹{processingCharge.toFixed(2)}</span>
+                  </div>
+                )}
+
+                {gstOnFees > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>GST on Fees:</span>
+                    <span>₹{gstOnFees.toFixed(2)}</span>
+                  </div>
+                )}
+
+                {/* Coin Redemption Section */}
                 {userCoins > 0 && (
                     <div className="p-3 bg-indigo-50 dark:bg-gray-700 rounded-lg border border-indigo-100 dark:border-gray-600 mt-2">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <CoinIcon className="w-5 h-5 text-yellow-500" />
-                                <div><p className="font-semibold text-gray-800 dark:text-white">Use Coins</p><p className="text-xs text-gray-500 dark:text-gray-400">Balance: {userCoins}</p></div>
+                                <div>
+                                    <p className="font-semibold text-gray-800 dark:text-white">Use Coins</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Balance: {userCoins}</p>
+                                </div>
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">- ₹{useCoins ? maxRedeemableCoins : 0}</span>
-                                <input type="checkbox" checked={useCoins} onChange={(e) => setUseCoins(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"/>
+                                <input 
+                                    type="checkbox" 
+                                    checked={useCoins}
+                                    onChange={(e) => setUseCoins(e.target.checked)}
+                                    className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
+                                />
                             </div>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Max redeemable: 100 coins (1 Coin = ₹1)</p>
+                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Max redeemable: 100 coins per transaction (1 Coin = ₹1)</p>
                     </div>
                 )}
 
                 <div className="flex justify-between font-bold text-lg pt-4 border-t dark:border-gray-700">
-                  <span>Total Payable:</span><span>₹{finalPayableAmount.toFixed(2)}</span>
+                  <span>Total Payable:</span>
+                  <span>₹{finalPayableAmount.toFixed(2)}</span>
                 </div>
               </div>
             </>
@@ -389,14 +321,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           )}
 
           {status === "error" && (
-            <div className="mt-4 p-3 bg-red-50 text-red-700 rounded border border-red-200"><strong>Error:</strong> {error}</div>
+            <div className="mt-4 p-3 bg-red-50 text-red-700 rounded border border-red-200">
+              <strong>Error:</strong> {error}
+            </div>
           )}
         </div>
 
         {status !== "processing" && (
           <div className="p-6 bg-gray-50 dark:bg-gray-700 rounded-b-2xl">
-            <button onClick={handlePayment} className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-all">
-              Pay ₹{finalPayableAmount.toFixed(2)}
+            <button
+              onClick={handlePayment}
+              className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-all"
+            >
+              Pay via {platformSettings.activePaymentGateway === 'cashfree' ? 'Cashfree' : 'Paytm'}
             </button>
           </div>
         )}

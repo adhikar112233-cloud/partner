@@ -2,7 +2,8 @@
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const crypto = require("crypto");
+const https = require('https');
+const PaytmChecksum = require('paytmchecksum');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -54,11 +55,11 @@ const getCollectionNameForCollab = (collabType) => {
 // Helper to get Payment Settings safely
 const getPaymentSettings = async () => {
     let settings = {
-        activePaymentGateway: process.env.ACTIVE_PAYMENT_GATEWAY || 'razorpay',
+        activePaymentGateway: process.env.ACTIVE_PAYMENT_GATEWAY || 'paytm',
         paymentGatewayApiId: process.env.CASHFREE_ID || '',
         paymentGatewayApiSecret: process.env.CASHFREE_SECRET || '',
-        razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_RiFI4JfUCt7mQ9',
-        razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
+        paytmMid: process.env.PAYTM_MID || 'YOUR_TEST_MID',
+        paytmMerchantKey: process.env.PAYTM_MERCHANT_KEY || 'YOUR_TEST_KEY',
     };
 
     if (db) {
@@ -70,8 +71,8 @@ const getPaymentSettings = async () => {
                     activePaymentGateway: data.activePaymentGateway || settings.activePaymentGateway,
                     paymentGatewayApiId: data.paymentGatewayApiId || settings.paymentGatewayApiId,
                     paymentGatewayApiSecret: data.paymentGatewayApiSecret || settings.paymentGatewayApiSecret,
-                    razorpayKeyId: data.razorpayKeyId || settings.razorpayKeyId,
-                    razorpayKeySecret: data.razorpayKeySecret || settings.razorpayKeySecret,
+                    paytmMid: data.paytmMid || settings.paytmMid,
+                    paytmMerchantKey: data.paytmMerchantKey || settings.paytmMerchantKey,
                 };
             }
         } catch (error) {
@@ -233,7 +234,7 @@ const createOrderHandler = async (req, res) => {
         return res.status(403).send({ message: 'Invalid Token' });
     }
 
-    const { amount, purpose, relatedId, collabId, collabType, phone, gateway: preferredGateway, coinsUsed } = req.body;
+    const { amount, purpose, relatedId, collabId, collabType, phone, gateway: preferredGateway, coinsUsed, orderId: clientOrderId } = req.body;
 
     if (!relatedId || !collabType) {
         return res.status(400).send({ message: 'Missing fields' });
@@ -253,10 +254,11 @@ const createOrderHandler = async (req, res) => {
     }
 
     let orderAmount = parseFloat(amount);
+    // Allow 0 amount only if coins are used
     if (isNaN(orderAmount) || orderAmount < 0) return res.status(400).send({ message: 'Invalid amount' });
     if (orderAmount === 0 && (!coinsUsed || coinsUsed <= 0)) return res.status(400).send({ message: 'Invalid amount' });
 
-    const orderId = `order_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const orderId = clientOrderId || `order_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
     try {
         // Handle Wallet-Only Payment (Full coverage by coins)
@@ -270,7 +272,7 @@ const createOrderHandler = async (req, res) => {
                 collabType,
                 amount: 0,
                 coinsUsed: coinsUsed,
-                status: 'pending',
+                status: 'pending', // Initially pending, immediately fulfilled
                 transactionId: orderId,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 paymentGateway: 'wallet',
@@ -278,6 +280,7 @@ const createOrderHandler = async (req, res) => {
             
             await db.collection('transactions').doc(orderId).set(transactionData);
             
+            // Fulfill immediately
             await fulfillOrder(orderId, transactionData, { gateway: 'wallet' });
             
             return res.status(200).send({
@@ -299,13 +302,13 @@ const createOrderHandler = async (req, res) => {
 
         const settings = await getPaymentSettings();
         
-        const gateway = (preferredGateway === 'razorpay' || preferredGateway === 'cashfree') 
+        const gateway = (preferredGateway === 'paytm' || preferredGateway === 'cashfree') 
             ? preferredGateway 
-            : (settings.activePaymentGateway || 'razorpay');
+            : (settings.activePaymentGateway || 'paytm');
 
         console.log(`Creating order ${orderId} via ${gateway} for amount ${orderAmount}, coins used: ${coinsUsed || 0}`);
 
-        // Create pending transaction first
+        // Create pending transaction with coinsUsed field
         await db.collection('transactions').doc(orderId).set({
             userId,
             type: 'payment',
@@ -313,56 +316,82 @@ const createOrderHandler = async (req, res) => {
             relatedId,
             collabId: collabId || null,
             collabType,
-            amount: orderAmount,
-            coinsUsed: coinsUsed || 0,
+            amount: orderAmount, // The actual money paid
+            coinsUsed: coinsUsed || 0, // The coins to deduct on success
             status: 'pending',
             transactionId: orderId,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             paymentGateway: gateway,
         });
 
-        if (gateway === 'razorpay') {
-            // RAZORPAY
-            const KEY_ID = settings.razorpayKeyId;
-            const KEY_SECRET = settings.razorpayKeySecret;
+        if (gateway === 'paytm') {
+            const MID = settings.paytmMid;
+            const MKEY = settings.paytmMerchantKey;
 
-            if (!KEY_ID || !KEY_SECRET) throw new Error('Razorpay credentials missing in settings');
+            if (!MID || !MKEY) throw new Error('Paytm credentials missing in settings');
 
-            const authHeader = 'Basic ' + Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
-            const razorpayAmount = Math.round(orderAmount * 100); // to paise
-
-            const response = await fetch("https://api.razorpay.com/v1/orders", {
-                method: "POST",
-                headers: {
-                    "Authorization": authHeader,
-                    "Content-Type": "application/json",
+            const paytmParams = {};
+            paytmParams.body = {
+                "requestType": "Payment",
+                "mid": MID,
+                "websiteName": "WEBSTAGING", // Use "DEFAULT" for production
+                "orderId": orderId,
+                "callbackUrl": `https://partnerpayment-backend.onrender.com/verify-order/${orderId}`, // Webhook URL
+                "txnAmount": {
+                    "value": orderAmount.toString(),
+                    "currency": "INR",
                 },
-                body: JSON.stringify({
-                    amount: razorpayAmount,
-                    currency: "INR",
-                    receipt: orderId,
-                    notes: { purpose: purpose || 'Payment', customer_id: userId, internal_order_id: orderId }
-                })
+                "userInfo": {
+                    "custId": userId,
+                    "mobile": customerPhone,
+                    "email": customerEmail
+                },
+            };
+
+            const checksum = await PaytmChecksum.generateSignature(JSON.stringify(paytmParams.body), MKEY);
+            paytmParams.head = {
+                "signature": checksum
+            };
+
+            const post_data = JSON.stringify(paytmParams);
+
+            const requestPromise = new Promise((resolve, reject) => {
+                const options = {
+                    hostname: 'securegw.paytm.in', // Use securegw.paytm.in for prod
+                    port: 443,
+                    path: `/theia/api/v1/initiateTransaction?mid=${MID}&orderId=${orderId}`,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': post_data.length
+                    }
+                };
+
+                const req = https.request(options, (res) => {
+                    let response = "";
+                    res.on('data', (chunk) => { response += chunk; });
+                    res.on('end', () => { resolve(JSON.parse(response)); });
+                });
+
+                req.on('error', (e) => { reject(e); });
+                req.write(post_data);
+                req.end();
             });
 
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error?.description || 'Razorpay Error');
-
-            // Save the Gateway Order ID for verification later
-            await db.collection('transactions').doc(orderId).update({
-                gatewayOrderId: data.id
-            });
-
-            return res.status(200).send({
-                gateway: 'razorpay',
-                order_id: data.id,
-                internal_order_id: orderId,
-                key_id: KEY_ID,
-                amount: data.amount,
-                currency: data.currency,
-                coinsUsed: coinsUsed || 0,
-                id: data.id 
-            });
+            const response = await requestPromise;
+            
+            if (response.body && response.body.txnToken) {
+                return res.status(200).send({
+                    gateway: 'paytm',
+                    txnToken: response.body.txnToken,
+                    order_id: orderId,
+                    amount: orderAmount,
+                    internal_order_id: orderId,
+                    mid: MID // Send MID back for frontend
+                });
+            } else {
+                throw new Error(response.body?.resultInfo?.resultMsg || 'Paytm Initiation Failed');
+            }
 
         } else {
             // CASHFREE
@@ -403,64 +432,19 @@ const createOrderHandler = async (req, res) => {
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'Cashfree Error');
 
-            // Save the Gateway Session ID for verification later
-            await db.collection('transactions').doc(orderId).update({
-                gatewayOrderId: data.payment_session_id
-            });
-
             return res.status(200).send({ 
                 gateway: 'cashfree',
                 payment_session_id: data.payment_session_id,
                 environment: isSandbox ? 'sandbox' : 'production',
                 id: data.payment_session_id,
-                coinsUsed: coinsUsed || 0
+                coinsUsed: coinsUsed || 0,
+                cf: data // Send full response for frontend flexibility
             });
         }
 
     } catch (error) {
         console.error(`Create Order Error (${orderId}):`, error.message);
         return res.status(500).send({ message: error.message });
-    }
-};
-
-const verifyRazorpayHandler = async (req, res) => {
-    if (req.method !== 'POST') return res.status(405).send({ message: 'Method Not Allowed' });
-
-    const { orderId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
-
-    if (!orderId || !razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
-        return res.status(400).send({ message: 'Missing verification details' });
-    }
-
-    try {
-        const settings = await getPaymentSettings();
-        const secret = settings.razorpayKeySecret;
-        if (!secret) return res.status(500).send({ message: 'Server config error' });
-
-        const generatedSignature = crypto.createHmac('sha256', secret)
-            .update(razorpayOrderId + "|" + razorpayPaymentId)
-            .digest('hex');
-
-        if (generatedSignature === razorpaySignature) {
-             const transactionRef = db.collection("transactions").doc(orderId);
-             const transactionDoc = await transactionRef.get();
-             
-             if (transactionDoc.exists) {
-                 await fulfillOrder(orderId, transactionDoc.data(), {
-                     gateway: 'razorpay',
-                     razorpayPaymentId,
-                     razorpayOrderId
-                 });
-                 return res.status(200).send({ success: true });
-             } else {
-                 return res.status(404).send({ message: 'Order not found' });
-             }
-        } else {
-             return res.status(400).send({ message: 'Invalid signature' });
-        }
-    } catch (error) {
-        console.error("Verification error:", error);
-        return res.status(500).send({ message: 'Verification failed' });
     }
 };
 
@@ -482,18 +466,57 @@ const verifyOrderHandler = async (req, res) => {
         const transactionData = transactionDoc.data();
         if (transactionData.userId !== decoded.uid) return res.status(403).send({ message: 'Forbidden.' });
         
-        // If completed, just return success
-        if (transactionData.status === 'completed') {
-            return res.status(200).send({
-                order_id: orderId,
-                order_status: 'PAID',
-            });
-        }
-
         const settings = await getPaymentSettings();
 
-        // Actively check Cashfree status
-        if (transactionData.status === 'pending' && transactionData.paymentGateway === 'cashfree') {
+        // Paytm Verification
+        if (transactionData.status === 'pending' && transactionData.paymentGateway === 'paytm') {
+             const MID = settings.paytmMid;
+             const MKEY = settings.paytmMerchantKey;
+
+             if (MID && MKEY) {
+                 const paytmParams = {};
+                 paytmParams.body = {
+                     "mid": MID,
+                     "orderId": orderId,
+                 };
+
+                 const checksum = await PaytmChecksum.generateSignature(JSON.stringify(paytmParams.body), MKEY);
+                 paytmParams.head = { "signature": checksum };
+
+                 const post_data = JSON.stringify(paytmParams);
+
+                 const requestPromise = new Promise((resolve, reject) => {
+                     const options = {
+                         hostname: 'securegw.paytm.in',
+                         port: 443,
+                         path: '/v3/order/status',
+                         method: 'POST',
+                         headers: {
+                             'Content-Type': 'application/json',
+                             'Content-Length': post_data.length
+                         }
+                     };
+
+                     const req = https.request(options, (res) => {
+                         let response = "";
+                         res.on('data', (chunk) => { response += chunk; });
+                         res.on('end', () => { resolve(JSON.parse(response)); });
+                     });
+                     req.on('error', (e) => { reject(e); });
+                     req.write(post_data);
+                     req.end();
+                 });
+
+                 const response = await requestPromise;
+                 if (response.body && response.body.resultInfo && response.body.resultInfo.resultStatus === 'TXN_SUCCESS') {
+                     await fulfillOrder(orderId, transactionData, response.body);
+                     return res.status(200).send({ order_id: orderId, order_status: 'PAID' });
+                 }
+             }
+        }
+        
+        // Cashfree Verification
+        else if (transactionData.status === 'pending' && transactionData.paymentGateway === 'cashfree') {
              const CASHFREE_ID = settings.paymentGatewayApiId;
              const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
              
@@ -519,44 +542,9 @@ const verifyOrderHandler = async (req, res) => {
              }
         }
 
-        // Actively check Razorpay status
-        if (transactionData.status === 'pending' && transactionData.paymentGateway === 'razorpay') {
-             const KEY_ID = settings.razorpayKeyId;
-             const KEY_SECRET = settings.razorpayKeySecret;
-             const gatewayOrderId = transactionData.gatewayOrderId;
-
-             if (KEY_ID && KEY_SECRET && gatewayOrderId) {
-                 const authHeader = 'Basic ' + Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
-                 try {
-                     // Fetch all payments for this order
-                     const response = await fetch(`https://api.razorpay.com/v1/orders/${gatewayOrderId}/payments`, {
-                         headers: { "Authorization": authHeader }
-                     });
-                     
-                     if (response.ok) {
-                         const data = await response.json();
-                         // Check if any payment in the list is 'captured'
-                         const successPayment = data.items && data.items.find(p => p.status === 'captured');
-                         
-                         if (successPayment) {
-                             await fulfillOrder(orderId, transactionData, {
-                                 gateway: 'razorpay',
-                                 razorpayPaymentId: successPayment.id,
-                                 razorpayOrderId: gatewayOrderId,
-                                 method: successPayment.method
-                             });
-                             return res.status(200).send({ order_id: orderId, order_status: 'PAID' });
-                         }
-                     }
-                 } catch(err) {
-                     console.error("Razorpay fetch error:", err);
-                 }
-             }
-        }
-
         return res.status(200).send({
             order_id: orderId,
-            order_status: 'PENDING',
+            order_status: transactionData.status === 'completed' ? 'PAID' : 'PENDING',
         });
 
     } catch (error) {
@@ -683,12 +671,43 @@ const applyReferralHandler = async (req, res) => {
     }
 };
 
+// New Endpoints for Gateway Switching
+const setPaymentGatewayHandler = async (req, res) => {
+    const { gateway, secret } = req.body;
+    if (secret !== "ADMIN_SECRET") {
+        return res.status(403).send({ message: "Unauthorized" });
+    }
+    if (gateway !== 'cashfree' && gateway !== 'paytm') {
+        return res.status(400).send({ message: "Invalid gateway" });
+    }
+    
+    try {
+        if (!db) return res.status(503).send({ message: "DB not connected" });
+        await db.collection('settings').doc('platform').set({
+            activePaymentGateway: gateway
+        }, { merge: true });
+        return res.status(200).send({ success: true, active: gateway });
+    } catch (error) {
+        return res.status(500).send({ message: error.message });
+    }
+};
+
+const getActiveGatewayHandler = async (req, res) => {
+    try {
+        const settings = await getPaymentSettings();
+        res.status(200).send({ active: settings.activePaymentGateway || 'paytm' });
+    } catch (error) {
+        res.status(500).send({ message: error.message });
+    }
+};
+
 // Define Routes
-app.post('/create-order', createOrderHandler);
-app.post('/verify-razorpay', verifyRazorpayHandler);
+app.post('/createOrder', createOrderHandler);
 app.get('/verify-order/:orderId', verifyOrderHandler);
 app.post('/process-payout', processPayoutHandler);
 app.post('/apply-referral', applyReferralHandler);
+app.post('/setPaymentGateway', setPaymentGatewayHandler);
+app.get('/getActiveGateway', getActiveGatewayHandler);
 
 // Start Server
 app.listen(PORT, () => {

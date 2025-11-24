@@ -9,18 +9,16 @@ import { getMessaging, type Messaging } from 'firebase/messaging';
 // -------------------- PAYMENT GATEWAY CONFIG --------------------
 
 // IMPORTANT: This should point to your deployed Firebase Cloud Function URL
-export const BACKEND_URL =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) ||
-  "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/api"; 
+export const BACKEND_URL = "https://partnerpayment-backend.onrender.com"; 
 
 // Specific Gateway URLs
-export const RAZORPAY_URL = BACKEND_URL; 
+export const PAYTM_URL = BACKEND_URL; 
 export const CASHFREE_URL = BACKEND_URL;
 
-// Razorpay Public Key (Frontend Safe Only)
-export const RAZORPAY_KEY_ID =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_RAZORPAY_KEY_ID) ||
-  "rzp_test_RiFI4JfUCt7mQ9"; 
+// Paytm MID (Frontend Safe Only)
+export const PAYTM_MID =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_PAYTM_MID) ||
+  "YOUR_PAYTM_MID_HERE";
 
 
 // -------------------- FIREBASE CONFIG --------------------

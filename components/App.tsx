@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
@@ -328,19 +327,12 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // Fetch platform settings independently
   useEffect(() => {
     refreshPlatformSettings();
+    apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
+        console.error("Failed to fetch platform banners:", err);
+    });
   }, [refreshPlatformSettings]);
-
-  // Fetch platform banners only when user is authenticated to avoid permission issues
-  useEffect(() => {
-    if (user) {
-        apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
-            console.error("Failed to fetch platform banners:", err);
-        });
-    }
-  }, [user]);
 
  const refreshUser = useCallback(async () => {
     const firebaseUser = auth.currentUser;

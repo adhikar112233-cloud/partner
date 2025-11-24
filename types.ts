@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 
 // Fix: Define application-wide types to resolve import errors across multiple components and services.
@@ -309,13 +308,13 @@ export interface PlatformSettings {
   isWelcomeMessageEnabled: boolean;
   
   // Payment Gateway Settings
-  activePaymentGateway: 'cashfree' | 'razorpay';
+  activePaymentGateway: 'cashfree' | 'paytm';
   paymentGatewayApiId: string; // Cashfree App ID
   paymentGatewayApiSecret: string; // Cashfree Secret Key
   paymentGatewaySourceCode: string; // Misc config
   
-  razorpayKeyId?: string; // Razorpay Key ID
-  razorpayKeySecret?: string; // Razorpay Key Secret
+  paytmMid?: string; // Paytm Merchant ID
+  paytmMerchantKey?: string; // Paytm Merchant Key
 
   otpApiId: string;
   otpApiSecret: string;
@@ -598,6 +597,8 @@ export interface Transaction {
   timestamp: any;
   isCredit?: boolean;
   currency?: 'INR' | 'COINS';
+  paymentGateway?: 'razorpay' | 'cashfree' | 'paytm' | 'wallet';
+  paymentGatewayDetails?: any;
 }
 
 export interface PlatformBanner {

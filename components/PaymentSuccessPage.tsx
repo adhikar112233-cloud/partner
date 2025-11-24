@@ -27,9 +27,11 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 return;
             }
 
-            const checkFirestoreDirectly = async () => {
+            // Robustness: Handle local fallback verification if the initial payment used fallback mode
+            // or if it was a wallet payment which is processed client-side/serverless-side transactionally.
+            if (isFallback || gateway === 'wallet') {
                 try {
-                    if (!auth.currentUser) return false;
+                    if (!auth.currentUser) throw new Error("User not authenticated");
                     const docRef = doc(db, 'transactions', orderId);
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists() && docSnap.data().status === 'completed') {
@@ -37,22 +39,17 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                             setStatus("🎉 Payment Successful!");
                             setIsSuccess(true);
                         }
-                        return true;
+                    } else {
+                        if (isMounted) setStatus("⚠️ Could not verify payment locally. It may be pending.");
                     }
                 } catch (e) {
-                    console.error("Firestore check failed", e);
+                    console.error(e);
+                    if (isMounted) setStatus("⚠️ Error checking local record.");
                 }
-                return false;
-            };
-
-            // 1. Handle explicit fallback or wallet payments locally first
-            if (isFallback || gateway === 'wallet') {
-                const found = await checkFirestoreDirectly();
-                if (!found && isMounted) setStatus("⚠️ Could not verify payment locally. It may be pending.");
                 return;
             }
 
-            // 2. Try Backend Verification
+            // Main Logic: Poll the backend for standard Gateway payments
             try {
                 if (!auth.currentUser) {
                     if (isMounted) setStatus("⚠️ Authentication required.");
@@ -60,6 +57,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 }
 
                 const token = await auth.currentUser.getIdToken();
+
                 const res = await fetch(
                     `${BACKEND_URL}/verify-order/${orderId}`,
                     {
@@ -84,17 +82,14 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                     }
                 } else {
                     if (isMounted) setStatus("⌛ Payment processing... please wait.");
-                    setTimeout(() => { if (isMounted) check(); }, 3000);
+                    // Retry after 3 seconds to allow webhook/processing time
+                    setTimeout(() => {
+                        if (isMounted) check();
+                    }, 3000);
                 }
             } catch (err) {
-                console.warn("Backend check failed, trying Firestore directly...", err);
-                // 3. Fallback to Firestore if Backend API fails (e.g. Cloud Function inactive)
-                const found = await checkFirestoreDirectly();
-                if (!found && isMounted) {
-                     setStatus("⚠️ Backend unreachable. Verifying locally...");
-                     // Retry locally a few times
-                     setTimeout(() => { if (isMounted) checkFirestoreDirectly(); }, 2000);
-                }
+                console.error(err);
+                if (isMounted) setStatus("⚠️ Error verifying payment. Please contact support.");
             }
         }
 

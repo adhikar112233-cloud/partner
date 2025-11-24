@@ -227,8 +227,10 @@ const createOrderHandler = async (req, res) => {
     if (!db) return res.status(503).send({ message: 'Service Unavailable: Database not connected' });
 
     // Use 'method' as per user request to select gateway
+    // Accepting customerId specifically as requested by user snippet
     let { amount, purpose, relatedId, collabId, collabType, phone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId, customerId } = req.body;
     
+    // Fallback to customerId if userId is not provided directly
     let userId = reqUserId || customerId;
 
     // If userId not in body, try to get from token

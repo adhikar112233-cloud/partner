@@ -89,7 +89,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setError(null);
 
     // Generate a client-side ID as a fallback/reference
-    const clientOrderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // Matches format: "ORDER-" + Date.now()
+    const clientOrderId = "ORDER-" + Date.now();
     const coinsToUse = useCoins ? maxRedeemableCoins : 0;
     
     try {
@@ -103,13 +104,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const method = gateway.toUpperCase(); // "PAYTM" or "CASHFREE"
 
       // Construct Request Body matching the required signature
+      // Explicitly including customerId as requested
       const body = {
         orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
+        customerId: user.id, // Mapped from user.id as requested
+        
+        // Additional fields required for app logic
         method: method,
         userId: user.id,
-        customerId: user.id,
-        // Pass extra fields for backend logic
         coinsUsed: coinsToUse,
         description: transactionDetails.description,
         phone: cleanPhone,

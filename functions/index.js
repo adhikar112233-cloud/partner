@@ -234,10 +234,15 @@ const createOrderHandler = async (req, res) => {
         return res.status(403).send({ message: 'Invalid Token' });
     }
 
-    const { amount, purpose, relatedId, collabId, collabType, phone, gateway: preferredGateway, coinsUsed, orderId: clientOrderId } = req.body;
+    // Support 'method' field for payment gateway selection from simplified frontend calls
+    let { amount, purpose, relatedId, collabId, collabType, phone, gateway, method, coinsUsed, orderId: clientOrderId } = req.body;
+    
+    // Normalize gateway selection
+    let preferredGateway = gateway || method;
+    if (preferredGateway) preferredGateway = preferredGateway.toLowerCase();
 
     if (!relatedId || !collabType) {
-        return res.status(400).send({ message: 'Missing fields' });
+        return res.status(400).send({ message: 'Missing fields (relatedId, collabType)' });
     }
 
     // Check User Coin Balance if coins are used
@@ -302,16 +307,12 @@ const createOrderHandler = async (req, res) => {
 
         const settings = await getPaymentSettings();
         
-        // Determine gateway logic: 
-        // Default to settings.activePaymentGateway.
-        // If req.body.gateway is explicit, we can choose to respect it or ignore it.
-        // Given requirement "ADMIN WHICH PG ACTIVE THEN ALL PAYMENT OPTION WORK THIS PG AUTOMATICALLY",
-        // we default to settings unless specifically overridden for debug.
-        const gateway = (preferredGateway && (preferredGateway === 'paytm' || preferredGateway === 'cashfree'))
+        // Determine final gateway
+        const activeGateway = (preferredGateway && (preferredGateway === 'paytm' || preferredGateway === 'cashfree'))
             ? preferredGateway 
             : (settings.activePaymentGateway || 'paytm');
 
-        console.log(`Creating order ${orderId} via ${gateway} for amount ${orderAmount}`);
+        console.log(`Creating order ${orderId} via ${activeGateway} for amount ${orderAmount}`);
 
         // Create pending transaction with coinsUsed field
         await db.collection('transactions').doc(orderId).set({
@@ -326,10 +327,10 @@ const createOrderHandler = async (req, res) => {
             status: 'pending',
             transactionId: orderId,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            paymentGateway: gateway,
+            paymentGateway: activeGateway,
         });
 
-        if (gateway === 'paytm') {
+        if (activeGateway === 'paytm') {
             const MID = settings.paytmMid;
             const MKEY = settings.paytmMerchantKey;
 
@@ -443,6 +444,7 @@ const createOrderHandler = async (req, res) => {
                 payment_session_id: data.payment_session_id,
                 environment: isSandbox ? 'sandbox' : 'production',
                 id: data.payment_session_id,
+                payment_link: data.payment_link,
                 coinsUsed: coinsUsed || 0,
                 cf: data
             });
@@ -699,6 +701,9 @@ const getActiveGatewayHandler = async (req, res) => {
 
 // Define Routes
 app.post('/createOrder', createOrderHandler);
+// Also handle root POST for direct access if deployed as a microservice
+app.post('/', createOrderHandler);
+
 app.get('/verify-order/:orderId', verifyOrderHandler);
 app.post('/verify-order/:orderId', verifyOrderHandler); // Support Webhook POST
 app.post('/process-payout', processPayoutHandler);

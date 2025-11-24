@@ -104,6 +104,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       // Construct Request Body matching the required signature:
       // { amount, method, userId }
+      // We include extra fields for the backend to process logic (coins, purpose, etc)
       const body = {
         amount: Number(finalPayableAmount.toFixed(2)),
         method: method,
@@ -111,7 +112,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         // Pass extra fields for backend logic
         coinsUsed: coinsToUse,
         description: transactionDetails.description,
-        phone: cleanPhone
+        phone: cleanPhone,
+        relatedId: transactionDetails.relatedId,
+        collabId: transactionDetails.collabId,
+        collabType: collabType
       };
 
       const response = await fetch(BACKEND_URL, {
@@ -200,7 +204,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               throw new Error("Cashfree payment link missing from response");
           }
       } else {
-          throw new Error("Unknown payment method response");
+          // Handle wallet only or other
+          if (body.amount === 0 && data.success) {
+             window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
+          } else {
+             throw new Error("Unknown payment method response");
+          }
       }
 
     } catch (err: any) {

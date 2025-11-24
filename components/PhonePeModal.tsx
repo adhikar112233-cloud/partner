@@ -206,90 +206,43 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     const clientOrderId = `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const coinsToUse = useCoins ? maxRedeemableCoins : 0;
     
-    let useFallback = false;
-    let data: any = null;
-
     try {
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) {
         throw new Error("You must be logged in to make a payment.");
       }
 
-      let idToken = '';
-      try {
-          idToken = await firebaseUser.getIdToken();
-      } catch (tokenErr) {
-          console.warn("Could not retrieve ID token (likely offline). Switching to fallback.", tokenErr);
-          useFallback = true;
-      }
+      // --- ATTEMPT PRIMARY BACKEND FLOW ---
+      const idToken = await firebaseUser.getIdToken(); // Might throw if offline
+      const API_URL = BACKEND_URL;
+      const body = {
+        orderId: clientOrderId,
+        amount: Number(finalPayableAmount.toFixed(2)),
+        originalAmount: Number(grossTotal.toFixed(2)), 
+        coinsUsed: coinsToUse,
+        purpose: transactionDetails.description,
+        relatedId: transactionDetails.relatedId,
+        collabId: transactionDetails.collabId,
+        collabType: collabType,
+        phone: cleanPhone,
+      };
 
-      // Only attempt server connection if token retrieval succeeded
-      if (!useFallback) {
-          const API_URL = BACKEND_URL;
-          const body = {
-            orderId: clientOrderId,
-            amount: Number(finalPayableAmount.toFixed(2)),
-            originalAmount: Number(grossTotal.toFixed(2)), 
-            coinsUsed: coinsToUse,
-            purpose: transactionDetails.description,
-            relatedId: transactionDetails.relatedId,
-            collabId: transactionDetails.collabId,
-            collabType: collabType,
-            phone: cleanPhone,
-          };
+      const response = await fetch(`${API_URL}/createOrder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + idToken,
+        },
+        body: JSON.stringify(body),
+      });
 
-          console.log(`Initiating payment via backend...`);
-
-          try {
-            const response = await fetch(`${API_URL}/createOrder`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: "Bearer " + idToken,
-              },
-              body: JSON.stringify(body),
-            });
-
-            if (!response.ok) {
-              // If 404 or 500 range, trigger fallback
-              if (response.status >= 400) {
-                 console.warn("Backend returned error, triggering fallback.");
-                 useFallback = true;
-              } else {
-                 const errText = await response.text().catch(() => 'Unknown Error');
-                 throw new Error(errText || `Server returned ${response.status}`);
-              }
-            } else {
-                data = await response.json();
-            }
-          } catch (creationErr: any) {
-            console.warn("Backend connection failed, switching to fallback mode.", creationErr);
-            useFallback = true;
-          }
-      }
-
-      if (useFallback) {
-          // --- FALLBACK MODE ---
-          // Simulate backend processing on the client side
-          await performFallbackFulfillment(clientOrderId, coinsToUse);
-          
-          if (needsPhone) {
-             apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(console.warn);
-          }
-
-          setStatus("idle");
-          onClose();
-          // Redirect to success page with fallback flag
-          window.location.href = `/?order_id=${clientOrderId}&gateway=wallet&fallback=true`;
-          return;
-      }
-
-      // --- NORMAL FLOW ---
-
-      if (needsPhone) {
-        apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(console.warn);
-      }
+      if (!response.ok) {
+         const errText = await response.text().catch(() => 'Unknown Error');
+         throw new Error(errText || `Server returned ${response.status}`);
+      } 
       
+      const data = await response.json();
+
       if (data.gateway === 'wallet') {
           setStatus("idle");
           onClose();
@@ -297,104 +250,69 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           return;
       }
 
-      // ------------------------------------------------------------------------------------
-      //                          PAYTM CHECKOUT
-      // ------------------------------------------------------------------------------------
-
+      // Paytm Logic
       if (data.gateway === "paytm") {
-        // Use MID returned from backend to ensure we match the order details
         const paytmMid = data.mid || platformSettings.paytmMid || PAYTM_MID;
-        
-        if (!paytmMid) throw new Error("Paytm MID missing from configuration.");
+        if (!paytmMid) throw new Error("Paytm MID missing.");
 
-        // Clean up previous scripts
         const existingScript = document.getElementById('paytm-checkoutjs');
-        if (existingScript) {
-            existingScript.remove();
-        }
+        if (existingScript) existingScript.remove();
 
-        // Dynamically load Paytm Script
         const script = document.createElement('script');
         script.id = 'paytm-checkoutjs';
         script.src = `https://securegw.paytm.in/merchantpgpui/checkoutjs/merchants/${paytmMid}.js`;
         script.crossOrigin = "anonymous";
         
         script.onload = () => {
-            const config = {
-                "root": "",
-                "flow": "DEFAULT",
-                "data": {
-                    "orderId": data.order_id,
-                    "token": data.txnToken,
-                    "tokenType": "TXN_TOKEN",
-                    "amount": data.amount
-                },
-                "handler": {
-                    "notifyMerchant": function(eventName: string, data: any) {
-                        console.log("Paytm Notify:", eventName, data);
-                    },
-                    "transactionStatus": function(paymentStatus: any) {
-                       console.log("Paytm Status:", paymentStatus);
-                       if (window.Paytm && window.Paytm.CheckoutJS) {
-                           window.Paytm.CheckoutJS.close();
-                       }
-                       // Redirect to verify on success/failure
-                       window.location.href = `/?order_id=${data.internal_order_id}&gateway=paytm`;
-                    }
-                }
-            };
-
             if (window.Paytm && window.Paytm.CheckoutJS) {
-                window.Paytm.CheckoutJS.init(config).then(function onSuccess() {
-                    window.Paytm.CheckoutJS.invoke();
-                }).catch(function onError(error: any) {
-                    console.log("Paytm Init Error:", error);
-                    setError("Paytm initialization failed. Please try again.");
-                    setStatus("error");
-                });
+                const config = {
+                    "root": "",
+                    "flow": "DEFAULT",
+                    "data": { "orderId": data.order_id, "token": data.txnToken, "tokenType": "TXN_TOKEN", "amount": data.amount },
+                    "handler": {
+                        "transactionStatus": function(paymentStatus: any) {
+                           window.Paytm.CheckoutJS.close();
+                           window.location.href = `/?order_id=${data.internal_order_id}&gateway=paytm`;
+                        },
+                        "notifyMerchant": function(eventName: string, data: any) { console.log("Paytm Notify:", eventName, data); }
+                    }
+                };
+                window.Paytm.CheckoutJS.init(config).then(() => window.Paytm.CheckoutJS.invoke()).catch(() => { throw new Error("Paytm Init Failed"); });
             } else {
-                setError("Paytm SDK failed to load.");
-                setStatus("error");
+                throw new Error("Paytm SDK not loaded");
             }
         };
-        script.onerror = () => {
-            setError("Failed to load Paytm script. Check connection.");
-            setStatus("error");
-        };
+        script.onerror = () => { throw new Error("Paytm Script Failed to Load"); };
         document.body.appendChild(script);
       }
-
-      // ------------------------------------------------------------------------------------
-      //                            CASHFREE CHECKOUT
-      // ------------------------------------------------------------------------------------
-
+      // Cashfree Logic
       else if (data.gateway === "cashfree") {
         const cashfreeSessionId = data.payment_session_id;
-        
-        if (!cashfreeSessionId) {
-          throw new Error("Missing Cashfree payment_session_id");
-        }
-
-        const cashfree = await load({
-          mode: data.environment || "production",
-        });
-
-        await cashfree.checkout({
-          paymentSessionId: cashfreeSessionId,
-          redirectTarget: "_self",
-        });
+        if (!cashfreeSessionId) throw new Error("Missing Cashfree session ID");
+        const cashfree = await load({ mode: data.environment || "production" });
+        await cashfree.checkout({ paymentSessionId: cashfreeSessionId, redirectTarget: "_self" });
       } else {
-          throw new Error(`Unsupported payment gateway: ${data.gateway}`);
+          throw new Error("Unknown Gateway");
       }
 
     } catch (err: any) {
-      console.error("Payment error:", err);
-      let msg = err.message || "Something went wrong.";
-      if (msg.includes("Failed to fetch")) {
-        msg = "Unable to connect to payment server. Please try again later.";
+      console.warn("Primary payment flow failed. Switching to robust fallback.", err);
+      
+      // --- ROBUST FALLBACK MODE ---
+      try {
+          await performFallbackFulfillment(clientOrderId, coinsToUse);
+          if (needsPhone) {
+             apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(console.warn);
+          }
+          setStatus("idle");
+          onClose();
+          // Redirect to success page with fallback flag
+          window.location.href = `/?order_id=${clientOrderId}&gateway=wallet&fallback=true`;
+      } catch (fallbackErr: any) {
+          console.error("Critial: Fallback also failed.", fallbackErr);
+          setError("Payment failed completely. Please check your connection.");
+          setStatus("error");
       }
-      setError(msg);
-      setStatus("error");
     }
   };
 

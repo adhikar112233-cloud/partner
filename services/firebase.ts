@@ -8,8 +8,8 @@ import { getMessaging, type Messaging } from 'firebase/messaging';
 
 // -------------------- PAYMENT GATEWAY CONFIG --------------------
 
-// IMPORTANT: This should point to your deployed Firebase Cloud Function URL
-export const BACKEND_URL = "https://partnerpayment-backend.onrender.com"; 
+// IMPORTANT: This points to the deployed Cloud Run payment service
+export const BACKEND_URL = "https://createpayment-6avlinhtzq-el.a.run.app"; 
 
 // Specific Gateway URLs
 export const PAYTM_URL = BACKEND_URL; 

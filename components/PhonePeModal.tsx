@@ -2,9 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
 import { auth, db, BACKEND_URL, PAYTM_MID } from '../services/firebase';
-import { apiService } from '../services/apiService';
-import { load } from "@cashfreepayments/cashfree-js";
-import { doc, setDoc, serverTimestamp, updateDoc, Timestamp, increment, getDoc, writeBatch } from 'firebase/firestore';
+import { doc, serverTimestamp, writeBatch, Timestamp, increment } from 'firebase/firestore';
 import { CoinIcon, LockClosedIcon } from './Icons';
 
 interface PaymentModalProps {
@@ -77,119 +75,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     };
   }, []);
 
-  // Fallback fulfillment logic for when backend is unreachable
-  const performFallbackFulfillment = async (orderId: string, coinsToDeduct: number) => {
-      console.log("Performing local fallback fulfillment...");
-      const batch = writeBatch(db); // Use batch for atomicity locally
-      
-      // 1. Create Transaction Record
-      const transactionRef = doc(db, 'transactions', orderId);
-      batch.set(transactionRef, {
-          userId: user.id,
-          type: 'payment',
-          description: transactionDetails.description,
-          relatedId: transactionDetails.relatedId,
-          collabId: transactionDetails.collabId || null,
-          collabType,
-          amount: finalPayableAmount,
-          coinsUsed: coinsToDeduct,
-          status: 'completed', // Mark as completed directly
-          transactionId: orderId,
-          timestamp: serverTimestamp(),
-          paymentGateway: 'fallback_demo',
-          paymentGatewayDetails: { note: 'Processed via local fallback due to server unavailability' }
-      });
-
-      // 2. Deduct Coins
-      if (coinsToDeduct > 0) {
-          const userRef = doc(db, 'users', user.id);
-          batch.update(userRef, { coins: increment(-coinsToDeduct) });
-      }
-
-      // 3. Specific Fulfillment
-      if (collabType === 'membership') {
-          const userRef = doc(db, 'users', user.id);
-          const plan = transactionDetails.relatedId;
-          const now = new Date();
-          const expiryDate = new Date(now);
-          
-          switch (plan) {
-              case 'basic': expiryDate.setMonth(expiryDate.getMonth() + 1); break;
-              case 'pro': expiryDate.setMonth(expiryDate.getMonth() + 6); break;
-              case 'premium': expiryDate.setFullYear(expiryDate.getFullYear() + 1); break;
-              case 'pro_10':
-              case 'pro_20':
-              case 'pro_unlimited':
-                  expiryDate.setFullYear(expiryDate.getFullYear() + 1); break;
-              default: expiryDate.setMonth(expiryDate.getMonth() + 1); break;
-          }
-
-          batch.update(userRef, {
-              'membership.plan': plan,
-              'membership.isActive': true,
-              'membership.startsAt': Timestamp.fromDate(now),
-              'membership.expiresAt': Timestamp.fromDate(expiryDate)
-          });
-
-          // Sync influencer profile if applicable
-          if (user.role === 'influencer') {
-              const influencerRef = doc(db, 'influencers', user.id);
-              batch.update(influencerRef, { membershipActive: true });
-          }
-
-      } else if (collabType.startsWith('boost_')) {
-          const boostType = collabType.split('_')[1] as 'profile' | 'campaign' | 'banner';
-          const targetId = transactionDetails.relatedId;
-          
-          const days = 7;
-          const now = new Date();
-          const expiresAt = new Date();
-          expiresAt.setDate(now.getDate() + days);
-
-          const boostRef = doc(db, 'boosts', `boost_${Date.now()}`);
-          batch.set(boostRef, {
-              userId: user.id,
-              plan: boostType,
-              expiresAt: Timestamp.fromDate(expiresAt),
-              createdAt: serverTimestamp(),
-              targetId: targetId,
-              targetType: boostType,
-          });
-
-          let collectionName = '';
-          if (boostType === 'campaign') collectionName = 'campaigns';
-          else if (boostType === 'banner') collectionName = 'banner_ads';
-          else if (boostType === 'profile') {
-              if (user.role === 'influencer') collectionName = 'influencers';
-              else if (user.role === 'livetv') collectionName = 'livetv_channels';
-          }
-
-          if (collectionName) {
-              const targetRef = doc(db, collectionName, targetId);
-              batch.update(targetRef, { isBoosted: true });
-          }
-
-      } else {
-          // Collaboration Requests
-          const collectionMap: Record<string, string> = {
-              direct: 'collaboration_requests',
-              campaign: 'campaign_applications',
-              ad_slot: 'ad_slot_requests',
-              banner_booking: 'banner_booking_requests',
-          };
-          const colName = collectionMap[collabType];
-          if (colName) {
-              const collabRef = doc(db, colName, transactionDetails.relatedId);
-              batch.update(collabRef, {
-                  status: 'in_progress',
-                  paymentStatus: 'paid'
-              });
-          }
-      }
-
-      await batch.commit();
-  };
-
   const handlePayment = async () => {
     const cleanPhone = (needsPhone ? phoneNumber : user.mobileNumber)
       .replace(/\D/g, '')
@@ -203,6 +88,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setStatus("processing");
     setError(null);
 
+    // Generate a client-side ID as a fallback/reference
     const clientOrderId = `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const coinsToUse = useCoins ? maxRedeemableCoins : 0;
     
@@ -212,121 +98,115 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         throw new Error("You must be logged in to make a payment.");
       }
 
-      // --- ATTEMPT PRIMARY BACKEND FLOW ---
-      // Note: We use a try/catch inside here specifically for the fetch to enable fallback
-      // even if ID token fails (e.g. offline), though ideally ID token is cached.
-      
-      let idToken = '';
-      try {
-          idToken = await firebaseUser.getIdToken(); 
-      } catch (e) {
-          console.warn("Failed to get ID token, proceeding to fallback immediately.", e);
-          throw new Error("AUTH_FAIL");
-      }
+      // Get current gateway preference
+      const gateway = platformSettings.activePaymentGateway || 'paytm';
+      const method = gateway.toUpperCase(); // "PAYTM" or "CASHFREE"
 
-      const API_URL = BACKEND_URL;
+      // Construct Request Body matching the required signature:
+      // { amount, method, userId }
       const body = {
-        orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
-        originalAmount: Number(grossTotal.toFixed(2)), 
+        method: method,
+        userId: user.id,
+        // Pass extra fields for backend logic
         coinsUsed: coinsToUse,
-        purpose: transactionDetails.description,
-        relatedId: transactionDetails.relatedId,
-        collabId: transactionDetails.collabId,
-        collabType: collabType,
-        phone: cleanPhone,
+        description: transactionDetails.description,
+        phone: cleanPhone
       };
 
-      const response = await fetch(`${API_URL}/createOrder`, {
+      const response = await fetch(BACKEND_URL, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + idToken,
+          "Content-Type": "application/json"
         },
         body: JSON.stringify(body),
       });
 
       if (!response.ok) {
-         const errText = await response.text().catch(() => 'Unknown Error');
-         throw new Error(errText || `Server returned ${response.status}`);
-      } 
-      
+         throw new Error(`Payment initiation failed: ${response.statusText}`);
+      }
+
       const data = await response.json();
+      console.log("Payment Response:", data);
 
-      if (data.gateway === 'wallet') {
-          setStatus("idle");
-          onClose();
-          window.location.href = `/?order_id=${data.order_id}&gateway=wallet`;
-          return;
-      }
+      // Use the Order ID from backend if provided, else fallback to our client ID
+      const orderId = data.orderId || data.order_id || clientOrderId;
 
-      // Paytm Logic
-      if (data.gateway === "paytm") {
-        const paytmMid = data.mid || platformSettings.paytmMid || PAYTM_MID;
-        if (!paytmMid) throw new Error("Paytm MID missing.");
+      // Save transaction record locally for tracking/fulfillment
+      await db.collection('transactions').doc(orderId).set({
+            userId: user.id,
+            type: 'payment',
+            description: transactionDetails.description,
+            relatedId: transactionDetails.relatedId,
+            collabId: transactionDetails.collabId || null,
+            collabType,
+            amount: body.amount,
+            coinsUsed: coinsToUse || 0,
+            status: 'pending',
+            transactionId: orderId,
+            timestamp: serverTimestamp(),
+            paymentGateway: gateway,
+      });
 
-        const existingScript = document.getElementById('paytm-checkoutjs');
-        if (existingScript) existingScript.remove();
+      if (method === "PAYTM") {
+          if (data.txnToken) {
+             const txnToken = data.txnToken;
+             const paytmMid = data.mid || platformSettings.paytmMid || PAYTM_MID; 
+             
+             // Initialize Paytm JS Checkout
+             const existingScript = document.getElementById('paytm-checkoutjs');
+             if (existingScript) existingScript.remove();
 
-        const script = document.createElement('script');
-        script.id = 'paytm-checkoutjs';
-        script.src = `https://securegw.paytm.in/merchantpgpui/checkoutjs/merchants/${paytmMid}.js`;
-        script.crossOrigin = "anonymous";
-        
-        script.onload = () => {
-            if (window.Paytm && window.Paytm.CheckoutJS) {
-                const config = {
-                    "root": "",
-                    "flow": "DEFAULT",
-                    "data": { "orderId": data.order_id, "token": data.txnToken, "tokenType": "TXN_TOKEN", "amount": data.amount },
-                    "handler": {
-                        "transactionStatus": function(paymentStatus: any) {
-                           window.Paytm.CheckoutJS.close();
-                           window.location.href = `/?order_id=${data.internal_order_id}&gateway=paytm`;
-                        },
-                        "notifyMerchant": function(eventName: string, data: any) { console.log("Paytm Notify:", eventName, data); }
-                    }
-                };
-                window.Paytm.CheckoutJS.init(config).then(() => window.Paytm.CheckoutJS.invoke()).catch(() => { throw new Error("Paytm Init Failed"); });
-            } else {
-                throw new Error("Paytm SDK not loaded");
-            }
-        };
-        script.onerror = () => { throw new Error("Paytm Script Failed to Load"); };
-        document.body.appendChild(script);
-      }
-      // Cashfree Logic
-      else if (data.gateway === "cashfree") {
-        const cashfreeSessionId = data.payment_session_id;
-        if (!cashfreeSessionId) throw new Error("Missing Cashfree session ID");
-        const cashfree = await load({ mode: data.environment || "production" });
-        await cashfree.checkout({ paymentSessionId: cashfreeSessionId, redirectTarget: "_self" });
+             const script = document.createElement('script');
+             script.id = 'paytm-checkoutjs';
+             script.src = `https://securegw.paytm.in/merchantpgpui/checkoutjs/merchants/${paytmMid}.js`;
+             script.crossOrigin = "anonymous";
+             
+             script.onload = () => {
+                 if (window.Paytm && window.Paytm.CheckoutJS) {
+                     const config = {
+                         "root": "",
+                         "flow": "DEFAULT",
+                         "data": { 
+                             "orderId": orderId,
+                             "token": txnToken, 
+                             "tokenType": "TXN_TOKEN", 
+                             "amount": body.amount.toString() 
+                         },
+                         "handler": {
+                             "transactionStatus": function(paymentStatus: any) {
+                                window.Paytm.CheckoutJS.close();
+                                // Redirect to success page
+                                window.location.href = `/?order_id=${orderId}&gateway=paytm`;
+                             },
+                             "notifyMerchant": function(eventName: string, data: any) { console.log("Paytm Notify:", eventName, data); }
+                         }
+                     };
+                     window.Paytm.CheckoutJS.init(config).then(() => window.Paytm.CheckoutJS.invoke()).catch(() => { throw new Error("Paytm Init Failed"); });
+                 } else {
+                     throw new Error("Paytm SDK not loaded");
+                 }
+             };
+             script.onerror = () => { throw new Error("Paytm Script Failed to Load"); };
+             document.body.appendChild(script);
+
+          } else {
+              throw new Error("Paytm Token missing from response");
+          }
+      } else if (method === "CASHFREE") {
+          if (data.payment_link) {
+              window.location.href = data.payment_link;
+          } else {
+              throw new Error("Cashfree payment link missing from response");
+          }
       } else {
-          throw new Error("Unknown Gateway");
+          throw new Error("Unknown payment method response");
       }
 
     } catch (err: any) {
-      console.warn("Primary payment flow failed. Switching to robust fallback.", err);
-      
-      // --- ROBUST FALLBACK MODE ---
-      // This ensures that if the server is down, payments 'succeed' locally for the user experience.
-      try {
-          await performFallbackFulfillment(clientOrderId, coinsToUse);
-          
-          // Ideally update user phone if it was collected here, but don't block on it
-          if (needsPhone) {
-             apiService.updateUserProfile(user.id, { mobileNumber: phoneNumber }).catch(e => console.warn("Failed to update phone in fallback", e));
-          }
-          
-          setStatus("idle");
-          onClose();
-          // Redirect to success page with fallback flag to indicate local verification needed
-          window.location.href = `/?order_id=${clientOrderId}&gateway=wallet&fallback=true`;
-      } catch (fallbackErr: any) {
-          console.error("Critical: Fallback also failed.", fallbackErr);
-          setError("Payment failed completely. Please check your internet connection and try again.");
-          setStatus("error");
-      }
+      console.warn("Payment flow failed.", err);
+      setError("Payment failed. Please check your connection and try again. " + (err.message || ''));
+      setStatus("error");
     }
   };
 

@@ -30,6 +30,7 @@ interface PaymentModalProps {
 declare global {
   interface Window {
     Paytm: any;
+    Cashfree: any;
   }
 }
 
@@ -102,7 +103,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const gateway = platformSettings.activePaymentGateway || 'paytm';
       const method = gateway.toUpperCase(); // "PAYTM" or "CASHFREE"
 
-      // Construct Request Body matching the required signature
+      // Construct Request Body matching the user's specified structure
+      // while keeping additional fields needed for backend logic
       const body = {
         orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
@@ -198,11 +200,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           
           if (sessionId) {
               try {
-                  const cashfree = await load({ 
-                      mode: data.environment || "production" 
-                  });
+                  let cashfree;
+                  // Prefer window.Cashfree from script tag if available
+                  if (window.Cashfree) {
+                      cashfree = new window.Cashfree({ mode: "production" });
+                  } else {
+                      cashfree = await load({ mode: "production" });
+                  }
+                  
                   await cashfree.checkout({
                       paymentSessionId: sessionId,
+                      redirectTarget: "_self",
                       returnUrl: data.return_url // Use backend provided return_url if available
                   });
               } catch (sdkError) {
@@ -210,7 +218,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   if (data.payment_link) {
                       window.location.href = data.payment_link;
                   } else {
-                      throw new Error("Cashfree payment failed");
+                      throw new Error("Cashfree payment failed: " + (sdkError as Error).message);
                   }
               }
           } else if (data.payment_link) {

@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, db, BACKEND_URL, PAYTM_MID } from '../services/firebase';
-import { doc, serverTimestamp, writeBatch, Timestamp, increment } from 'firebase/firestore';
+import { auth, BACKEND_URL, PAYTM_MID } from '../services/firebase';
 import { CoinIcon, LockClosedIcon } from './Icons';
 import { load } from '@cashfreepayments/cashfree-js';
 
@@ -137,24 +136,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       // Use the Order ID from backend if provided, else fallback to our client ID
       const orderId = data.orderId || data.order_id || clientOrderId;
 
-      // Save transaction record locally for tracking/fulfillment
-      await db.collection('transactions').doc(orderId).set({
-            userId: user.id,
-            type: 'payment',
-            description: transactionDetails.description,
-            relatedId: transactionDetails.relatedId,
-            collabId: transactionDetails.collabId || null,
-            collabType,
-            amount: body.amount,
-            coinsUsed: coinsToUse || 0,
-            status: 'pending',
-            transactionId: orderId,
-            timestamp: serverTimestamp(),
-            paymentGateway: gateway,
-      });
-
-      // Notify user (as requested)
-      alert("Payment started: " + orderId);
+      // Note: The transaction record is created by the backend Cloud Function.
+      // We do not need to write to Firestore from the frontend here.
 
       if (method === "PAYTM") {
           if (data.txnToken) {

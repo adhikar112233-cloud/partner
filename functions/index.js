@@ -227,9 +227,9 @@ const createOrderHandler = async (req, res) => {
     if (!db) return res.status(503).send({ message: 'Service Unavailable: Database not connected' });
 
     // Use 'method' as per user request to select gateway
-    let { amount, purpose, relatedId, collabId, collabType, phone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId } = req.body;
+    let { amount, purpose, relatedId, collabId, collabType, phone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId, customerId } = req.body;
     
-    let userId = reqUserId;
+    let userId = reqUserId || customerId;
 
     // If userId not in body, try to get from token
     if (!userId) {
@@ -382,15 +382,22 @@ const createOrderHandler = async (req, res) => {
                     }
                 };
 
-                const req = https.request(options, (res) => {
-                    let response = "";
-                    res.on('data', (chunk) => { response += chunk; });
-                    res.on('end', () => { resolve(JSON.parse(response)); });
+                const apiReq = https.request(options, (apiRes) => {
+                    let responseData = "";
+                    apiRes.on('data', (chunk) => { responseData += chunk; });
+                    apiRes.on('end', () => { 
+                        try {
+                            resolve(JSON.parse(responseData)); 
+                        } catch (e) {
+                            console.error("Paytm Response Parse Error. Raw:", responseData);
+                            reject(new Error("Invalid JSON response from Paytm"));
+                        }
+                    });
                 });
 
-                req.on('error', (e) => { reject(e); });
-                req.write(post_data);
-                req.end();
+                apiReq.on('error', (e) => { reject(e); });
+                apiReq.write(post_data);
+                apiReq.end();
             });
 
             const response = await requestPromise;
@@ -507,14 +514,20 @@ const verifyOrderHandler = async (req, res) => {
                          }
                      };
 
-                     const req = https.request(options, (res) => {
-                         let response = "";
-                         res.on('data', (chunk) => { response += chunk; });
-                         res.on('end', () => { resolve(JSON.parse(response)); });
+                     const apiReq = https.request(options, (apiRes) => {
+                         let responseData = "";
+                         apiRes.on('data', (chunk) => { responseData += chunk; });
+                         apiRes.on('end', () => { 
+                             try {
+                                resolve(JSON.parse(responseData)); 
+                             } catch(e) {
+                                reject(new Error("Failed to parse Paytm verify response"));
+                             }
+                         });
                      });
-                     req.on('error', (e) => { reject(e); });
-                     req.write(post_data);
-                     req.end();
+                     apiReq.on('error', (e) => { reject(e); });
+                     apiReq.write(post_data);
+                     apiReq.end();
                  });
 
                  const response = await requestPromise;

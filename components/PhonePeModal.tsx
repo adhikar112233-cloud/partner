@@ -89,7 +89,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setError(null);
 
     // Generate a client-side ID as a fallback/reference
-    const clientOrderId = `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const clientOrderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const coinsToUse = useCoins ? maxRedeemableCoins : 0;
     
     try {
@@ -104,9 +104,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       // Construct Request Body matching the required signature
       const body = {
+        orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
         method: method,
         userId: user.id,
+        customerId: user.id,
         // Pass extra fields for backend logic
         coinsUsed: coinsToUse,
         description: transactionDetails.description,
@@ -125,19 +127,26 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         body: JSON.stringify(body),
       });
 
-      if (!response.ok) {
-         const errData = await response.json().catch(() => ({}));
-         throw new Error(errData.message || `Payment initiation failed: ${response.statusText}`);
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+          data = await response.json();
+      } else {
+          const text = await response.text();
+          console.error("Non-JSON response:", text);
+          throw new Error(`Server Error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+         throw new Error(data.message || `Payment initiation failed: ${response.statusText}`);
+      }
+
       console.log("Payment Response:", data);
 
       // Use the Order ID from backend if provided, else fallback to our client ID
       const orderId = data.orderId || data.order_id || clientOrderId;
 
-      // Note: The transaction record is created by the backend Cloud Function.
-      // We do not need to write to Firestore from the frontend here.
+      // Note: Backend handles transaction creation in Firestore. No frontend write needed.
 
       if (method === "PAYTM") {
           if (data.txnToken) {

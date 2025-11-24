@@ -224,10 +224,7 @@ const createOrderHandler = async (req, res) => {
 
     if (!db) return res.status(503).send({ message: 'Service Unavailable: Database not connected' });
 
-    // Ideally verify auth token here if passed, but for webhook compatibility sometimes it's open
-    // For createOrder, we generally expect an auth token or ensure it's called from a secure client
-    
-    // Support 'method' field for payment gateway selection from simplified frontend calls
+    // Use 'method' as per user request to select gateway
     let { amount, purpose, relatedId, collabId, collabType, phone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId } = req.body;
     
     let userId = reqUserId;
@@ -240,20 +237,19 @@ const createOrderHandler = async (req, res) => {
                 const decodedToken = await admin.auth().verifyIdToken(idToken);
                 userId = decodedToken.uid;
             } catch (error) {
-                // Token invalid but maybe not required if userId provided in body (less secure)
+                // Token invalid
             }
         }
     }
 
     if (!userId) return res.status(401).send({ message: 'Unauthorized: No User ID' });
 
-    
-    // Normalize gateway selection
+    // Normalize gateway selection using 'method' or 'gateway'
     let preferredGateway = gateway || method;
     if (preferredGateway) preferredGateway = preferredGateway.toLowerCase();
 
-    // Provide defaults if missing to avoid crashes on simple calls
-    if (!collabType) collabType = 'direct'; // Default or handle error
+    // Provide defaults if missing
+    if (!collabType) collabType = 'direct'; 
     if (!relatedId) relatedId = 'unknown';
 
     // Check User Coin Balance if coins are used
@@ -288,7 +284,7 @@ const createOrderHandler = async (req, res) => {
                 collabType,
                 amount: 0,
                 coinsUsed: coinsUsed,
-                status: 'pending', // Initially pending, immediately fulfilled
+                status: 'pending',
                 transactionId: orderId,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 paymentGateway: 'wallet',
@@ -325,7 +321,7 @@ const createOrderHandler = async (req, res) => {
 
         console.log(`Creating order ${orderId} via ${activeGateway} for amount ${orderAmount}`);
 
-        // Create pending transaction with coinsUsed field
+        // Create pending transaction
         await db.collection('transactions').doc(orderId).set({
             userId,
             type: 'payment',
@@ -333,8 +329,8 @@ const createOrderHandler = async (req, res) => {
             relatedId,
             collabId: collabId || null,
             collabType,
-            amount: orderAmount, // The actual money paid
-            coinsUsed: coinsUsed || 0, // The coins to deduct on success
+            amount: orderAmount,
+            coinsUsed: coinsUsed || 0,
             status: 'pending',
             transactionId: orderId,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -351,7 +347,7 @@ const createOrderHandler = async (req, res) => {
             paytmParams.body = {
                 "requestType": "Payment",
                 "mid": MID,
-                "websiteName": "DEFAULT", // 'DEFAULT' is standard for Production
+                "websiteName": "DEFAULT",
                 "orderId": orderId,
                 "callbackUrl": `https://partnerpayment-backend.onrender.com/verify-order/${orderId}`,
                 "txnAmount": {
@@ -374,7 +370,7 @@ const createOrderHandler = async (req, res) => {
 
             const requestPromise = new Promise((resolve, reject) => {
                 const options = {
-                    hostname: 'securegw.paytm.in', // Production URL
+                    hostname: 'securegw.paytm.in',
                     port: 443,
                     path: `/theia/api/v1/initiateTransaction?mid=${MID}&orderId=${orderId}`,
                     method: 'POST',
@@ -470,7 +466,6 @@ const createOrderHandler = async (req, res) => {
 const verifyOrderHandler = async (req, res) => {
     if (!db) return res.status(503).send({ message: 'DB Disconnected' });
     
-    // Support both GET (browser/redirect) and POST (webhook)
     const orderId = req.params.orderId || req.body.orderId || req.body.order_id;
     
     try {
@@ -491,10 +486,7 @@ const verifyOrderHandler = async (req, res) => {
 
              if (MID && MKEY) {
                  const paytmParams = {};
-                 paytmParams.body = {
-                     "mid": MID,
-                     "orderId": orderId,
-                 };
+                 paytmParams.body = { "mid": MID, "orderId": orderId };
 
                  const checksum = await PaytmChecksum.generateSignature(JSON.stringify(paytmParams.body), MKEY);
                  paytmParams.head = { "signature": checksum };
@@ -558,7 +550,6 @@ const verifyOrderHandler = async (req, res) => {
              }
         }
 
-        // Return status
         const freshDoc = await transactionRef.get();
         return res.status(200).send({
             order_id: orderId,
@@ -584,8 +575,6 @@ const processPayoutHandler = async (req, res) => {
 
         const { payoutRequestId } = req.body;
         const payoutRef = db.collection('payout_requests').doc(payoutRequestId);
-        
-        // Simulate processing
         await payoutRef.update({ status: 'processing' });
         res.status(200).send({ success: true });
     } catch (error) {
@@ -595,24 +584,16 @@ const processPayoutHandler = async (req, res) => {
 
 const applyReferralHandler = async (req, res) => {
     const { userId, code } = req.body;
-    console.log(`[Referral] Request received: User ${userId} applying code ${code}`);
-
     if (!userId || !code) return res.status(400).send({ message: "Missing userId or code" });
 
     try {
         const usersRef = db.collection('users');
         const referrerQuery = await usersRef.where('referralCode', '==', code).limit(1).get();
         
-        if (referrerQuery.empty) {
-            return res.status(400).send({ message: "Invalid referral code." });
-        }
+        if (referrerQuery.empty) return res.status(400).send({ message: "Invalid referral code." });
         
         const referrerDoc = referrerQuery.docs[0];
-        const referrerId = referrerDoc.id;
-        
-        if (referrerId === userId) {
-             return res.status(400).send({ message: "You cannot refer yourself." });
-        }
+        if (referrerDoc.id === userId) return res.status(400).send({ message: "You cannot refer yourself." });
 
         await db.runTransaction(async (t) => {
             const userRef = usersRef.doc(userId);
@@ -621,80 +602,27 @@ const applyReferralHandler = async (req, res) => {
             if (!userDoc.exists) throw new Error("User not found");
             if (userDoc.data().referredBy) throw new Error("User already referred");
 
-            // Update Referrer
-            const referrerData = referrerDoc.data();
-            const newReferrerCoins = (referrerData.coins || 0) + 50;
-            t.update(referrerDoc.ref, { coins: newReferrerCoins });
+            t.update(referrerDoc.ref, { coins: (referrerDoc.data().coins || 0) + 50 });
+            t.update(userRef, { coins: (userDoc.data().coins || 0) + 20, referredBy: code, referralAppliedAt: admin.firestore.FieldValue.serverTimestamp() });
 
-            // Update User
-            const userData = userDoc.data();
-            const newUserCoins = (userData.coins || 0) + 20;
-            t.update(userRef, { 
-                coins: newUserCoins,
-                referredBy: code,
-                referralAppliedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-
-            // 1. Referrer Transaction Record
             const txRef1 = db.collection('transactions').doc();
-            t.set(txRef1, {
-                userId: referrerId,
-                type: 'referral',
-                description: `Reward for referring ${userData.name || 'User'}`,
-                relatedId: userId,
-                amount: 50,
-                status: 'completed',
-                transactionId: txRef1.id,
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                isCredit: true,
-                currency: 'COINS'
-            });
+            t.set(txRef1, { userId: referrerDoc.id, type: 'referral', description: 'Referral Reward', relatedId: userId, amount: 50, status: 'completed', transactionId: txRef1.id, timestamp: admin.firestore.FieldValue.serverTimestamp(), isCredit: true, currency: 'COINS' });
             
-            // 2. Referee Transaction Record
             const txRef2 = db.collection('transactions').doc();
-            t.set(txRef2, {
-                userId: userId,
-                type: 'referral',
-                description: `Welcome bonus for using code ${code}`,
-                relatedId: referrerId,
-                amount: 20,
-                status: 'completed',
-                transactionId: txRef2.id,
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                isCredit: true,
-                currency: 'COINS'
-            });
-
-            // 3. Audit Record
-            const referralRef = db.collection('referrals').doc();
-            t.set(referralRef, {
-                referrerUid: referrerId,
-                referredUid: userId,
-                referrerCode: code,
-                awarded: true,
-                referrerCoins: 50,
-                referredCoins: 20,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            t.set(txRef2, { userId: userId, type: 'referral', description: `Welcome bonus for using code ${code}`, relatedId: referrerDoc.id, amount: 20, status: 'completed', transactionId: txRef2.id, timestamp: admin.firestore.FieldValue.serverTimestamp(), isCredit: true, currency: 'COINS' });
         });
 
         return res.status(200).send({ success: true });
-
     } catch (error) {
-        console.error(`[Referral] Error: ${error.message}`);
         return res.status(500).send({ message: error.message });
     }
 };
 
 const setPaymentGatewayHandler = async (req, res) => {
-    const { gateway, secret } = req.body;
-    
+    const { gateway } = req.body;
     try {
         if (!db) return res.status(503).send({ message: "DB not connected" });
-        
-        await db.collection('settings').doc('platform').set({
-            activePaymentGateway: gateway
-        }, { merge: true });
+        await db.collection('settings').doc('platform').set({ activePaymentGateway: gateway }, { merge: true });
         return res.status(200).send({ success: true, active: gateway });
     } catch (error) {
         return res.status(500).send({ message: error.message });
@@ -712,11 +640,11 @@ const getActiveGatewayHandler = async (req, res) => {
 
 // Define Routes
 app.post('/createOrder', createOrderHandler);
-// Also handle root POST for direct access if deployed as a microservice
-app.post('/', createOrderHandler);
+// Handle root request as well to match the specific URL provided
+app.post('/', createOrderHandler); 
 
 app.get('/verify-order/:orderId', verifyOrderHandler);
-app.post('/verify-order/:orderId', verifyOrderHandler); // Support Webhook POST
+app.post('/verify-order/:orderId', verifyOrderHandler);
 app.post('/process-payout', processPayoutHandler);
 app.post('/apply-referral', applyReferralHandler);
 app.post('/setPaymentGateway', setPaymentGatewayHandler);

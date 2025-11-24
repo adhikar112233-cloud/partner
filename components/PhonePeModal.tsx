@@ -102,9 +102,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const gateway = platformSettings.activePaymentGateway || 'paytm';
       const method = gateway.toUpperCase(); // "PAYTM" or "CASHFREE"
 
-      // Construct Request Body matching the required signature:
-      // { amount, method, userId }
-      // We include extra fields for the backend to process logic (coins, purpose, etc)
+      // Construct Request Body matching the required signature
       const body = {
         amount: Number(finalPayableAmount.toFixed(2)),
         method: method,
@@ -118,7 +116,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         collabType: collabType
       };
 
-      // Call the specific Cloud Function Endpoint
+      // Call the specific Cloud Function Endpoint (BACKEND_URL is createPayment)
       const response = await fetch(BACKEND_URL, {
         method: "POST",
         headers: {

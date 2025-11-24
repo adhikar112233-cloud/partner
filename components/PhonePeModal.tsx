@@ -88,8 +88,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setStatus("processing");
     setError(null);
 
-    // Generate a client-side ID as a fallback/reference
-    // Matches format: "ORDER-" + Date.now()
+    // Generate a client-side ID matching format "ORDER-" + Date.now()
     const clientOrderId = "ORDER-" + Date.now();
     const coinsToUse = useCoins ? maxRedeemableCoins : 0;
     
@@ -104,7 +103,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const method = gateway.toUpperCase(); // "PAYTM" or "CASHFREE"
 
       // Construct Request Body matching the required signature
-      // Explicitly including customerId as requested
       const body = {
         orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
@@ -121,7 +119,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         collabType: collabType
       };
 
-      // Call the specific Cloud Function Endpoint (BACKEND_URL is createPayment)
+      // Call the specific Cloud Function Endpoint
       const response = await fetch(BACKEND_URL, {
         method: "POST",
         headers: {
@@ -148,8 +146,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       // Use the Order ID from backend if provided, else fallback to our client ID
       const orderId = data.orderId || data.order_id || clientOrderId;
-
-      // Note: Backend handles transaction creation in Firestore. No frontend write needed.
 
       if (method === "PAYTM") {
           if (data.txnToken) {
@@ -197,13 +193,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               throw new Error("Paytm Token missing from response");
           }
       } else if (method === "CASHFREE") {
-          if (data.payment_session_id) {
+          // Support both payment_session_id and paymentSessionId
+          const sessionId = data.paymentSessionId || data.payment_session_id;
+          
+          if (sessionId) {
               try {
                   const cashfree = await load({ 
                       mode: data.environment || "production" 
                   });
                   await cashfree.checkout({
-                      paymentSessionId: data.payment_session_id,
+                      paymentSessionId: sessionId,
                       returnUrl: data.return_url // Use backend provided return_url if available
                   });
               } catch (sdkError) {

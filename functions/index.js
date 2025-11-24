@@ -460,6 +460,7 @@ const createOrderHandler = async (req, res) => {
             return res.status(200).send({ 
                 gateway: 'cashfree',
                 payment_session_id: data.payment_session_id,
+                paymentSessionId: data.payment_session_id, // Add alias for camelCase convenience
                 environment: isSandbox ? 'sandbox' : 'production',
                 id: data.payment_session_id,
                 payment_link: data.payment_link,

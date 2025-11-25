@@ -15,6 +15,16 @@ import {
     LiveHelpSession, QuickReply, AppNotification, CreatorVerificationDetails, UserRole, AnyCollaboration, Dispute
 } from '../types';
 
+// Helper to safely get time for sorting
+const getTime = (ts: any): number => {
+    if (!ts) return 0;
+    if (ts instanceof Date) return ts.getTime();
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+    if (typeof ts === 'number') return ts;
+    return 0;
+};
+
 // Default settings if not found in DB
 const DEFAULT_SETTINGS: PlatformSettings = {
     isCommunityFeedEnabled: true,
@@ -553,9 +563,12 @@ export const apiService = {
 
     // --- Transactions & Payouts ---
     getTransactionsForUser: async (userId: string): Promise<Transaction[]> => {
-        const q = query(collection(db, 'transactions'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
+        // Modified: Removed orderBy to prevent "Missing Index" error. 
+        // Sorting is now done client-side.
+        const q = query(collection(db, 'transactions'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(d => ({ transactionId: d.id, ...d.data() } as Transaction));
+        const transactions = snapshot.docs.map(d => ({ transactionId: d.id, ...d.data() } as Transaction));
+        return transactions.sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
     },
 
     getAllTransactions: async (): Promise<Transaction[]> => {
@@ -581,9 +594,12 @@ export const apiService = {
     },
 
     getPayoutHistoryForUser: async (userId: string): Promise<PayoutRequest[]> => {
-        const q = query(collection(db, 'payout_requests'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
+        // Modified: Removed orderBy to prevent "Missing Index" error. 
+        // Sorting is now done client-side.
+        const q = query(collection(db, 'payout_requests'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PayoutRequest));
+        const payouts = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PayoutRequest));
+        return payouts.sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
     },
 
     updatePayoutStatus: async (payoutId: string, status: string, collabId: string, collabType: string, reason?: string) => {
@@ -717,9 +733,12 @@ export const apiService = {
     },
 
     getTicketsForUser: async (userId: string): Promise<SupportTicket[]> => {
-        const q = query(collection(db, 'support_tickets'), where('userId', '==', userId), orderBy('updatedAt', 'desc'));
+        // Modified: Removed orderBy to prevent "Missing Index" error.
+        // Sorting is done client-side.
+        const q = query(collection(db, 'support_tickets'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as SupportTicket));
+        const tickets = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as SupportTicket));
+        return tickets.sort((a, b) => getTime(b.updatedAt) - getTime(a.updatedAt));
     },
 
     getAllTickets: async (): Promise<SupportTicket[]> => {
@@ -757,9 +776,12 @@ export const apiService = {
 
     // --- Live Help ---
     getSessionsForUser: async (userId: string): Promise<LiveHelpSession[]> => {
-        const q = query(collection(db, 'live_help_sessions'), where('userId', '==', userId), orderBy('updatedAt', 'desc'));
+        // Modified: Removed orderBy to prevent "Missing Index" error.
+        // Sorting is done client-side.
+        const q = query(collection(db, 'live_help_sessions'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as LiveHelpSession));
+        const sessions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as LiveHelpSession));
+        return sessions.sort((a, b) => getTime(b.updatedAt) - getTime(a.updatedAt));
     },
 
     getAllLiveHelpSessionsListener: (onUpdate: (sessions: LiveHelpSession[]) => void) => {
@@ -845,9 +867,15 @@ export const apiService = {
     },
 
     getNotificationsForUserListener: (userId: string, onUpdate: (notifs: AppNotification[]) => void, onError: (err: any) => void) => {
-        const q = query(collection(db, 'notifications'), where('userId', '==', userId), orderBy('timestamp', 'desc'), limit(50));
+        // Modified: Removed orderBy and limit to prevent "Missing Index" error.
+        // Sorting and limiting is done client-side in the listener.
+        const q = query(collection(db, 'notifications'), where('userId', '==', userId));
         return onSnapshot(q, (snapshot) => {
-            onUpdate(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification)));
+            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification));
+            // Sort descending
+            data.sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
+            // Limit to 50 locally
+            onUpdate(data.slice(0, 50));
         }, onError);
     },
 

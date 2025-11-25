@@ -239,4 +239,5 @@ app.get('/verify-order/:orderId', async (req, res) => {
     }
 });
 
+// IMPORTANT: The export name must match the URL slug.
 exports.createpayment = functions.https.onRequest(app);

@@ -194,11 +194,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           } else {
               throw new Error("Paytm Token missing from response");
           }
-      } else if (method === "CASHFREE") {
-          // Support both payment_session_id and paymentSessionId
+      } else {
+          // CASHFREE (Default)
           const sessionId = data.paymentSessionId || data.payment_session_id;
           
           if (!sessionId) {
+              // Handle wallet only success where amount is 0
+              if (body.amount === 0 && data.success) {
+                  window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
+                  return;
+              }
               throw new Error("Cashfree payment token missing");
           }
 
@@ -227,13 +232,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               } else {
                   throw new Error("Cashfree payment failed: " + (sdkError as Error).message);
               }
-          }
-      } else {
-          // Handle wallet only or other
-          if (body.amount === 0 && data.success) {
-             window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
-          } else {
-             throw new Error("Unknown payment method response");
           }
       }
 

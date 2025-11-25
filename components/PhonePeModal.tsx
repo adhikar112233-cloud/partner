@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
 import { auth, BACKEND_URL, PAYTM_MID } from '../services/firebase';
 import { CoinIcon, LockClosedIcon } from './Icons';
-import { load } from '@cashfreepayments/cashfree-js';
 
 interface PaymentModalProps {
   user: User;
@@ -115,6 +114,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         coinsUsed: coinsToUse,
         description: transactionDetails.description,
         phone: cleanPhone,
+        customerPhone: cleanPhone, // Send as both for compatibility
         relatedId: transactionDetails.relatedId,
         collabId: transactionDetails.collabId,
         collabType: collabType
@@ -217,11 +217,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               if (window.Cashfree) {
                   // SDK v3 usage: Factory function without 'new'
                   cashfree = window.Cashfree({ mode: mode });
-              } 
-              // 2. Fallback to dynamic import
-              else {
-                  console.warn("Cashfree SDK not loaded on window, using fallback import");
-                  cashfree = await load({ mode: mode });
+              } else {
+                  throw new Error("Cashfree SDK not loaded in browser");
               }
 
               if (!cashfree) throw new Error("Failed to initialize Cashfree SDK");

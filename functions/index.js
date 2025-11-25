@@ -227,7 +227,7 @@ const createOrderHandler = async (req, res) => {
     if (!db) return res.status(503).send({ message: 'Service Unavailable: Database not connected' });
 
     // Use 'method' as per user request to select gateway
-    let { amount, purpose, relatedId, collabId, collabType, phone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId, customerId } = req.body;
+    let { amount, purpose, relatedId, collabId, collabType, phone, customerPhone: reqCustomerPhone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId, customerId } = req.body;
     
     // Fallback to customerId if userId is not provided directly
     let userId = reqUserId || customerId;
@@ -312,7 +312,8 @@ const createOrderHandler = async (req, res) => {
         if (!userDoc.exists) return res.status(404).send({ message: 'User not found' });
         
         const userData = userDoc.data();
-        const customerPhone = phone || userData.mobileNumber || "9999999999";
+        // Prioritize request provided phone (or customerPhone), fallback to profile
+        const customerPhone = phone || reqCustomerPhone || userData.mobileNumber || "9999999999";
         const customerEmail = userData.email || "noemail@example.com";
 
         const settings = await getPaymentSettings();

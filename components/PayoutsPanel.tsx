@@ -1,5 +1,5 @@
 
-
+// ... (Previous imports)
 import React, { useState, useMemo } from 'react';
 import { PayoutRequest, RefundRequest, DailyPayoutRequest, UserRole, CombinedCollabItem, User, Transaction } from '../types';
 import { apiService } from '../services/apiService';
@@ -25,8 +25,7 @@ interface PayoutQueueItem {
     originalRequest: PayoutRequest | RefundRequest | DailyPayoutRequest;
 }
 
-// --- Helper Components ---
-
+// ... (Helper Components: StatusBadge, safeToLocaleString, getTime remain the same)
 const StatusBadge: React.FC<{ status: PayoutQueueItem['status'] }> = ({ status }) => {
     const colors: Record<string, string> = {
         pending: "bg-yellow-100 text-yellow-800 border-yellow-200",
@@ -58,8 +57,7 @@ const getTime = (ts: any): number => {
     return 0;
 };
 
-// --- Modals ---
-
+// ... (ActionSelectionModal, ConfirmationModal, DetailsModal remain the same)
 const ActionSelectionModal: React.FC<{ 
     item: PayoutQueueItem; 
     onClose: () => void; 
@@ -364,10 +362,11 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
             // Process backend payout if approved
             if (targetStatus === 'approved' && (selectedItem.requestType === 'Payout' || selectedItem.requestType === 'Daily Payout')) {
                 try {
-                    await apiService.processPayout(selectedItem.id);
-                } catch (err) {
-                    // Continue to DB update even if auto-process fails, but warn
+                    // Pass the requestType so apiService knows which collection to use
+                    await apiService.processPayout(selectedItem.id, selectedItem.requestType);
+                } catch (err: any) {
                     console.warn("Auto-payout failed, proceeding with manual status update", err);
+                    alert(`Auto-payout failed: ${err.message}. Updating status manually.`);
                 }
             }
 

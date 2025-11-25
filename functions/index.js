@@ -24,7 +24,7 @@ const getExpiryDate = (planId) => {
 };
 
 // --- CORE LOGIC: Process a Successful Payment ---
-// This is called by both the Frontend Check and the Webhook
+// This is called AFTER verification is passed
 async function processPaymentSuccess(orderId) {
     console.log(`Processing payment for Order ID: ${orderId}`);
     
@@ -164,12 +164,43 @@ async function processPaymentSuccess(orderId) {
     return { success: true, status: 'PAID' };
 }
 
+// --- Helper: Verify Order Status with Cashfree ---
+async function verifyCashfreeStatus(orderId) {
+    try {
+        const settingsDoc = await db.doc('settings/platform').get();
+        const settings = settingsDoc.data() || {};
+        const appId = settings.paymentGatewayApiId;
+        const secretKey = settings.paymentGatewayApiSecret;
+        
+        if (!appId || !secretKey) return null;
+
+        const isTest = appId.includes("TEST");
+        const baseUrl = isTest ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
+        
+        const response = await fetch(`${baseUrl}/orders/${orderId}`, {
+            method: 'GET',
+            headers: {
+                'x-client-id': appId,
+                'x-client-secret': secretKey,
+                'x-api-version': '2023-08-01'
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            return data.order_status;
+        }
+    } catch (error) {
+        console.error("Cashfree Verification Error:", error);
+    }
+    return null;
+}
+
 // --- ENDPOINT 1: Create Payment Order ---
 app.post('/', async (req, res) => {
     try {
         const { amount, phone, customerId, collabType, relatedId, collabId, userId, description, coinsUsed, returnUrl } = req.body;
         
-        // Get Keys from Firestore
         const settingsDoc = await db.doc('settings/platform').get();
         const settings = settingsDoc.data() || {};
         const appId = settings.paymentGatewayApiId;
@@ -183,7 +214,6 @@ app.post('/', async (req, res) => {
         const baseUrl = isTest ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
         const orderId = "ORDER-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
         
-        // Save pending order
         await db.collection('pending_orders').doc(orderId).set({
             userId: userId || customerId,
             amount: Number(amount),
@@ -196,14 +226,11 @@ app.post('/', async (req, res) => {
             status: 'PENDING'
         });
 
-        // Handle 0 amount (coin redemption)
         if (Number(amount) === 0) {
-             await processPaymentSuccess(orderId); // Auto-complete
+             await processPaymentSuccess(orderId);
              return res.json({ success: true, orderId: orderId, paymentSessionId: "COIN-ONLY", message: "Paid with coins" });
         }
 
-        // Handle Cashfree API
-        // Use the provided returnUrl (from frontend) or fallback to a default
         const finalReturnUrl = returnUrl ? `${returnUrl}?order_id=${orderId}` : `https://bigyapon.com/?order_id=${orderId}`;
 
         const payload = {
@@ -254,7 +281,7 @@ app.post('/', async (req, res) => {
 app.get('/verify-order/:orderId', async (req, res) => {
     const { orderId } = req.params;
     try {
-        // 1. Check if already completed in our DB
+        // 1. Check Local DB
         const orderDoc = await db.collection('pending_orders').doc(orderId).get();
         if (!orderDoc.exists) return res.status(404).json({ message: "Order not found." });
         
@@ -262,39 +289,15 @@ app.get('/verify-order/:orderId', async (req, res) => {
              return res.json({ order_status: 'PAID' });
         }
 
-        // 2. If not, ask Cashfree status
-        const settingsDoc = await db.doc('settings/platform').get();
-        const settings = settingsDoc.data() || {};
-        const appId = settings.paymentGatewayApiId;
-        const secretKey = settings.paymentGatewayApiSecret;
-        
-        let status = "PENDING";
+        // 2. Check Cashfree (Source of Truth)
+        const status = await verifyCashfreeStatus(orderId);
 
-        if(appId && secretKey) {
-            const isTest = appId.includes("TEST");
-            const baseUrl = isTest ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
-            
-            const response = await fetch(`${baseUrl}/orders/${orderId}`, {
-                method: 'GET',
-                headers: {
-                    'x-client-id': appId,
-                    'x-client-secret': secretKey,
-                    'x-api-version': '2023-08-01'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                status = data.order_status; // PAID, ACTIVE, EXPIRED, etc.
-            }
-        }
-
-        // 3. If Cashfree says PAID, update our DB
+        // 3. Sync DB
         if (status === 'PAID') {
             await processPaymentSuccess(orderId);
         }
 
-        res.json({ order_status: status });
+        res.json({ order_status: status || "PENDING" });
 
     } catch (error) {
         console.error("Verify Error:", error);
@@ -306,30 +309,191 @@ app.get('/verify-order/:orderId', async (req, res) => {
 app.post('/webhook', async (req, res) => {
     try {
         const data = req.body;
-        console.log("Webhook Payload:", JSON.stringify(data));
+        // console.log("Webhook Payload:", JSON.stringify(data));
 
-        // ALWAYS Return 200 OK immediately to satisfy Cashfree Test/Verification
-        // Cashfree requires 200 OK to verify the endpoint is active.
+        // 1. Acknowledge Receipt Immediately
         res.status(200).send('OK');
 
-        // Process actual payment events
-        // Check for Payment Success Webhook (Cashfree V3 Format)
+        // 2. Verify and Process
         if (data.type === "PAYMENT_SUCCESS_WEBHOOK") {
             const orderId = data.data?.order?.order_id;
-            const paymentStatus = data.data?.payment?.payment_status;
-
-            if (orderId && paymentStatus === "SUCCESS") {
-                console.log(`Webhook: Payment Success for ${orderId}`);
-                await processPaymentSuccess(orderId);
+            
+            if (orderId) {
+                // Security Check: Verify status directly with Cashfree before trusting the webhook
+                const actualStatus = await verifyCashfreeStatus(orderId);
+                
+                if (actualStatus === 'PAID') {
+                    console.log(`Webhook Verified: Payment Success for ${orderId}`);
+                    await processPaymentSuccess(orderId);
+                } else {
+                    console.warn(`Webhook Warning: Received success webhook for ${orderId}, but API status is ${actualStatus}`);
+                }
             }
         }
     } catch (error) {
         console.error("Webhook Logic Error:", error);
-        // Even if our logic fails, we don't want Cashfree to retry endlessly if it's a bug.
-        // Just log it. We already sent 200 OK above or will send it now if not sent.
         if (!res.headersSent) {
              res.status(200).send('Error processed');
         }
+    }
+});
+
+// --- ENDPOINT 4: Initiate Payout (Admin Action) ---
+app.post('/initiate-payout', async (req, res) => {
+    try {
+        const { payoutId, collection } = req.body;
+        const collectionName = collection || 'payout_requests'; 
+
+        // 1. Get Settings & Credentials
+        const settingsDoc = await db.doc('settings/platform').get();
+        const settings = settingsDoc.data() || {};
+        const clientId = settings.payoutClientId;
+        const clientSecret = settings.payoutClientSecret;
+
+        if (!clientId || !clientSecret) {
+            return res.status(500).json({ message: "Payout keys missing in Admin Settings." });
+        }
+
+        // 2. Get Payout Request Data
+        const docRef = db.collection(collectionName).doc(payoutId);
+        const docSnap = await docRef.get();
+        
+        if (!docSnap.exists) {
+            return res.status(404).json({ message: "Payout request not found" });
+        }
+        const payoutData = docSnap.data();
+        
+        if (payoutData.status === 'completed') {
+            return res.status(400).json({ message: "Payout already completed" });
+        }
+
+        // 3. Parse Details (Bank or UPI)
+        let transferMode = '';
+        let beneficiaryDetails = {};
+        // Handle daily payout structure vs standard payout structure
+        const amount = payoutData.amount || payoutData.approvedAmount;
+
+        if (payoutData.upiId) {
+            transferMode = 'upi';
+            beneficiaryDetails = {
+                vpa: payoutData.upiId,
+                phone: '9999999999', // Required by Cashfree
+                name: payoutData.userName, 
+                email: 'user@example.com' 
+            };
+        } else if (payoutData.bankDetails) {
+            transferMode = 'banktoken'; 
+            // Extract details from string format "Account Holder: X\nAccount Number: Y..."
+            const text = payoutData.bankDetails;
+            const accHolder = text.match(/Account Holder:\s*(.+)/i)?.[1]?.trim() || payoutData.userName;
+            const accNum = text.match(/Account Number:\s*(.+)/i)?.[1]?.trim();
+            const ifsc = text.match(/IFSC:\s*(.+)/i)?.[1]?.trim();
+            
+            if (!accNum || !ifsc) {
+                return res.status(400).json({ message: "Could not parse Bank Account details." });
+            }
+            
+            beneficiaryDetails = {
+                bankAccount: accNum,
+                ifsc: ifsc,
+                name: accHolder,
+                phone: '9999999999',
+                email: 'user@example.com'
+            };
+        } else {
+            return res.status(400).json({ message: "No valid payment details found in request." });
+        }
+
+        // 4. Cashfree Payout API Logic
+        // We use the standard "Add Beneficiary -> Request Transfer" flow.
+        
+        const isTest = clientId.includes("TEST") || clientId.startsWith("CF");
+        const actualBaseUrl = clientId.includes("TEST") ? "https://payout-gamma.cashfree.com" : "https://payout-api.cashfree.com";
+
+        const headers = {
+            'X-Client-Id': clientId,
+            'X-Client-Secret': clientSecret,
+            'Content-Type': 'application/json'
+        };
+
+        // Step A: Add Beneficiary
+        // Use a unique ID to prevent conflicts if user changes details later
+        const beneId = `BENE_${payoutData.userId.substring(0, 10)}_${Date.now()}`; 
+        
+        const addBeneBody = {
+            beneId: beneId,
+            name: beneficiaryDetails.name,
+            email: beneficiaryDetails.email,
+            phone: beneficiaryDetails.phone,
+            address1: "India"
+        };
+        
+        if (transferMode === 'banktoken') {
+            addBeneBody.bankAccount = beneficiaryDetails.bankAccount;
+            addBeneBody.ifsc = beneficiaryDetails.ifsc;
+        } else {
+            addBeneBody.vpa = beneficiaryDetails.vpa;
+        }
+        
+        const addBeneRes = await fetch(`${actualBaseUrl}/payout/v1/addBeneficiary`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(addBeneBody)
+        });
+        
+        const addBeneData = await addBeneRes.json();
+        // If subCode is 409, beneficiary exists. We proceed. If other error, we might fail or try transfer anyway if ID matches.
+        
+        // Step B: Request Transfer
+        const transferId = `TRANS_${payoutId}`;
+        const transferBody = {
+            beneId: beneId,
+            amount: amount,
+            transferId: transferId
+        };
+
+        const transferRes = await fetch(`${actualBaseUrl}/payout/v1/requestTransfer`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(transferBody)
+        });
+
+        const transferData = await transferRes.json();
+
+        if (transferData.status === 'SUCCESS' || transferData.subCode === '200') {
+             // 5. Update Firestore
+             await docRef.update({
+                 status: 'completed', 
+                 transactionReference: transferData.data?.referenceId || 'PENDING',
+                 payoutTimestamp: admin.firestore.FieldValue.serverTimestamp()
+             });
+             
+             // Create Transaction Record for Payout
+             await db.collection('transactions').doc(transferId).set({
+                transactionId: transferId,
+                userId: payoutData.userId,
+                amount: amount,
+                type: 'payout',
+                status: 'completed',
+                description: `Payout for ${payoutData.collaborationTitle || 'Earnings'}`,
+                relatedId: payoutId,
+                collabId: payoutData.collabId || '',
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                paymentGatewayDetails: {
+                    source: 'cashfree_payout',
+                    referenceId: transferData.data?.referenceId
+                }
+             });
+
+             return res.json({ success: true, message: "Payout Initiated", data: transferData });
+        } else {
+             console.error("Payout API Failed:", transferData);
+             return res.status(400).json({ message: "Payout Failed at Gateway", data: transferData });
+        }
+
+    } catch (error) {
+        console.error("Payout Error:", error);
+        res.status(500).json({ message: "Internal Server Error: " + error.message });
     }
 });
 

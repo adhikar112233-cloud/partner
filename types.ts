@@ -121,6 +121,10 @@ export interface PlatformSettings {
     paymentGatewayApiId: string;
     paymentGatewayApiSecret: string;
     paymentGatewayWebhookSecret?: string;
+    // Payout Settings (Added)
+    payoutClientId?: string;
+    payoutClientSecret?: string;
+    
     paymentGatewaySourceCode: string;
     otpApiId: string;
     

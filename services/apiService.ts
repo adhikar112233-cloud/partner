@@ -1,5 +1,5 @@
 
-import { db, storage } from './firebase';
+import { db, storage, BACKEND_URL } from './firebase';
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, 
     query, where, orderBy, limit, startAfter, serverTimestamp, 
@@ -47,6 +47,8 @@ const DEFAULT_SETTINGS: PlatformSettings = {
     paymentGatewayApiId: '',
     paymentGatewayApiSecret: '',
     paymentGatewayWebhookSecret: '',
+    payoutClientId: '',
+    payoutClientSecret: '',
     paymentGatewaySourceCode: '',
     otpApiId: '',
     socialMediaLinks: [],
@@ -1033,13 +1035,33 @@ export const apiService = {
         await batch.commit();
     },
 
-    // --- Admin Payout Processing (Mock) ---
-    processPayout: async (payoutId: string) => {
-        // In production, this would call Payouts API (Cashfree/Razorpay) via Cloud Function
-        // Here we just simulate success
-        await updateDoc(doc(db, 'payout_requests', payoutId), {
-            status: 'completed',
-            timestamp: serverTimestamp() // Update completion time
-        });
+    // --- Admin Payout Processing ---
+    processPayout: async (payoutId: string, collectionType?: string) => {
+        // Call Backend to initiate Cashfree Payout
+        // We need to look up the correct collection based on type if not standard
+        const collectionName = collectionType === 'Daily Payout' ? 'daily_payout_requests' : 'payout_requests';
+        
+        try {
+            const response = await fetch(`${BACKEND_URL}/initiate-payout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    payoutId: payoutId,
+                    collection: collectionName
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.message || "Payout initiation failed");
+            }
+            
+            console.log("Payout initiated successfully", data);
+            return data;
+        } catch (error) {
+            console.error("Process Payout Error:", error);
+            throw error;
+        }
     }
 };

@@ -101,6 +101,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 <SettingRow label="Cashfree Webhook Secret Key (Optional)">
                     <input type="password" value={settings.paymentGatewayWebhookSecret || ''} onChange={e => handleSettingChange('paymentGatewayWebhookSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Paste Webhook Secret Key here" />
                 </SettingRow>
+                
+                <div className="px-6 py-2 bg-yellow-50 text-yellow-800 text-xs dark:bg-yellow-900/20 dark:text-yellow-200">Payouts require separate keys from the Cashfree Payout Dashboard.</div>
+                <SettingRow label="Payout Client ID">
+                    <input type="text" value={settings.payoutClientId || ''} onChange={e => handleSettingChange('payoutClientId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="CF.... or similar" />
+                </SettingRow>
+                <SettingRow label="Payout Client Secret">
+                    <input type="password" value={settings.payoutClientSecret || ''} onChange={e => handleSettingChange('payoutClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
 
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Fees & Commissions</h4></div>
                 <SettingRow label="Enable Platform Commission">

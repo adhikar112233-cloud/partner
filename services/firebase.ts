@@ -9,7 +9,7 @@ import { getMessaging, type Messaging } from 'firebase/messaging';
 // -------------------- PAYMENT GATEWAY CONFIG --------------------
 
 // IMPORTANT: This points to the deployed Cloud Function payment service
-export const BACKEND_URL = "https://asia-south1-bigyapon2-cfa39.cloudfunctions.net/createPayment"; 
+export const BACKEND_URL = "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/createPayment"; 
 
 // Specific Gateway URLs
 export const PAYTM_URL = BACKEND_URL; 

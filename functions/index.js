@@ -341,7 +341,7 @@ const createOrderHandler = async (req, res) => {
         });
 
         // Determine correct base URL based on region with fallback
-        const region = process.env.FUNCTION_REGION || 'asia-south1';
+        const region = process.env.FUNCTION_REGION || 'us-central1';
         const projectId = process.env.GCLOUD_PROJECT || 'bigyapon2-cfa39'; 
         const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/createPayment`;
 
@@ -679,5 +679,5 @@ app.post('/setPaymentGateway', setPaymentGatewayHandler);
 app.get('/getActiveGateway', getActiveGatewayHandler);
 
 // Export the API
-// Matches URL https://asia-south1-bigyapon2-cfa39.cloudfunctions.net/createPayment
-exports.createPayment = functions.region('asia-south1').https.onRequest(app);
+// Matches URL https://us-central1-bigyapon2-cfa39.cloudfunctions.net/createPayment
+exports.createPayment = functions.region('us-central1').https.onRequest(app);

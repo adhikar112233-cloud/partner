@@ -1,4 +1,3 @@
-
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth, RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
@@ -6,16 +5,9 @@ import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import { getMessaging, type Messaging } from 'firebase/messaging';
 
-// -------------------- PAYMENT GATEWAY CONFIG --------------------
-
-// CRITICAL: After running 'firebase deploy --only functions', copy the Function URL from the terminal
-// and paste it below. It usually ends with /createpayment
-// Example: https://us-central1-your-project-id.cloudfunctions.net/createpayment
+// -------------------- PAYMENT CONFIG --------------------
+// IMPORTANT: You will replace this URL after you run the command in the terminal.
 export const BACKEND_URL = "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/createpayment"; 
-
-// Specific Gateway URLs
-export const CASHFREE_URL = BACKEND_URL;
-
 
 // -------------------- FIREBASE CONFIG --------------------
 export const firebaseConfig = {
@@ -29,7 +21,6 @@ export const firebaseConfig = {
   measurementId: "G-QW74JFCEQ3"
 };
 
-
 // -------------------- INITIALIZE FIREBASE --------------------
 let app: FirebaseApp | undefined;
 let auth: Auth | undefined;
@@ -37,38 +28,18 @@ let db: Firestore | undefined;
 let storage: FirebaseStorage | undefined;
 let messaging: Messaging | undefined;
 
-// A simple check to see if the config has been filled out.
-export const isFirebaseConfigured = !!(
-  firebaseConfig &&
-  firebaseConfig.apiKey &&
-  firebaseConfig.projectId &&
-  !firebaseConfig.apiKey.includes('YOUR_')
-);
+export const isFirebaseConfigured = !!(firebaseConfig && firebaseConfig.apiKey);
 
 if (isFirebaseConfigured) {
   app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
-
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
-
   try {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       messaging = getMessaging(app);
     }
-  } catch (e) {
-    console.warn("Firebase Messaging is not supported in this environment.", e);
-  }
-} else {
-  console.warn("Firebase config is incomplete.");
+  } catch (e) { console.warn("Messaging not supported", e); }
 }
 
-// -------------------- EXPORTS --------------------
-export {
-  auth,
-  db,
-  storage,
-  messaging,
-  RecaptchaVerifier,
-  signInWithPhoneNumber
-};
+export { auth, db, storage, messaging, RecaptchaVerifier, signInWithPhoneNumber };

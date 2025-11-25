@@ -37,7 +37,7 @@ const PaymentPage: React.FC = () => {
 
         setIsLoading(true);
 
-        // Persist phone for future use
+        // Persist phone for future use as per snippet logic
         localStorage.setItem("userPhone", phone);
 
         try {
@@ -61,6 +61,7 @@ const PaymentPage: React.FC = () => {
             const data = await response.json();
             console.log("Payment response:", data);
 
+            // Robust check for session ID as per snippet
             if (!data.payment_session_id && !data.paymentSessionId) {
                 throw new Error("Payment failed — backend could not create order.");
             }

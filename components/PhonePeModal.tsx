@@ -76,7 +76,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       return;
     }
 
-    // Save phone to localStorage for future convenience
+    // Save phone to localStorage for future convenience as per snippet
     localStorage.setItem("userPhone", cleanPhone);
 
     setStatus("processing");
@@ -133,7 +133,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       console.log("Payment Response:", data);
 
-      // Check both camelCase (new API) and snake_case (older API)
+      // Check both camelCase (new API) and snake_case (older API) as per snippet logic
       const sessionId = data.payment_session_id || data.paymentSessionId;
       
       if (!sessionId) {
@@ -146,12 +146,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       try {
-          // 1. Try using window.Cashfree (loaded via script tag in index.html)
+          // 1. Try using window.Cashfree
           if (!window.Cashfree) {
               throw new Error("Cashfree SDK not loaded in browser");
           }
 
-          // Use environment from response or fallback to logic
+          // Use environment from response or fallback to "production" as per user snippet preference
           const mode = data.environment || "production";
           
           const cashfree = new window.Cashfree({ mode: mode });

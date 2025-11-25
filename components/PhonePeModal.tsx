@@ -42,10 +42,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 }) => {
   const [status, setStatus] = useState<'idle' | 'processing' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
+  const [phoneNumber, setPhoneNumber] = useState(() => {
+      // Pre-fill from localStorage if available, otherwise user profile
+      return localStorage.getItem("userPhone") || user.mobileNumber || '';
+  });
   const userCoins = user.coins || 0;
   const [useCoins, setUseCoins] = useState(userCoins > 0);
-  const needsPhone = !user.mobileNumber;
+  const needsPhone = !user.mobileNumber && !phoneNumber;
 
   // 1. Calculate Base Fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
@@ -65,14 +68,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const finalPayableAmount = Math.max(0, grossTotal - discountAmount);
 
   const handlePayment = async () => {
-    const cleanPhone = (needsPhone ? phoneNumber : user.mobileNumber)
+    const cleanPhone = (phoneNumber || user.mobileNumber || '')
       .replace(/\D/g, '')
       .slice(-10);
 
-    if (needsPhone && cleanPhone.length !== 10) {
+    if (cleanPhone.length !== 10) {
       setError("Please enter a valid 10-digit mobile number.");
       return;
     }
+
+    // Save phone to localStorage for future convenience
+    localStorage.setItem("userPhone", cleanPhone);
 
     setStatus("processing");
     setError(null);
@@ -140,12 +146,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
               return;
           }
-          throw new Error("Cashfree payment token missing. Please try again.");
+          throw new Error("Payment failed — backend could not create order (Session ID missing).");
       }
-
-      const appId = platformSettings.paymentGatewayApiId || "";
-      const isSandbox = appId.toUpperCase().startsWith("TEST");
-      const mode = isSandbox ? "sandbox" : "production";
 
       try {
           let cashfree;
@@ -153,6 +155,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           // 1. Try using window.Cashfree (loaded via script tag in index.html)
           if (window.Cashfree) {
               // SDK v3 usage: Factory function without 'new'
+              // Use environment from response or fallback to logic
+              const appId = platformSettings.paymentGatewayApiId || "";
+              const isSandbox = appId.toUpperCase().startsWith("TEST");
+              const mode = data.environment || (isSandbox ? "sandbox" : "production");
+              
               cashfree = window.Cashfree({ mode: mode });
           } else {
               throw new Error("Cashfree SDK not loaded in browser");
@@ -193,9 +200,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         <div className="p-6 min-h-[250px]">
           {status !== "processing" ? (
             <>
-              {needsPhone && (
-                <div className="p-4 bg-yellow-50 border rounded-lg mb-4">
-                  <label className="block font-semibold text-yellow-800">Contact Number Required</label>
+              <div className="p-4 bg-yellow-50 border rounded-lg mb-4">
+                  <label className="block font-semibold text-yellow-800">Contact Number</label>
                   <input
                     type="tel"
                     value={phoneNumber}
@@ -203,8 +209,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     placeholder="Enter mobile number"
                     className="mt-1 w-full p-2 border rounded"
                   />
-                </div>
-              )}
+              </div>
 
               <div className="space-y-3 text-sm mt-4 dark:text-gray-300">
                 <div className="flex justify-between">

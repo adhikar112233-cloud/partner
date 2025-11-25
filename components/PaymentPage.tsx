@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LogoIcon } from './Icons';
 import { BACKEND_URL } from '../services/firebase';
 
@@ -15,6 +15,13 @@ const PaymentPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    useEffect(() => {
+        const storedPhone = localStorage.getItem("userPhone");
+        if (storedPhone) {
+            setPhone(storedPhone);
+        }
+    }, []);
+
     const handlePayment = async () => {
         setError(null);
         
@@ -29,6 +36,9 @@ const PaymentPage: React.FC = () => {
         }
 
         setIsLoading(true);
+
+        // Persist phone for future use as per snippet logic
+        localStorage.setItem("userPhone", phone);
 
         try {
             // 1. Create Order
@@ -49,6 +59,7 @@ const PaymentPage: React.FC = () => {
             });
 
             const data = await response.json();
+            console.log("Payment response:", data);
 
             if (!response.ok) {
                 throw new Error(data.message || "Failed to initiate payment");
@@ -57,14 +68,16 @@ const PaymentPage: React.FC = () => {
             const paymentSessionId = data.paymentSessionId || data.payment_session_id;
 
             if (!paymentSessionId) {
-                throw new Error("Session ID missing from response");
+                throw new Error("Payment failed — backend could not create order (Session ID missing).");
             }
 
             // 2. Checkout
-            const mode = data.environment || "production"; 
             if (!window.Cashfree) {
                 throw new Error("Cashfree SDK not loaded");
             }
+
+            // Use production mode by default or from backend response
+            const mode = data.environment || "production"; 
             const cashfree = window.Cashfree({ mode: mode });
             
             await cashfree.checkout({

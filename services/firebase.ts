@@ -8,7 +8,9 @@ import { getMessaging, type Messaging } from 'firebase/messaging';
 
 // -------------------- PAYMENT GATEWAY CONFIG --------------------
 
-// IMPORTANT: This points to the deployed Cloud Function payment service
+// CRITICAL: After running 'firebase deploy --only functions', copy the Function URL from the terminal
+// and paste it below. It usually ends with /createpayment
+// Example: https://us-central1-your-project-id.cloudfunctions.net/createpayment
 export const BACKEND_URL = "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/createpayment"; 
 
 // Specific Gateway URLs

@@ -43,13 +43,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [status, setStatus] = useState<'idle' | 'processing' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState(() => {
-      // Pre-fill from localStorage if available, otherwise user profile
       return localStorage.getItem("userPhone") || user.mobileNumber || '';
   });
   const userCoins = user.coins || 0;
   const [useCoins, setUseCoins] = useState(userCoins > 0);
   
-  // 1. Calculate Base Fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
     : 0;
@@ -60,7 +58,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const grossTotal = baseAmount + processingCharge + gstOnFees;
 
-  // 2. Calculate Coin Deduction
   const maxRedeemableCoins = Math.min(userCoins, 100, Math.floor(grossTotal));
   
   const discountAmount = useCoins ? maxRedeemableCoins : 0;
@@ -76,14 +73,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       return;
     }
 
-    // Save phone to localStorage for future convenience as per snippet
     localStorage.setItem("userPhone", cleanPhone);
 
     setStatus("processing");
     setError(null);
 
-    // Generate a client-side ID matching format "ORDER-" + Date.now()
-    const clientOrderId = "ORDER-" + Date.now();
     const coinsToUse = useCoins ? maxRedeemableCoins : 0;
     
     try {
@@ -92,23 +86,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         throw new Error("You must be logged in to make a payment.");
       }
 
-      // Construct Request Body
       const body = {
-        orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
         customerId: user.id,
-        method: 'CASHFREE', // Forced Cashfree
         userId: user.id,
         coinsUsed: coinsToUse,
         description: transactionDetails.description,
         phone: cleanPhone,
-        customerPhone: cleanPhone, // Send as both for compatibility
         relatedId: transactionDetails.relatedId,
         collabId: transactionDetails.collabId,
         collabType: collabType
       };
 
-      // Call the specific Cloud Function Endpoint
+      // Call Cloud Function
       const response = await fetch(BACKEND_URL, {
         method: "POST",
         headers: {
@@ -117,63 +107,40 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         body: JSON.stringify(body),
       });
 
-      let data;
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.indexOf("application/json") !== -1) {
-          data = await response.json();
-      } else {
-          const text = await response.text();
-          console.error("Non-JSON response:", text);
-          throw new Error(`Server Error: ${response.status} ${response.statusText}`);
-      }
+      const data = await response.json();
 
       if (!response.ok) {
-         throw new Error(data.message || `Payment initiation failed: ${response.statusText}`);
+         throw new Error(data.message || "Payment initiation failed");
       }
 
-      console.log("Payment Response:", data);
+      // Handle full coin payment (amount 0)
+      if (finalPayableAmount === 0 && data.success) {
+          window.location.href = `/?order_id=${data.orderId}`;
+          return;
+      }
 
-      // Check both camelCase (new API) and snake_case (older API) as per snippet logic
-      const sessionId = data.payment_session_id || data.paymentSessionId;
+      const sessionId = data.paymentSessionId;
       
       if (!sessionId) {
-          // Handle wallet only success where amount is 0
-          if (body.amount === 0 && data.success) {
-              window.location.href = `/?order_id=${data.orderId || data.order_id || clientOrderId}&gateway=wallet&fallback=true`;
-              return;
-          }
-          throw new Error("Payment failed — backend could not create order.");
+          throw new Error("Payment failed — session ID missing.");
       }
 
-      try {
-          // 1. Try using window.Cashfree
-          if (!window.Cashfree) {
-              throw new Error("Cashfree SDK not loaded in browser");
-          }
-
-          // Use environment from response or fallback to "production" as per user snippet preference
-          const mode = data.environment || "production";
-          
-          const cashfree = new window.Cashfree({ mode: mode });
-
-          await cashfree.checkout({
-              paymentSessionId: sessionId,
-              redirectTarget: "_self"
-          });
-
-      } catch (sdkError) {
-          console.error("Cashfree SDK Error", sdkError);
-          // Fallback to payment link if SDK fails entirely and link is available
-          if (data.payment_link) {
-              window.location.href = data.payment_link;
-          } else {
-              throw new Error("Cashfree SDK failed to load: " + (sdkError as Error).message);
-          }
+      if (!window.Cashfree) {
+          throw new Error("Cashfree SDK not loaded.");
       }
+
+      // Use the environment returned by the backend (sandbox or production)
+      const mode = data.environment || "production";
+      const cashfree = new window.Cashfree({ mode: mode });
+
+      await cashfree.checkout({
+          paymentSessionId: sessionId,
+          redirectTarget: "_self"
+      });
 
     } catch (err: any) {
       console.warn("Payment flow failed.", err);
-      setError("Payment failed: " + (err.message || 'Unknown error'));
+      setError(err.message || 'Payment failed');
       setStatus("error");
     }
   };
@@ -220,7 +187,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   </div>
                 )}
 
-                {/* Coin Redemption Section */}
                 {userCoins > 0 && (
                     <div className="p-3 bg-indigo-50 dark:bg-gray-700 rounded-lg border border-indigo-100 dark:border-gray-600 mt-2">
                         <div className="flex items-center justify-between">
@@ -256,7 +222,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <div className="w-8 h-8 border-2 border-dashed rounded-full animate-spin mx-auto border-indigo-600"></div>
               <p className="mt-2 text-gray-500">Processing payment...</p>
               <p className="text-xs text-gray-400 mt-1">
-                  {error ? "Retrying..." : "Connecting to secure gateway..."}
+                  {error ? "Retrying..." : "Redirecting to Cashfree..."}
               </p>
             </div>
           )}

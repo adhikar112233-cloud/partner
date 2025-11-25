@@ -1,7 +1,9 @@
+
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './components/App';
 import SuccessPage from './components/SuccessPage';
+import PaymentPage from './components/PaymentPage';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -11,7 +13,8 @@ if (!rootElement) {
 // Define routes
 const routes = [
   { path: "/", component: App },
-  { path: "/success", component: SuccessPage }
+  { path: "/success", component: SuccessPage },
+  { path: "/payment", component: PaymentPage }
 ];
 
 const root = createRoot(rootElement);

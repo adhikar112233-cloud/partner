@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -11,8 +12,9 @@ interface AdRequestsPageProps {
 
 const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) => {
     const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize";
-    // FIX: Add missing 'refund_pending_admin_review' status to satisfy the type.
     const statusMap: Record<AdBookingStatus, { text: string; classes: string }> = {
+        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100" }, // From CollabRequestStatus
+        influencer_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" }, // From CollabRequestStatus
         pending_approval: { text: "Pending Approval", classes: "text-yellow-800 bg-yellow-100" },
         rejected: { text: "Rejected", classes: "text-red-800 bg-red-100" },
         agency_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" },

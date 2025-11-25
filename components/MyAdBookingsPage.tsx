@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { User, AdSlotRequest, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, AnyCollaboration } from '../types';
-import { Timestamp } from 'firebase/firestore';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
 import { apiService } from '../services/apiService';
+import PostBannerAdModal from './PostBannerAdModal';
+import { Timestamp } from 'firebase/firestore';
 import CashfreeModal from './PhonePeModal';
 import DisputeModal from './DisputeModal';
 
@@ -11,12 +13,14 @@ interface MyAdBookingsPageProps {
     user: User; // The logged-in brand
     platformSettings: PlatformSettings;
     onStartChat: (participant: ConversationParticipant) => void;
-    onInitiateRefund: (collab: AnyCollaboration) => void;
+    onInitiateRefund: (collab: BannerAdBookingRequest | AdSlotRequest) => void;
 }
 
 const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) => {
     const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize whitespace-nowrap";
     const statusMap: Record<AdBookingStatus, { text: string; classes: string }> = {
+        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100" }, // From CollabRequestStatus
+        influencer_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" }, // From CollabRequestStatus
         pending_approval: { text: "Pending Approval", classes: "text-yellow-800 bg-yellow-100" },
         rejected: { text: "Rejected", classes: "text-red-800 bg-red-100" },
         agency_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100" },
@@ -33,16 +37,19 @@ const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) =
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
-const OfferModal: React.FC<{ request: AdRequest; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ request, onClose, onConfirm }) => {
+const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, onClose, onConfirm }) => {
     const [amount, setAmount] = useState('');
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
-                <h3 className="text-lg font-bold mb-4">Send Counter Offer</h3>
-                <p className="text-sm text-gray-600 mb-4">Agency's current offer is {request.currentOffer?.amount}. Propose a new amount.</p>
-                <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g., 8000" className="w-full p-2 border rounded-md"/>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+                <h3 className="text-lg font-bold mb-4 dark:text-gray-100">{type === 'accept' ? 'Accept with Offer' : 'Send Counter Offer'}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                  {type === 'recounter' && currentOffer ? `Agency's offer is ${currentOffer}. ` : ''}
+                  Propose your fee for this ad booking.
+                </p>
+                <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g., 25000" className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <button onClick={onClose} className="px-4 py-2 text-sm rounded-md bg-gray-200">Cancel</button>
+                    <button onClick={onClose} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-600 dark:text-gray-200">Cancel</button>
                     <button onClick={() => onConfirm(amount)} className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white">Send Offer</button>
                 </div>
             </div>
@@ -72,7 +79,7 @@ const TabButton: React.FC<{
 };
 
 
-const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund }) => {
+export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund }) => {
     const [requests, setRequests] = useState<AdRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -235,6 +242,8 @@ const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSetti
                 break;
         }
         
+        if (actions.length === 0) return null;
+
         return (
             <div className="mt-4 flex flex-wrap gap-3">
                 {actions.map(a => (
@@ -246,67 +255,63 @@ const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSetti
         );
     };
 
-    const AdBookingCard: React.FC<{ request: AdRequest }> = ({ request: req }) => (
-        <li className="p-6 bg-white rounded-lg shadow-sm">
-            <div className="flex justify-between items-start">
-                <div>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${req.type === 'Live TV' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
-                        {req.type}
-                    </span>
-                    <h3 className="text-lg font-bold text-gray-800 mt-1">{req.campaignName}</h3>
-                    {req.collabId && <p className="text-xs font-mono text-gray-400 mt-1">{req.collabId}</p>}
-                    <p className="text-sm text-gray-500">
-                        {req.type === 'Live TV' ? (req as AdSlotRequest).adType : (req as BannerAdBookingRequest).bannerAdLocation}
-                    </p>
-                </div>
-                <RequestStatusBadge status={req.status} />
-            </div>
-            <div className="mt-4">
-                {req.status === 'agency_offer' && <p className="text-sm font-semibold text-indigo-600">Agency's Offer: {req.currentOffer?.amount}</p>}
-                {renderStatusInfo(req)}
-                {renderRequestActions(req)}
-            </div>
-        </li>
-    );
-
-    const lists = {
-        pending,
-        inProgress,
-        completed,
-    };
-    
-    const currentList = lists[activeTab];
+    const currentList = activeTab === 'pending' ? pending : activeTab === 'inProgress' ? inProgress : completed;
 
     if (isLoading) return <div className="text-center p-8">Loading ad bookings...</div>;
     if (error) return <div className="text-center p-8 bg-red-100 text-red-700 rounded-lg">{error}</div>;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-3xl font-bold text-gray-800">My Ad Bookings</h1>
-                <p className="text-gray-500 mt-1">Manage your Live TV and Banner Ad collaborations.</p>
+                <p className="text-gray-500 mt-1">Track your Live TV and Banner Ad campaigns.</p>
             </div>
-
-            <div className="flex space-x-2 p-1 bg-gray-100 rounded-lg border">
+            
+            <div className="flex space-x-2 p-1 bg-gray-50 rounded-lg border overflow-x-auto">
                 <TabButton label="Pending" count={pending.length} isActive={activeTab === 'pending'} onClick={() => setActiveTab('pending')} />
                 <TabButton label="In Progress" count={inProgress.length} isActive={activeTab === 'inProgress'} onClick={() => setActiveTab('inProgress')} />
-                <TabButton label="Completed & Archived" count={completed.length} isActive={activeTab === 'completed'} onClick={() => setActiveTab('completed')} />
+                <TabButton label="Completed" count={completed.length} isActive={activeTab === 'completed'} onClick={() => setActiveTab('completed')} />
             </div>
-
+            
             {currentList.length === 0 ? (
-                <div className="text-center py-10 bg-white rounded-lg shadow"><p className="text-gray-500">No ad bookings in this category.</p></div>
+                 <div className="text-center py-10 col-span-full bg-white rounded-lg shadow"><p className="text-gray-500">No bookings in this category.</p></div>
             ) : (
-                <ul className="space-y-4">
-                    {currentList.map(req => (
-                        <AdBookingCard key={req.id} request={req} />
-                    ))}
-                </ul>
+                 <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
+                    <ul className="divide-y divide-gray-200">
+                        {currentList.map(req => (
+                            <li key={req.id} className="p-6">
+                                <div className="flex items-start space-x-4">
+                                    <img src={req.type === 'Live TV' ? (req as AdSlotRequest).liveTvAvatar : (req as BannerAdBookingRequest).agencyAvatar} alt="Partner Avatar" className="w-12 h-12 rounded-full object-cover" />
+                                    <div className="flex-1">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h3 className="text-lg font-bold text-gray-800">{req.campaignName}</h3>
+                                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${req.type === 'Live TV' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>{req.type}</span>
+                                                {req.collabId && <span className="text-xs font-mono text-gray-400 ml-2">{req.collabId}</span>}
+                                            </div>
+                                            <RequestStatusBadge status={req.status} />
+                                        </div>
+                                        <p className="text-sm font-medium text-gray-600">
+                                            Provider: {req.type === 'Live TV' ? (req as AdSlotRequest).liveTvName : (req as BannerAdBookingRequest).agencyName}
+                                        </p>
+                                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-500">
+                                            <p>Dates: {req.startDate} to {req.endDate}</p>
+                                            {req.status === 'agency_offer' && <p className="text-indigo-600 font-semibold">Agency's Offer: {req.currentOffer?.amount}</p>}
+                                        </div>
+                                        {renderStatusInfo(req)}
+                                        {renderRequestActions(req)}
+                                    </div>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             )}
 
             {modal === 'offer' && selectedRequest && (
-                <OfferModal request={selectedRequest} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} />
+                <OfferModal type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} />
             )}
-            {payingRequest && (
+             {payingRequest && (
                 <CashfreeModal
                     user={user}
                     collabType={payingRequest.type === 'Live TV' ? 'ad_slot' : 'banner_booking'}
@@ -339,7 +344,7 @@ const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSetti
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
                         <h3 className="text-lg font-bold dark:text-gray-100">Confirm Action</h3>
-                        <p className="text-gray-600 dark:text-gray-300 my-4">Are you sure you want to approve this work? This will mark the collaboration as complete and release the final payment to the agency/channel.</p>
+                        <p className="text-gray-600 dark:text-gray-300 my-4">Are you sure you want to approve this work? This will mark the collaboration as complete and release the final payment to the agency.</p>
                         <div className="flex justify-end space-x-2">
                             <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-600 dark:text-gray-200">Cancel</button>
                             <button onClick={executeConfirmAction} className="px-4 py-2 text-sm rounded-md bg-green-600 text-white">Confirm &amp; Approve</button>

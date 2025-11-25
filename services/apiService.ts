@@ -1,3 +1,4 @@
+
 import { db, storage } from './firebase';
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, 
@@ -35,6 +36,7 @@ const DEFAULT_SETTINGS: PlatformSettings = {
     activePaymentGateway: 'cashfree',
     paymentGatewayApiId: '',
     paymentGatewayApiSecret: '',
+    paymentGatewayWebhookSecret: '',
     paymentGatewaySourceCode: '',
     otpApiId: '',
     socialMediaLinks: [],
@@ -63,13 +65,19 @@ export const apiService = {
 
     // --- Platform Settings ---
     getPlatformSettings: async (): Promise<PlatformSettings> => {
-        const docRef = doc(db, 'settings', 'platform');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return { ...DEFAULT_SETTINGS, ...docSnap.data() } as PlatformSettings;
-        } else {
-            // Initialize if missing
-            await setDoc(docRef, DEFAULT_SETTINGS);
+        try {
+            const docRef = doc(db, 'settings', 'platform');
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                return { ...DEFAULT_SETTINGS, ...docSnap.data() } as PlatformSettings;
+            } else {
+                // Initialize if missing
+                // Note: setDoc might fail if rules prevent write, handle in UI
+                return DEFAULT_SETTINGS;
+            }
+        } catch (error) {
+            console.warn("Could not fetch settings, using defaults:", error);
+            // Return defaults so app can load even if DB access fails (e.g. first run)
             return DEFAULT_SETTINGS;
         }
     },
@@ -124,6 +132,12 @@ export const apiService = {
         await updateDoc(doc(db, 'users', userId), {
             'membership.isActive': isActive
         });
+    },
+
+    uploadProfilePicture: async (userId: string, file: File): Promise<string> => {
+        const storageRef = ref(storage, `avatars/${userId}/${Date.now()}_${file.name}`);
+        await uploadBytes(storageRef, file);
+        return getDownloadURL(storageRef);
     },
 
     // --- Influencers ---

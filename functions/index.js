@@ -1,3 +1,4 @@
+
 const functions = require("firebase-functions");
 const express = require("express");
 const cors = require("cors");
@@ -307,6 +308,11 @@ app.post('/webhook', async (req, res) => {
         const data = req.body;
         console.log("Webhook Payload:", JSON.stringify(data));
 
+        // ALWAYS Return 200 OK immediately to satisfy Cashfree Test/Verification
+        // Cashfree requires 200 OK to verify the endpoint is active.
+        res.status(200).send('OK');
+
+        // Process actual payment events
         // Check for Payment Success Webhook (Cashfree V3 Format)
         if (data.type === "PAYMENT_SUCCESS_WEBHOOK") {
             const orderId = data.data?.order?.order_id;
@@ -317,13 +323,13 @@ app.post('/webhook', async (req, res) => {
                 await processPaymentSuccess(orderId);
             }
         }
-
-        // Always return 200 to Cashfree
-        res.status(200).send('OK');
     } catch (error) {
         console.error("Webhook Logic Error:", error);
-        // Still return 200 to prevent Cashfree retries if it's a logic error on our side
-        res.status(200).send('Error processed');
+        // Even if our logic fails, we don't want Cashfree to retry endlessly if it's a bug.
+        // Just log it. We already sent 200 OK above or will send it now if not sent.
+        if (!res.headersSent) {
+             res.status(200).send('Error processed');
+        }
     }
 });
 

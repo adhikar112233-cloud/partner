@@ -33,7 +33,7 @@ import SupportAdminPage from './SupportAdminPage';
 import MembershipPage from './MembershipPage';
 import MyCollaborationsPage from './MyCollaborationsPage';
 import { MyApplicationsPage } from './MyApplicationsPage';
-import MyAdBookingsPage from './MyAdBookingsPage';
+import { MyAdBookingsPage } from './MyAdBookingsPage';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import CommunityPage from './CommunityPage';
 import SocialMediaFab from './SocialMediaFab';

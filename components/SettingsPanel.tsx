@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -96,6 +97,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 </SettingRow>
                 <SettingRow label="Cashfree Secret Key">
                     <input type="password" value={settings.paymentGatewayApiSecret || ''} onChange={e => handleSettingChange('paymentGatewayApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="Cashfree Webhook Secret Key (Optional)">
+                    <input type="password" value={settings.paymentGatewayWebhookSecret || ''} onChange={e => handleSettingChange('paymentGatewayWebhookSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Paste Webhook Secret Key here" />
                 </SettingRow>
 
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Fees & Commissions</h4></div>

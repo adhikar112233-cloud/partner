@@ -381,7 +381,15 @@ const CommunityManagementPanel: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        const dummyAdmin: User = { id: 'admin', name: 'Admin', email: '', role: 'staff', membership: {} as any, kycStatus: 'approved' };
+        const dummyAdmin: User = { 
+            id: 'admin', 
+            name: 'Admin', 
+            email: '', 
+            role: 'staff', 
+            membership: {} as any, 
+            kycStatus: 'approved',
+            avatar: 'https://placehold.co/100x100?text=Admin' // Add avatar
+        };
         setCurrentUser(dummyAdmin);
         fetchPosts();
     }, [fetchPosts]);

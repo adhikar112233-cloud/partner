@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CampaignApplication, CampaignApplicationStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -11,8 +12,10 @@ interface MyApplicationsPageProps {
 
 const ApplicationStatusBadge: React.FC<{ status: CampaignApplicationStatus }> = ({ status }) => {
     const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize";
-    // Fix: Add missing 'brand_decision_pending' and 'refund_pending_admin_review' statuses to satisfy the type.
     const statusMap: Record<CampaignApplicationStatus, { text: string; classes: string }> = {
+        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100" },
+        influencer_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" },
+        brand_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100" },
         pending_brand_review: { text: "Pending Review", classes: "text-yellow-800 bg-yellow-100" },
         rejected: { text: "Rejected", classes: "text-red-800 bg-red-100" },
         brand_counter_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100" },

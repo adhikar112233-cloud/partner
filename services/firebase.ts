@@ -6,7 +6,7 @@ import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import { getMessaging, type Messaging } from 'firebase/messaging';
 
 // -------------------- PAYMENT CONFIG --------------------
-// IMPORTANT: You will replace this URL after you run the command in the terminal.
+// IMPORTANT: This URL must match your deployed Firebase Cloud Function URL.
 export const BACKEND_URL = "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/createpayment"; 
 
 // -------------------- FIREBASE CONFIG --------------------

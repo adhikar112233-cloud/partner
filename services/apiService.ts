@@ -84,12 +84,10 @@ export const apiService = {
                 return { ...DEFAULT_SETTINGS, ...docSnap.data() } as PlatformSettings;
             } else {
                 // Initialize if missing
-                // Note: setDoc might fail if rules prevent write, handle in UI
                 return DEFAULT_SETTINGS;
             }
         } catch (error) {
             console.warn("Could not fetch settings, using defaults:", error);
-            // Return defaults so app can load even if DB access fails (e.g. first run)
             return DEFAULT_SETTINGS;
         }
     },
@@ -154,7 +152,6 @@ export const apiService = {
 
     // --- Influencers ---
     getInfluencersPaginated: async (settings: PlatformSettings, options: { limit: number, startAfterDoc?: any }) => {
-        // Logic to filter based on membership could be added here if needed
         let q = query(collection(db, 'influencers'), orderBy('followers', 'desc'), limit(options.limit));
         if (options.startAfterDoc) {
             q = query(q, startAfter(options.startAfterDoc));
@@ -217,7 +214,6 @@ export const apiService = {
             status: 'pending_approval',
             timestamp: serverTimestamp()
         });
-        // Notification logic can be added here
     },
 
     getBannerAdBookingRequestsForAgency: async (agencyId: string): Promise<BannerAdBookingRequest[]> => {
@@ -336,7 +332,6 @@ export const apiService = {
 
     getAllOpenCampaigns: async (location?: string): Promise<Campaign[]> => {
         let q = query(collection(db, 'campaigns'), where('status', '==', 'open'));
-        // Note: Firestore limitations on multiple inequality/array-contains might require client-side filtering for location if complex
         const snapshot = await getDocs(q);
         let campaigns = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Campaign));
         if (location && location !== 'All') {
@@ -383,39 +378,19 @@ export const apiService = {
 
     // --- Messaging ---
     getConversations: async (userId: string): Promise<any[]> => {
-        // This logic is usually complex in Firestore (requires a separate 'conversations' collection tracking participants).
-        // For this mock/fix, we'll return an empty array or query a 'conversations' collection if it existed.
-        // Assuming a structure where we query messages to build conversations or a dedicated collection.
-        // Let's try querying a dedicated collection 'conversations' where array-contains 'participants'
         const q = query(collection(db, 'conversations'), where('participants', 'array-contains', userId));
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => {
             const data = d.data();
-            // Transform to Conversation type structure locally if needed
             return { id: d.id, ...data };
         });
     },
 
     getMessages: async (userId1: string, userId2: string): Promise<any[]> => {
-        // Simple query for messages between two users. 
-        // In real app, would use a conversation ID.
-        // Here we query all and filter (inefficient but functional for fix) or use a compound key.
-        // Ideally, use a conversation ID.
-        // Let's assume we fetch messages from a collection and client filters or we use a compound query if indexes allow.
-        // For safety in this fix, let's just return empty or implement a basic query if a 'conversationId' is known/passed.
-        // Since we don't have conversationId in params, we might search for it.
-        
-        // Fallback: return empty for now to satisfy type check in components, 
-        // OR implement a proper chat query if 'conversations' logic exists.
-        // Given the code in 'ChatWindow', it uses `getMessagesListener`.
         return [];
     },
 
     getMessagesListener: (userId1: string, userId2: string, onUpdate: (msgs: any[]) => void, onError: (err: any) => void) => {
-        // Construct a unique conversation ID or query messages where participants include both.
-        // Simplified: Query 'messages' collection where (sender==u1 AND receiver==u2) OR (sender==u2 AND receiver==u1)
-        // Firestore doesn't support OR queries easily in snapshots without multiple listeners.
-        // Better approach: Use a conversation ID derived from sorted user IDs.
         const convoId = [userId1, userId2].sort().join('_');
         const q = query(collection(db, 'chats', convoId, 'messages'), orderBy('timestamp', 'asc'));
         
@@ -436,7 +411,6 @@ export const apiService = {
         };
         await addDoc(collection(db, 'chats', convoId, 'messages'), messageData);
         
-        // Update conversation metadata
         const convoRef = doc(db, 'conversations', convoId);
         await setDoc(convoRef, {
             participants: [senderId, receiverId],
@@ -454,20 +428,15 @@ export const apiService = {
     // --- Posts / Community ---
     getPosts: async (currentUserId?: string): Promise<Post[]> => {
         let q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'));
-        // Client-side filtering for blocked/private posts might be needed if Firestore rules allow read.
-        // Assuming logic handles visibility.
         const snapshot = await getDocs(q);
         let posts = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Post));
         
         if (currentUserId) {
-            // Filter: Show if public OR (private AND own post)
-            // Also filter blocked if not admin (logic handled in component mostly, but here too)
             posts = posts.filter(p => 
                 (!p.isBlocked) && 
                 (p.visibility === 'public' || p.userId === currentUserId)
             );
         } else {
-            // Public only
             posts = posts.filter(p => !p.isBlocked && p.visibility === 'public');
         }
         return posts;
@@ -565,8 +534,6 @@ export const apiService = {
 
     // --- Transactions & Payouts ---
     getTransactionsForUser: async (userId: string): Promise<Transaction[]> => {
-        // Modified: Removed orderBy to prevent "Missing Index" error. 
-        // Sorting is now done client-side.
         const q = query(collection(db, 'transactions'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
         const transactions = snapshot.docs.map(d => ({ transactionId: d.id, ...d.data() } as Transaction));
@@ -580,13 +547,32 @@ export const apiService = {
     },
 
     submitPayoutRequest: async (data: any) => {
+        // FIX: Sanitize data to ensure no undefined values are passed (Firestore requirement)
+        // Specifically `collabId` which might be missing on older records.
+        const payload = { ...data };
+        if (payload.collabId === undefined) payload.collabId = null;
+
+        // 1. Create Payout Request
         await addDoc(collection(db, 'payout_requests'), {
-            ...data,
+            ...payload,
             status: 'pending',
             timestamp: serverTimestamp()
         });
-        // Update collab payment status to prevent duplicate requests
-        // Logic to update specific collab doc would depend on type/id passed in data
+        
+        // 2. Update Collaboration Payment Status
+        let collectionName = '';
+        switch (data.collaborationType) {
+            case 'direct': collectionName = 'collaboration_requests'; break;
+            case 'campaign': collectionName = 'campaign_applications'; break;
+            case 'ad_slot': collectionName = 'ad_slot_requests'; break;
+            case 'banner_booking': collectionName = 'banner_booking_requests'; break;
+        }
+
+        if (collectionName && data.collaborationId) {
+            await updateDoc(doc(db, collectionName, data.collaborationId), {
+                paymentStatus: 'payout_requested'
+            });
+        }
     },
 
     getAllPayouts: async (): Promise<PayoutRequest[]> => {
@@ -596,8 +582,6 @@ export const apiService = {
     },
 
     getPayoutHistoryForUser: async (userId: string): Promise<PayoutRequest[]> => {
-        // Modified: Removed orderBy to prevent "Missing Index" error. 
-        // Sorting is now done client-side.
         const q = query(collection(db, 'payout_requests'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
         const payouts = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PayoutRequest));
@@ -606,7 +590,6 @@ export const apiService = {
 
     updatePayoutStatus: async (payoutId: string, status: string, collabId: string, collabType: string, reason?: string) => {
         await updateDoc(doc(db, 'payout_requests', payoutId), { status });
-        // Could also update the related collaboration document
     },
 
     uploadPayoutSelfie: async (userId: string, file: File): Promise<string> => {
@@ -617,11 +600,30 @@ export const apiService = {
 
     // --- Refunds ---
     createRefundRequest: async (data: any) => {
+        // FIX: Sanitize data to ensure no undefined values are passed
+        const payload = { ...data };
+        if (payload.collabId === undefined) payload.collabId = null;
+
         await addDoc(collection(db, 'refund_requests'), {
-            ...data,
+            ...payload,
             status: 'pending',
             timestamp: serverTimestamp()
         });
+
+        // Update Collaboration Status
+        let collectionName = '';
+        switch (data.collabType) {
+            case 'direct': collectionName = 'collaboration_requests'; break;
+            case 'campaign': collectionName = 'campaign_applications'; break;
+            case 'ad_slot': collectionName = 'ad_slot_requests'; break;
+            case 'banner_booking': collectionName = 'banner_booking_requests'; break;
+        }
+
+        if (collectionName && data.collaborationId) {
+            await updateDoc(doc(db, collectionName, data.collaborationId), {
+                status: 'refund_pending_admin_review'
+            });
+        }
     },
 
     getAllRefunds: async (): Promise<RefundRequest[]> => {
@@ -635,7 +637,6 @@ export const apiService = {
 
     // --- Daily Payouts ---
     getActiveAdCollabsForAgency: async (agencyId: string, role: UserRole) => {
-        // Query 'ad_slot_requests' or 'banner_booking_requests' where status='in_progress'
         const collectionName = role === 'livetv' ? 'ad_slot_requests' : 'banner_booking_requests';
         const idField = role === 'livetv' ? 'liveTvId' : 'agencyId';
         
@@ -651,8 +652,12 @@ export const apiService = {
     },
 
     submitDailyPayoutRequest: async (data: any) => {
+        // FIX: Sanitize data to ensure no undefined values are passed
+        const payload = { ...data };
+        if (payload.collabId === undefined) payload.collabId = null;
+
         await addDoc(collection(db, 'daily_payout_requests'), {
-            ...data,
+            ...payload,
             status: 'pending',
             timestamp: serverTimestamp()
         });
@@ -677,8 +682,12 @@ export const apiService = {
 
     // --- Disputes ---
     createDispute: async (data: any) => {
+        // FIX: Sanitize data to ensure no undefined values are passed
+        const payload = { ...data };
+        if (payload.collabId === undefined) payload.collabId = null;
+
         await addDoc(collection(db, 'disputes'), {
-            ...data,
+            ...payload,
             status: 'open',
             timestamp: serverTimestamp()
         });
@@ -735,8 +744,6 @@ export const apiService = {
     },
 
     getTicketsForUser: async (userId: string): Promise<SupportTicket[]> => {
-        // Modified: Removed orderBy to prevent "Missing Index" error.
-        // Sorting is done client-side.
         const q = query(collection(db, 'support_tickets'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
         const tickets = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as SupportTicket));
@@ -762,7 +769,7 @@ export const apiService = {
         });
         await updateDoc(doc(db, 'support_tickets', replyData.ticketId), {
             updatedAt: serverTimestamp(),
-            status: 'in_progress' // Re-open if closed or just update
+            status: 'in_progress' 
         });
     },
 
@@ -778,8 +785,6 @@ export const apiService = {
 
     // --- Live Help ---
     getSessionsForUser: async (userId: string): Promise<LiveHelpSession[]> => {
-        // Modified: Removed orderBy to prevent "Missing Index" error.
-        // Sorting is done client-side.
         const q = query(collection(db, 'live_help_sessions'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
         const sessions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as LiveHelpSession));
@@ -795,7 +800,6 @@ export const apiService = {
     },
 
     getOrCreateLiveHelpSession: async (userId: string, userName: string, userAvatar: string, staffId?: string) => {
-        // Check for existing open session
         const q = query(collection(db, 'live_help_sessions'), where('userId', '==', userId), where('status', 'in', ['open', 'unassigned']));
         const snapshot = await getDocs(q);
         if (!snapshot.empty) return snapshot.docs[0].id;
@@ -840,7 +844,7 @@ export const apiService = {
 
     reopenLiveHelpSession: async (sessionId: string) => {
         await updateDoc(doc(db, 'live_help_sessions', sessionId), {
-            status: 'unassigned', // Put back in queue
+            status: 'unassigned', 
             updatedAt: serverTimestamp()
         });
     },
@@ -869,14 +873,10 @@ export const apiService = {
     },
 
     getNotificationsForUserListener: (userId: string, onUpdate: (notifs: AppNotification[]) => void, onError: (err: any) => void) => {
-        // Modified: Removed orderBy and limit to prevent "Missing Index" error.
-        // Sorting and limiting is done client-side in the listener.
         const q = query(collection(db, 'notifications'), where('userId', '==', userId));
         return onSnapshot(q, (snapshot) => {
             const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification));
-            // Sort descending
             data.sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
-            // Limit to 50 locally
             onUpdate(data.slice(0, 50));
         }, onError);
     },
@@ -894,12 +894,7 @@ export const apiService = {
     },
 
     sendPushNotification: async (title: string, body: string, targetRole: string, url?: string) => {
-        // This would typically trigger a Cloud Function. 
-        // For mock/client-side, we'll simulate creating notification docs for targeted users.
-        // NOTE: Real implementation needs Cloud Functions to handle bulk writes efficiently.
         console.log(`Sending push: ${title} to ${targetRole}`);
-        
-        // Mock: Add a 'system' notification for all matching users (limit to 10 to avoid browser freeze in test)
         let q = query(collection(db, 'users'));
         if (targetRole !== 'all') {
             q = query(collection(db, 'users'), where('role', '==', targetRole));
@@ -909,7 +904,7 @@ export const apiService = {
         let count = 0;
         
         snapshot.forEach(d => {
-            if (count < 500) { // Batch limit
+            if (count < 500) { 
                 const notifRef = doc(collection(db, 'notifications'));
                 batch.set(notifRef, {
                     userId: d.id,
@@ -918,7 +913,7 @@ export const apiService = {
                     type: 'system',
                     isRead: false,
                     timestamp: serverTimestamp(),
-                    view: 'dashboard', // Generic
+                    view: 'dashboard',
                     relatedId: url
                 });
                 count++;
@@ -928,8 +923,6 @@ export const apiService = {
     },
 
     sendBulkEmail: async (role: string, subject: string, body: string) => {
-        // This MUST be handled by backend (Cloud Functions) via an email provider like SendGrid.
-        // Client-side we can just log or add a task to a queue.
         console.log(`Queued email to ${role}: ${subject}`);
         await addDoc(collection(db, 'email_queue'), {
             role,
@@ -1003,14 +996,12 @@ export const apiService = {
 
     // --- Referrals ---
     generateReferralCode: async (userId: string) => {
-        // Generate a unique 6 char code
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         await updateDoc(doc(db, 'users', userId), { referralCode: code });
         return code;
     },
 
     applyReferralCode: async (userId: string, code: string) => {
-        // Find user who owns code
         const q = query(collection(db, 'users'), where('referralCode', '==', code));
         const snapshot = await getDocs(q);
         if (snapshot.empty) throw new Error("Invalid referral code.");
@@ -1018,7 +1009,6 @@ export const apiService = {
         const referrer = snapshot.docs[0];
         if (referrer.id === userId) throw new Error("Cannot refer yourself.");
 
-        // Apply rewards (Atomic batch)
         const batch = writeBatch(db);
         
         const userRef = doc(db, 'users', userId);
@@ -1037,8 +1027,6 @@ export const apiService = {
 
     // --- Admin Payout Processing ---
     processPayout: async (payoutId: string, collectionType?: string) => {
-        // Call Backend to initiate Cashfree Payout
-        // We need to look up the correct collection based on type if not standard
         const collectionName = collectionType === 'Daily Payout' ? 'daily_payout_requests' : 'payout_requests';
         
         try {

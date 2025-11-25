@@ -23,7 +23,7 @@ const getExpiryDate = (planId) => {
     return new Date(now.setFullYear(now.getFullYear() + 1));
 };
 
-// --- CORE LOGIC: Process a Successful Payment ---
+// --- CORE LOGIC: Process a Successful Payment (Collections) ---
 async function processPaymentSuccess(orderId) {
     console.log(`Processing payment for Order ID: ${orderId}`);
     
@@ -37,7 +37,6 @@ async function processPaymentSuccess(orderId) {
 
     const orderData = orderDoc.data();
 
-    // If already paid, stop here
     if (orderData.status === 'COMPLETED') {
         console.log("Order already marked as COMPLETED.");
         return { success: true, message: "Already completed" };
@@ -161,7 +160,7 @@ async function processPaymentSuccess(orderId) {
     return { success: true, status: 'PAID' };
 }
 
-// --- Helper: Verify Order Status with Cashfree ---
+// --- Helper: Verify Order Status with Cashfree (PG) ---
 async function verifyCashfreeStatus(orderId) {
     try {
         const settingsDoc = await db.doc('settings/platform').get();
@@ -193,7 +192,7 @@ async function verifyCashfreeStatus(orderId) {
     return null;
 }
 
-// --- ENDPOINT 1: Create Payment Order ---
+// --- ENDPOINT 1: Create Payment Order (PG) ---
 app.post('/', async (req, res) => {
     try {
         const { amount, phone, customerId, collabType, relatedId, collabId, userId, description, coinsUsed, returnUrl } = req.body;
@@ -274,7 +273,7 @@ app.post('/', async (req, res) => {
     }
 });
 
-// --- ENDPOINT 2: Verify Order (Frontend Calls This) ---
+// --- ENDPOINT 2: Verify Order (PG) ---
 app.get('/verify-order/:orderId', async (req, res) => {
     const { orderId } = req.params;
     try {
@@ -299,7 +298,157 @@ app.get('/verify-order/:orderId', async (req, res) => {
     }
 });
 
-// --- ENDPOINT 3: WEBHOOK (Cashfree Calls This) ---
+// --- ENDPOINT 3: INITIATE PAYOUT (Cashfree Payouts V1) ---
+app.post('/initiate-payout', async (req, res) => {
+    try {
+        const { payoutId, collection } = req.body;
+        
+        // 1. Get Settings & Credentials
+        const settingsDoc = await db.doc('settings/platform').get();
+        const settings = settingsDoc.data() || {};
+        // Trim to avoid "Token is not valid" caused by spaces
+        const clientId = settings.payoutClientId ? settings.payoutClientId.trim() : '';
+        const clientSecret = settings.payoutClientSecret ? settings.payoutClientSecret.trim() : '';
+
+        if (!clientId || !clientSecret) {
+            return res.status(500).json({ message: "Payout keys missing in Admin Settings." });
+        }
+
+        // 2. Get Payout Request Document
+        const collectionName = collection || 'payout_requests';
+        const payoutRef = db.collection(collectionName).doc(payoutId);
+        const payoutDoc = await payoutRef.get();
+
+        if (!payoutDoc.exists) {
+            return res.status(404).json({ message: "Payout request not found." });
+        }
+
+        const payoutData = payoutDoc.data();
+        if (payoutData.status === 'completed' || payoutData.status === 'processing') {
+            return res.status(400).json({ message: "Payout already processed." });
+        }
+
+        // 3. Parse Beneficiary Details
+        let beneId, beneName, beneAccount, beneIfsc, beneVpa, beneEmail, benePhone;
+        
+        if (payoutData.upiId) {
+            beneId = `UPI_${payoutData.userId}`.replace(/[^a-zA-Z0-9]/g, ''); // Sanitize ID
+            beneVpa = payoutData.upiId;
+            beneName = payoutData.userName;
+            beneEmail = "user@bigyapon.com"; // Placeholder required by CF
+            benePhone = "9999999999"; // Placeholder required by CF
+        } else if (payoutData.bankDetails) {
+            // Simple parsing assuming the format stored in PayoutRequestPage.tsx
+            const lines = payoutData.bankDetails.split('\n');
+            const holderLine = lines.find(l => l.includes('Account Holder:'));
+            const accLine = lines.find(l => l.includes('Account Number:'));
+            const ifscLine = lines.find(l => l.includes('IFSC:'));
+
+            beneName = holderLine ? holderLine.split(':')[1].trim() : payoutData.userName;
+            beneAccount = accLine ? accLine.split(':')[1].trim() : '';
+            beneIfsc = ifscLine ? ifscLine.split(':')[1].trim() : '';
+            beneId = `BANK_${beneAccount}`;
+            beneEmail = "user@bigyapon.com";
+            benePhone = "9999999999";
+
+            if (!beneAccount || !beneIfsc) {
+                return res.status(400).json({ message: "Invalid bank details format in database." });
+            }
+        } else {
+            return res.status(400).json({ message: "No payment details found." });
+        }
+
+        // 4. Cashfree Payout API Logic
+        const isTest = clientId.includes("TEST");
+        // Use gamma for Sandbox, api for Prod
+        const actualBaseUrl = isTest ? "https://payout-gamma.cashfree.com" : "https://payout-api.cashfree.com";
+
+        console.log(`Initiating Payout Auth to: ${actualBaseUrl}`);
+
+        // STEP A: AUTHORIZE (Get Bearer Token)
+        const authResponse = await fetch(`${actualBaseUrl}/payout/v1/authorize`, {
+            method: 'POST',
+            headers: {
+                'X-Client-Id': clientId,
+                'X-Client-Secret': clientSecret,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const authData = await authResponse.json();
+        
+        if(authData.status !== 'SUCCESS' || !authData.data || !authData.data.token) {
+             console.error("Payout Auth Error:", JSON.stringify(authData));
+             return res.status(400).json({ message: `Auth Failed: ${authData.message || authData.subCode}`, data: authData });
+        }
+        
+        const authToken = authData.data.token;
+
+        // STEP B: ADD BENEFICIARY (Idempotent-ish, ignore if exists)
+        const benePayload = {
+            beneId,
+            name: beneName,
+            email: beneEmail,
+            phone: benePhone,
+            address1: "India"
+        };
+        if (beneVpa) benePayload.vpa = beneVpa;
+        else {
+            benePayload.bankAccount = beneAccount;
+            benePayload.ifsc = beneIfsc;
+        }
+
+        await fetch(`${actualBaseUrl}/payout/v1/addBeneficiary`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(benePayload)
+        });
+        // We ignore errors here (e.g. beneficiary already exists 409) and proceed to transfer
+
+        // STEP C: REQUEST TRANSFER
+        const transferId = `TF_${payoutId}_${Date.now()}`;
+        const transferPayload = {
+            beneId,
+            amount: Number(payoutData.approvedAmount || payoutData.amount), // Handle daily payout amount override
+            transferId,
+            transferMode: beneVpa ? "UPI" : "IMPS",
+            remarks: `Payout for ${payoutData.collabTitle}`
+        };
+
+        const transferResponse = await fetch(`${actualBaseUrl}/payout/v1/requestTransfer`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(transferPayload)
+        });
+
+        const transferData = await transferResponse.json();
+
+        if (transferData.status === 'SUCCESS' || transferData.subCode === '200') {
+            // Success
+            await payoutRef.update({
+                status: 'processing', // Will be updated to 'completed' via Webhook or manually
+                transferId: transferId,
+                payoutReference: transferData.data?.referenceId || ''
+            });
+            return res.json({ success: true, message: "Transfer Initiated", data: transferData });
+        } else {
+            console.error("Transfer Error:", transferData);
+            return res.status(400).json({ message: transferData.message || "Transfer Failed", data: transferData });
+        }
+
+    } catch (error) {
+        console.error("Payout Error:", error);
+        return res.status(500).json({ message: error.message });
+    }
+});
+
+// --- ENDPOINT 4: WEBHOOK (Cashfree Calls This) ---
 app.post('/webhook', async (req, res) => {
     try {
         const data = req.body;
@@ -322,199 +471,46 @@ app.post('/webhook', async (req, res) => {
         else if (["TRANSFER_SUCCESS", "TRANSFER_FAILED", "TRANSFER_REVERSED"].includes(data.type)) {
              const transfer = data.data;
              const transferId = transfer.transferId;
-             const referenceId = transfer.referenceId;
+             // const referenceId = transfer.referenceId;
              
              let newStatus = 'pending';
              if (data.type === "TRANSFER_SUCCESS") newStatus = 'completed';
-             else newStatus = 'failed'; // or rejected
+             if (data.type === "TRANSFER_FAILED") newStatus = 'rejected';
+             if (data.type === "TRANSFER_REVERSED") newStatus = 'rejected';
 
-             console.log(`Processing Payout Webhook: ${transferId} -> ${newStatus}`);
-
-             const txRef = db.collection('transactions').doc(transferId);
-             const txDoc = await txRef.get();
-
-             if (txDoc.exists) {
-                 await txRef.update({ 
-                     status: newStatus, 
-                     'paymentGatewayDetails.referenceId': referenceId || '' 
-                 });
-
-                 const txData = txDoc.data();
-                 const payoutId = txData.relatedId; // This is the doc ID of the request
-
-                 // Try to find the request in payout_requests or daily_payout_requests
-                 const collections = ['payout_requests', 'daily_payout_requests'];
-                 for (const col of collections) {
-                     const pRef = db.collection(col).doc(payoutId);
-                     const pDoc = await pRef.get();
-                     if (pDoc.exists) {
-                         await pRef.update({ status: newStatus });
-                         console.log(`Updated ${col}/${payoutId} to ${newStatus}`);
-                         break;
+             // Find document by transferId
+             // We check both collections as we don't know which one it was
+             const payoutQuery = await db.collection('payout_requests').where('transferId', '==', transferId).get();
+             
+             if (!payoutQuery.empty) {
+                 payoutQuery.docs[0].ref.update({ status: newStatus });
+                 
+                 // If completed, update collab status
+                 if (newStatus === 'completed') {
+                     const pData = payoutQuery.docs[0].data();
+                     let colName = '';
+                     if(pData.collaborationType === 'direct') colName = 'collaboration_requests';
+                     if(pData.collaborationType === 'campaign') colName = 'campaign_applications';
+                     if(pData.collaborationType === 'ad_slot') colName = 'ad_slot_requests';
+                     if(pData.collaborationType === 'banner_booking') colName = 'banner_booking_requests';
+                     
+                     if(colName && pData.collaborationId) {
+                         db.collection(colName).doc(pData.collaborationId).update({
+                             paymentStatus: 'payout_complete'
+                         });
                      }
                  }
              } else {
-                 console.log(`Transaction not found for transferId: ${transferId}`);
+                 const dailyQuery = await db.collection('daily_payout_requests').where('transferId', '==', transferId).get();
+                 if (!dailyQuery.empty) {
+                     dailyQuery.docs[0].ref.update({ status: newStatus });
+                 }
              }
         }
 
     } catch (error) {
-        console.error("Webhook Logic Error:", error);
-        if (!res.headersSent) {
-             res.status(200).send('Error processed');
-        }
-    }
-});
-
-// --- ENDPOINT 4: Initiate Payout (Admin Action) ---
-app.post('/initiate-payout', async (req, res) => {
-    try {
-        const { payoutId, collection } = req.body;
-        const collectionName = collection || 'payout_requests'; 
-
-        // 1. Get Settings & Credentials
-        const settingsDoc = await db.doc('settings/platform').get();
-        const settings = settingsDoc.data() || {};
-        const clientId = settings.payoutClientId;
-        const clientSecret = settings.payoutClientSecret;
-
-        if (!clientId || !clientSecret) {
-            return res.status(500).json({ message: "Payout keys missing in Admin Settings." });
-        }
-
-        // 2. Get Payout Request Data
-        const docRef = db.collection(collectionName).doc(payoutId);
-        const docSnap = await docRef.get();
-        
-        if (!docSnap.exists) {
-            return res.status(404).json({ message: "Payout request not found" });
-        }
-        const payoutData = docSnap.data();
-        
-        if (payoutData.status === 'completed') {
-            return res.status(400).json({ message: "Payout already completed" });
-        }
-
-        // 3. Parse Details (Bank or UPI)
-        let transferMode = '';
-        let beneficiaryDetails = {};
-        const amount = payoutData.amount || payoutData.approvedAmount;
-
-        if (payoutData.upiId) {
-            transferMode = 'upi';
-            beneficiaryDetails = {
-                vpa: payoutData.upiId,
-                phone: '9999999999', 
-                name: payoutData.userName, 
-                email: 'user@example.com' 
-            };
-        } else if (payoutData.bankDetails) {
-            transferMode = 'banktoken'; 
-            const text = payoutData.bankDetails;
-            const accHolder = text.match(/Account Holder:\s*(.+)/i)?.[1]?.trim() || payoutData.userName;
-            const accNum = text.match(/Account Number:\s*(.+)/i)?.[1]?.trim();
-            const ifsc = text.match(/IFSC:\s*(.+)/i)?.[1]?.trim();
-            
-            if (!accNum || !ifsc) {
-                return res.status(400).json({ message: "Could not parse Bank Account details." });
-            }
-            
-            beneficiaryDetails = {
-                bankAccount: accNum,
-                ifsc: ifsc,
-                name: accHolder,
-                phone: '9999999999',
-                email: 'user@example.com'
-            };
-        } else {
-            return res.status(400).json({ message: "No valid payment details found in request." });
-        }
-
-        // 4. Cashfree Payout API Logic
-        const isTest = clientId.includes("TEST") || clientId.startsWith("CF");
-        const actualBaseUrl = clientId.includes("TEST") ? "https://payout-gamma.cashfree.com" : "https://payout-api.cashfree.com";
-
-        const headers = {
-            'X-Client-Id': clientId,
-            'X-Client-Secret': clientSecret,
-            'Content-Type': 'application/json'
-        };
-
-        // Step A: Add Beneficiary
-        const beneId = `BENE_${payoutData.userId.substring(0, 10)}_${Date.now()}`; 
-        const addBeneBody = {
-            beneId: beneId,
-            name: beneficiaryDetails.name,
-            email: beneficiaryDetails.email,
-            phone: beneficiaryDetails.phone,
-            address1: "India"
-        };
-        
-        if (transferMode === 'banktoken') {
-            addBeneBody.bankAccount = beneficiaryDetails.bankAccount;
-            addBeneBody.ifsc = beneficiaryDetails.ifsc;
-        } else {
-            addBeneBody.vpa = beneficiaryDetails.vpa;
-        }
-        
-        const addBeneRes = await fetch(`${actualBaseUrl}/payout/v1/addBeneficiary`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(addBeneBody)
-        });
-        
-        const addBeneData = await addBeneRes.json();
-        
-        // Step B: Request Transfer
-        const transferId = `TRANS_${payoutId}`;
-        const transferBody = {
-            beneId: beneId,
-            amount: amount,
-            transferId: transferId
-        };
-
-        const transferRes = await fetch(`${actualBaseUrl}/payout/v1/requestTransfer`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(transferBody)
-        });
-
-        const transferData = await transferRes.json();
-
-        if (transferData.status === 'SUCCESS' || transferData.subCode === '200') {
-             // 5. Update Firestore
-             // Note: We mark it pending/completed here, but webhook will confirm final success
-             await docRef.update({
-                 status: 'processing', 
-                 transactionReference: transferData.data?.referenceId || 'PENDING',
-                 payoutTimestamp: admin.firestore.FieldValue.serverTimestamp()
-             });
-             
-             await db.collection('transactions').doc(transferId).set({
-                transactionId: transferId,
-                userId: payoutData.userId,
-                amount: amount,
-                type: 'payout',
-                status: 'pending', // Will update to completed via webhook
-                description: `Payout for ${payoutData.collaborationTitle || 'Earnings'}`,
-                relatedId: payoutId,
-                collabId: payoutData.collabId || '',
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                paymentGatewayDetails: {
-                    source: 'cashfree_payout',
-                    referenceId: transferData.data?.referenceId
-                }
-             });
-
-             return res.json({ success: true, message: "Payout Initiated", data: transferData });
-        } else {
-             console.error("Payout API Failed:", transferData);
-             return res.status(400).json({ message: "Payout Failed at Gateway", data: transferData });
-        }
-
-    } catch (error) {
-        console.error("Payout Error:", error);
-        res.status(500).json({ message: "Internal Server Error: " + error.message });
+        console.error("Webhook Processing Error:", error);
+        // Don't return error to Cashfree to avoid retries if logic fails
     }
 });
 

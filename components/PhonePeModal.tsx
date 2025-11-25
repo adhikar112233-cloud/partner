@@ -204,33 +204,41 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
                   return;
               }
-              throw new Error("Cashfree payment token missing");
+              throw new Error("Cashfree payment token missing. Please try again.");
           }
 
-          try {
+          // Use window.Cashfree from the SDK loaded in index.html
+          if (window.Cashfree) {
               const checkoutOptions = {
                   paymentSessionId: sessionId,
                   redirectTarget: "_self",
-                  returnUrl: data.return_url
               };
-              
-              const cashfree = await load({ mode: "production" });
-              cashfree.checkout(checkoutOptions);
-              
-          } catch (sdkError) {
-              console.error("Cashfree SDK Error", sdkError);
-              // Fallback to link if SDK fails
-              if (data.payment_link) {
-                  window.location.href = data.payment_link;
-              } else {
-                  throw new Error("Cashfree payment failed: " + (sdkError as Error).message);
+              const cashfree = new window.Cashfree(checkoutOptions);
+              cashfree.requestPayment();
+          } else {
+              console.warn("Cashfree SDK not loaded on window, attempting import fallback");
+              try {
+                  const cashfree = await load({ mode: "production" });
+                  cashfree.checkout({
+                      paymentSessionId: sessionId,
+                      redirectTarget: "_self",
+                      returnUrl: data.return_url
+                  });
+              } catch (sdkError) {
+                  console.error("Cashfree SDK Error", sdkError);
+                  // Fallback to payment link if available as last resort
+                  if (data.payment_link) {
+                      window.location.href = data.payment_link;
+                  } else {
+                      throw new Error("Cashfree SDK failed to load: " + (sdkError as Error).message);
+                  }
               }
           }
       }
 
     } catch (err: any) {
       console.warn("Payment flow failed.", err);
-      setError("Payment failed. Please check your connection and try again. " + (err.message || ''));
+      setError("Payment failed: " + (err.message || 'Unknown error'));
       setStatus("error");
     }
   };

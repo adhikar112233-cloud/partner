@@ -38,6 +38,7 @@ const generateCollabId = (): string => `CRI${String(Math.floor(Math.random() * 1
 export const apiService = {
   // ... (uploadKycFile, submitKyc, submitDigilockerKyc, updateKycStatus, getKycSubmissions)
   uploadKycFile: (userId: string, file: File, type: 'id_proof' | 'selfie'): Promise<string> => {
+    if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
     const storageRef = ref(storage, `kyc_documents/${userId}/${type}_${Date.now()}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
     return new Promise((resolve, reject) => {
@@ -117,20 +118,30 @@ export const apiService = {
 
   // ... (upload methods)
   uploadProfilePicture: (userId: string, file: File): Promise<string> => {
+    if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
     const storageRef = ref(storage, `profile_pictures/${userId}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
     return new Promise((resolve, reject) => {
       uploadTask.on('state_changed', () => {}, (error) => reject(error), () => { getDownloadURL(uploadTask.snapshot.ref).then(resolve).catch(reject); });
     });
   },
-  uploadBannerAdPhoto: (agencyId: string, file: File): Promise<string> => {
-    const storageRef = ref(storage, `banner_ads/${agencyId}/${Date.now()}_${file.name}`);
-    const uploadTask = uploadBytesResumable(storageRef, file);
-    return new Promise((resolve, reject) => {
-      uploadTask.on('state_changed', () => {}, (error) => reject(error), () => { getDownloadURL(uploadTask.snapshot.ref).then(resolve).catch(reject); });
-    });
+  uploadBannerAdPhoto: async (agencyId: string, file: File): Promise<string> => {
+    if (!storage) throw new Error("Firebase Storage is not initialized");
+    // Sanitize filename to prevent path issues
+    const cleanName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+    // Use simpler uploadBytes for reliability
+    const storageRef = ref(storage, `banner_ads/${agencyId}/${Date.now()}_${cleanName}`);
+    
+    try {
+        const snapshot = await uploadBytes(storageRef, file);
+        return await getDownloadURL(snapshot.ref);
+    } catch (error: any) {
+        console.error("Banner Upload Error:", error);
+        throw new Error("Failed to upload banner image: " + (error.message || "Unknown error"));
+    }
   },
   uploadMessageAttachment: (messageId: string, file: File): Promise<string> => {
+    if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
     const storageRef = ref(storage, `message_attachments/${messageId}/${file.name}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
     return new Promise((resolve, reject) => {
@@ -138,6 +149,7 @@ export const apiService = {
     });
   },
   uploadTicketAttachment: (ticketId: string, file: File): Promise<string> => {
+    if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
     const storageRef = ref(storage, `support_tickets/${ticketId}/${Date.now()}_${file.name}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
     return new Promise((resolve, reject) => {
@@ -145,6 +157,7 @@ export const apiService = {
     });
   },
   uploadDailyPayoutVideo: async (userId: string, file: Blob): Promise<string> => {
+    if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
     const storageRef = ref(storage, `daily_payout_videos/${userId}/${Date.now()}.webm`);
     const uploadTask = uploadBytesResumable(storageRef, file, { contentType: 'video/webm' });
     return new Promise((resolve, reject) => {
@@ -152,6 +165,7 @@ export const apiService = {
     });
   },
   uploadPayoutSelfie: (userId: string, file: File): Promise<string> => {
+    if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
     const storageRef = ref(storage, `payout_selfies/${userId}/${Date.now()}_${file.name}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
     return new Promise((resolve, reject) => {
@@ -159,6 +173,7 @@ export const apiService = {
     });
   },
   uploadPostImage: (postId: string, file: File): Promise<string> => {
+      if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
       const storageRef = ref(storage, `posts/${postId}/${file.name}`);
       return new Promise((resolve, reject) => {
         uploadBytes(storageRef, file).then(snapshot => { getDownloadURL(snapshot.ref).then(resolve).catch(reject); }).catch(reject);
@@ -466,7 +481,9 @@ export const apiService = {
   updatePlatformBanner: async (id: string, data: any) => { await updateDoc(doc(db, 'platform_banners', id), data); },
   deletePlatformBanner: async (id: string) => { await deleteDoc(doc(db, 'platform_banners', id)); },
   uploadPlatformBannerImage: (file: File): Promise<string> => {
-      const storageRef = ref(storage, `platform_banners/${Date.now()}_${file.name}`);
+      if (!storage) return Promise.reject(new Error("Firebase Storage is not initialized"));
+      const cleanName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+      const storageRef = ref(storage, `platform_banners/${Date.now()}_${cleanName}`);
       return uploadBytes(storageRef, file).then(snapshot => getDownloadURL(snapshot.ref));
   },
   saveFcmToken: async (userId: string, token: string | null) => { await updateDoc(doc(db, 'users', userId), { fcmToken: token }); },
@@ -566,7 +583,20 @@ export const apiService = {
   createPartner: async (data: any) => { await addDoc(collection(db, 'partners'), { ...data, createdAt: serverTimestamp() }); },
   updatePartner: async (id: string, data: any) => { await updateDoc(doc(db, 'partners', id), data); },
   deletePartner: async (id: string) => { await deleteDoc(doc(db, 'partners', id)); },
-  uploadPartnerLogo: (file: File) => uploadBytes(ref(storage, `partners/${Date.now()}_${file.name}`), file).then(s => getDownloadURL(s.ref)),
+  uploadPartnerLogo: async (file: File) => {
+      if (!storage) throw new Error("Firebase Storage is not initialized");
+      const cleanName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+      // Use simpler uploadBytes for reliability
+      const storageRef = ref(storage, `partners/${Date.now()}_${cleanName}`);
+      
+      try {
+          const snapshot = await uploadBytes(storageRef, file);
+          return await getDownloadURL(snapshot.ref);
+      } catch (error: any) {
+          console.error("Partner Logo Upload Error:", error);
+          throw new Error("Failed to upload partner logo: " + (error.message || "Unknown error"));
+      }
+  },
   
   // Referral
   generateReferralCode: async (userId: string) => { 

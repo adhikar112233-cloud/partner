@@ -48,7 +48,11 @@ const PartnerModal: React.FC<{
             let logoUrl = partner?.logoUrl || '';
 
             if (logoFile) {
-                logoUrl = await apiService.uploadPartnerLogo(logoFile);
+                try {
+                    logoUrl = await apiService.uploadPartnerLogo(logoFile);
+                } catch (uploadError: any) {
+                    throw new Error(uploadError.message || 'Failed to upload logo image.');
+                }
             }
             
             if (partner) { // Editing existing partner
@@ -60,9 +64,9 @@ const PartnerModal: React.FC<{
             onSave();
             onClose();
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            setError('Failed to save partner. Please try again.');
+            setError(err.message || 'Failed to save partner. Please check your connection and try again.');
         } finally {
             setIsSaving(false);
         }
@@ -85,13 +89,13 @@ const PartnerModal: React.FC<{
                             ) : (
                                 <ImageIcon className="w-12 h-12 text-gray-400" />
                             )}
-                            <button onClick={() => fileInputRef.current?.click()} className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                            <button type="button" onClick={() => fileInputRef.current?.click()} className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-500">
                                 {logoPreview ? 'Change Image' : 'Select Image'}
                             </button>
                             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
                         </div>
                     </div>
-                    {error && <p className="text-sm text-red-600">{error}</p>}
+                    {error && <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>}
                 </div>
                 <div className="flex justify-end space-x-2 mt-6">
                     <button onClick={onClose} disabled={isSaving} className="px-4 py-2 text-sm rounded-md bg-gray-200">Cancel</button>

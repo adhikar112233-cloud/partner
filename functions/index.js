@@ -24,7 +24,6 @@ const getExpiryDate = (planId) => {
 };
 
 // --- CORE LOGIC: Process a Successful Payment ---
-// This is called AFTER verification is passed
 async function processPaymentSuccess(orderId) {
     console.log(`Processing payment for Order ID: ${orderId}`);
     
@@ -74,7 +73,6 @@ async function processPaymentSuccess(orderId) {
             'membership.plan': relatedId,
             'membership.expiresAt': admin.firestore.Timestamp.fromDate(getExpiryDate(relatedId))
         });
-        // Also update influencer profile if exists
         const infRef = db.collection('influencers').doc(userId);
         const infDoc = await infRef.get();
         if (infDoc.exists) {
@@ -93,7 +91,6 @@ async function processPaymentSuccess(orderId) {
             targetId: relatedId,
             targetType: 'profile'
         });
-        // Mark profile as boosted
         const infRef = db.collection('influencers').doc(relatedId);
         const tvRef = db.collection('livetv_channels').doc(relatedId);
         const infDoc = await infRef.get();
@@ -281,7 +278,6 @@ app.post('/', async (req, res) => {
 app.get('/verify-order/:orderId', async (req, res) => {
     const { orderId } = req.params;
     try {
-        // 1. Check Local DB
         const orderDoc = await db.collection('pending_orders').doc(orderId).get();
         if (!orderDoc.exists) return res.status(404).json({ message: "Order not found." });
         
@@ -289,10 +285,8 @@ app.get('/verify-order/:orderId', async (req, res) => {
              return res.json({ order_status: 'PAID' });
         }
 
-        // 2. Check Cashfree (Source of Truth)
         const status = await verifyCashfreeStatus(orderId);
 
-        // 3. Sync DB
         if (status === 'PAID') {
             await processPaymentSuccess(orderId);
         }
@@ -309,24 +303,14 @@ app.get('/verify-order/:orderId', async (req, res) => {
 app.post('/webhook', async (req, res) => {
     try {
         const data = req.body;
-        // console.log("Webhook Payload:", JSON.stringify(data));
-
-        // 1. Acknowledge Receipt Immediately
         res.status(200).send('OK');
 
-        // 2. Verify and Process
         if (data.type === "PAYMENT_SUCCESS_WEBHOOK") {
             const orderId = data.data?.order?.order_id;
-            
             if (orderId) {
-                // Security Check: Verify status directly with Cashfree before trusting the webhook
                 const actualStatus = await verifyCashfreeStatus(orderId);
-                
                 if (actualStatus === 'PAID') {
-                    console.log(`Webhook Verified: Payment Success for ${orderId}`);
                     await processPaymentSuccess(orderId);
-                } else {
-                    console.warn(`Webhook Warning: Received success webhook for ${orderId}, but API status is ${actualStatus}`);
                 }
             }
         }
@@ -370,20 +354,18 @@ app.post('/initiate-payout', async (req, res) => {
         // 3. Parse Details (Bank or UPI)
         let transferMode = '';
         let beneficiaryDetails = {};
-        // Handle daily payout structure vs standard payout structure
         const amount = payoutData.amount || payoutData.approvedAmount;
 
         if (payoutData.upiId) {
             transferMode = 'upi';
             beneficiaryDetails = {
                 vpa: payoutData.upiId,
-                phone: '9999999999', // Required by Cashfree
+                phone: '9999999999', 
                 name: payoutData.userName, 
                 email: 'user@example.com' 
             };
         } else if (payoutData.bankDetails) {
             transferMode = 'banktoken'; 
-            // Extract details from string format "Account Holder: X\nAccount Number: Y..."
             const text = payoutData.bankDetails;
             const accHolder = text.match(/Account Holder:\s*(.+)/i)?.[1]?.trim() || payoutData.userName;
             const accNum = text.match(/Account Number:\s*(.+)/i)?.[1]?.trim();
@@ -405,8 +387,6 @@ app.post('/initiate-payout', async (req, res) => {
         }
 
         // 4. Cashfree Payout API Logic
-        // We use the standard "Add Beneficiary -> Request Transfer" flow.
-        
         const isTest = clientId.includes("TEST") || clientId.startsWith("CF");
         const actualBaseUrl = clientId.includes("TEST") ? "https://payout-gamma.cashfree.com" : "https://payout-api.cashfree.com";
 
@@ -417,9 +397,7 @@ app.post('/initiate-payout', async (req, res) => {
         };
 
         // Step A: Add Beneficiary
-        // Use a unique ID to prevent conflicts if user changes details later
         const beneId = `BENE_${payoutData.userId.substring(0, 10)}_${Date.now()}`; 
-        
         const addBeneBody = {
             beneId: beneId,
             name: beneficiaryDetails.name,
@@ -442,7 +420,6 @@ app.post('/initiate-payout', async (req, res) => {
         });
         
         const addBeneData = await addBeneRes.json();
-        // If subCode is 409, beneficiary exists. We proceed. If other error, we might fail or try transfer anyway if ID matches.
         
         // Step B: Request Transfer
         const transferId = `TRANS_${payoutId}`;
@@ -468,7 +445,6 @@ app.post('/initiate-payout', async (req, res) => {
                  payoutTimestamp: admin.firestore.FieldValue.serverTimestamp()
              });
              
-             // Create Transaction Record for Payout
              await db.collection('transactions').doc(transferId).set({
                 transactionId: transferId,
                 userId: payoutData.userId,

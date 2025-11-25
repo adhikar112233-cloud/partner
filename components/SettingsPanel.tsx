@@ -86,22 +86,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                     <textarea value={settings.welcomeMessage || ''} onChange={e => handleSettingChange('welcomeMessage', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" rows={3} />
                 </SettingRow>
                 
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Payment Gateway (Cashfree)</h4></div>
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Payment & Payout Keys (Cashfree)</h4></div>
                 <SettingRow label="Active Gateway">
                     <select value={settings.activePaymentGateway} onChange={e => handleSettingChange('activePaymentGateway', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                         <option value="cashfree">Cashfree</option>
                     </select>
                 </SettingRow>
-                <SettingRow label="Cashfree App ID">
+                <SettingRow label="PG App ID">
                     <input type="text" value={settings.paymentGatewayApiId || ''} onChange={e => handleSettingChange('paymentGatewayApiId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
-                <SettingRow label="Cashfree Secret Key">
+                <SettingRow label="PG Secret Key">
                     <input type="password" value={settings.paymentGatewayApiSecret || ''} onChange={e => handleSettingChange('paymentGatewayApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
-                <SettingRow label="Cashfree Webhook Secret Key (Optional)">
+                <SettingRow label="PG Webhook Secret (Optional)">
                     <input type="password" value={settings.paymentGatewayWebhookSecret || ''} onChange={e => handleSettingChange('paymentGatewayWebhookSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Paste Webhook Secret Key here" />
                 </SettingRow>
-                
                 <div className="px-6 py-2 bg-yellow-50 text-yellow-800 text-xs dark:bg-yellow-900/20 dark:text-yellow-200">Payouts require separate keys from the Cashfree Payout Dashboard.</div>
                 <SettingRow label="Payout Client ID">
                     <input type="text" value={settings.payoutClientId || ''} onChange={e => handleSettingChange('payoutClientId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="CF.... or similar" />

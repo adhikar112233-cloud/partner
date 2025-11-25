@@ -326,7 +326,12 @@ const createOrderHandler = async (req, res) => {
 
         const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
         const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
-        const origin = req.headers.origin || "https://www.bigyapon.com";
+        
+        // Fix: Robust origin handling
+        let origin = req.headers.origin || "https://www.bigyapon.com";
+        if (origin.endsWith('/')) {
+            origin = origin.slice(0, -1);
+        }
 
         const response = await fetch(baseUrl, {
             method: "POST",
@@ -348,8 +353,8 @@ const createOrderHandler = async (req, res) => {
                     customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                 },
                 order_meta: {
-                    // Updated return_url to point to success.html as requested
-                    return_url: `${origin}/success.html?order_id={order_id}`,
+                    // Redirect to root app where React handles the order_id param
+                    return_url: `${origin}/?order_id={order_id}`,
                     notify_url: `${functionUrl}/verify-order/${orderId}`
                 }
             }),

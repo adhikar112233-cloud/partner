@@ -208,21 +208,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           }
 
           try {
-              let cashfree;
-              // Prefer window.Cashfree from script tag if available
-              if (window.Cashfree) {
-                  cashfree = new window.Cashfree({ mode: "production" });
-              } else {
-                  cashfree = await load({ mode: "production" });
-              }
-              
               const checkoutOptions = {
                   paymentSessionId: sessionId,
                   redirectTarget: "_self",
                   returnUrl: data.return_url
               };
               
-              await cashfree.checkout(checkoutOptions);
+              const cashfree = await load({ mode: "production" });
+              cashfree.checkout(checkoutOptions);
               
           } catch (sdkError) {
               console.error("Cashfree SDK Error", sdkError);

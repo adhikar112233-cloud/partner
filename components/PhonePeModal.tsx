@@ -103,12 +103,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       const gateway = platformSettings.activePaymentGateway || 'paytm';
       const method = gateway.toUpperCase(); // "PAYTM" or "CASHFREE"
 
-      // Construct Request Body matching the user's specified structure
-      // while keeping additional fields needed for backend logic
+      // Construct Request Body
       const body = {
         orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
-        customerId: user.id, // Mapped from user.id as requested
+        customerId: user.id,
         
         // Additional fields required for app logic
         method: method,
@@ -211,31 +210,34 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           const isSandbox = appId.toUpperCase().startsWith("TEST");
           const mode = isSandbox ? "sandbox" : "production";
 
-          // Use window.Cashfree from the SDK loaded in index.html
-          if (window.Cashfree) {
-              const cashfree = new window.Cashfree({ mode: mode });
+          try {
+              let cashfree;
+              
+              // 1. Try using window.Cashfree (loaded via script tag in index.html)
+              if (window.Cashfree) {
+                  // SDK v3 usage: Factory function without 'new'
+                  cashfree = window.Cashfree({ mode: mode });
+              } 
+              // 2. Fallback to dynamic import
+              else {
+                  console.warn("Cashfree SDK not loaded on window, using fallback import");
+                  cashfree = await load({ mode: mode });
+              }
+
+              if (!cashfree) throw new Error("Failed to initialize Cashfree SDK");
+
               await cashfree.checkout({
                   paymentSessionId: sessionId,
-                  redirectTarget: "_self",
-                  returnUrl: data.return_url || window.location.origin + `/payment-success?order_id=${orderId}`
+                  redirectTarget: "_self"
               });
-          } else {
-              console.warn("Cashfree SDK not loaded on window, attempting import fallback");
-              try {
-                  const cashfree = await load({ mode: mode });
-                  cashfree.checkout({
-                      paymentSessionId: sessionId,
-                      redirectTarget: "_self",
-                      returnUrl: data.return_url || window.location.origin + `/payment-success?order_id=${orderId}`
-                  });
-              } catch (sdkError) {
-                  console.error("Cashfree SDK Error", sdkError);
-                  // Fallback to payment link if available as last resort
-                  if (data.payment_link) {
-                      window.location.href = data.payment_link;
-                  } else {
-                      throw new Error("Cashfree SDK failed to load: " + (sdkError as Error).message);
-                  }
+
+          } catch (sdkError) {
+              console.error("Cashfree SDK Error", sdkError);
+              // Fallback to payment link if SDK fails entirely
+              if (data.payment_link) {
+                  window.location.href = data.payment_link;
+              } else {
+                  throw new Error("Cashfree SDK failed to load: " + (sdkError as Error).message);
               }
           }
       }

@@ -227,7 +227,6 @@ const createOrderHandler = async (req, res) => {
     if (!db) return res.status(503).send({ message: 'Service Unavailable: Database not connected' });
 
     // Use 'method' as per user request to select gateway
-    // Accepting customerId specifically as requested by user snippet
     let { amount, purpose, relatedId, collabId, collabType, phone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId, customerId } = req.body;
     
     // Fallback to customerId if userId is not provided directly
@@ -341,9 +340,9 @@ const createOrderHandler = async (req, res) => {
             paymentGateway: activeGateway,
         });
 
-        // Determine correct base URL based on region
+        // Determine correct base URL based on region with fallback
         const region = process.env.FUNCTION_REGION || 'asia-south1';
-        const projectId = process.env.GCLOUD_PROJECT;
+        const projectId = process.env.GCLOUD_PROJECT || 'bigyapon2-cfa39'; 
         const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/createPayment`;
 
         if (activeGateway === 'paytm') {
@@ -433,6 +432,9 @@ const createOrderHandler = async (req, res) => {
             const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
             const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
 
+            // Use origin from request if available for return_url
+            const origin = req.headers.origin || "https://www.bigyapon.com";
+
             const response = await fetch(baseUrl, {
                 method: "POST",
                 headers: {
@@ -453,8 +455,8 @@ const createOrderHandler = async (req, res) => {
                         customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                     },
                     order_meta: {
-                        // Using the origin from request if available, else fallback
-                        return_url: (req.headers.origin || "https://www.bigyapon.com") + `/payment-success?order_id=${orderId}`,
+                        // Ensure correct return URL for redirection flow
+                        return_url: `${origin}/payment-success?order_id=${orderId}&gateway=cashfree`,
                         notify_url: `${functionUrl}/verify-order/${orderId}`
                     }
                 }),
@@ -466,12 +468,14 @@ const createOrderHandler = async (req, res) => {
             return res.status(200).send({ 
                 gateway: 'cashfree',
                 payment_session_id: data.payment_session_id,
-                paymentSessionId: data.payment_session_id, // Add alias for camelCase convenience
+                paymentSessionId: data.payment_session_id, // Alias for frontend convenience
                 environment: isSandbox ? 'sandbox' : 'production',
                 id: data.payment_session_id,
                 payment_link: data.payment_link,
                 coinsUsed: coinsUsed || 0,
-                cf: data
+                cf: data,
+                // Pass back return url for client fallback if needed
+                return_url: data.order_meta?.return_url 
             });
         }
 

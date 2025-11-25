@@ -4,7 +4,6 @@ const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
 const https = require('https');
-const PaytmChecksum = require('paytmchecksum');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -58,11 +57,8 @@ const getCollectionNameForCollab = (collabType) => {
 // Helper to get Payment Settings safely
 const getPaymentSettings = async () => {
     let settings = {
-        activePaymentGateway: 'paytm',
         paymentGatewayApiId: '',
         paymentGatewayApiSecret: '',
-        paytmMid: '',
-        paytmMerchantKey: '',
     };
 
     if (db) {
@@ -71,11 +67,8 @@ const getPaymentSettings = async () => {
             if (doc.exists) {
                 const data = doc.data();
                 settings = {
-                    activePaymentGateway: data.activePaymentGateway || settings.activePaymentGateway,
                     paymentGatewayApiId: data.paymentGatewayApiId || settings.paymentGatewayApiId,
                     paymentGatewayApiSecret: data.paymentGatewayApiSecret || settings.paymentGatewayApiSecret,
-                    paytmMid: data.paytmMid || settings.paytmMid,
-                    paytmMerchantKey: data.paytmMerchantKey || settings.paytmMerchantKey,
                 };
             }
         } catch (error) {
@@ -247,10 +240,6 @@ const createOrderHandler = async (req, res) => {
 
     if (!userId) return res.status(401).send({ message: 'Unauthorized: No User ID' });
 
-    // Normalize gateway selection using 'method' or 'gateway'
-    let preferredGateway = gateway || method;
-    if (preferredGateway) preferredGateway = preferredGateway.toLowerCase();
-
     // Provide defaults if missing
     if (!collabType) collabType = 'direct'; 
     if (!relatedId) relatedId = 'unknown';
@@ -318,10 +307,8 @@ const createOrderHandler = async (req, res) => {
 
         const settings = await getPaymentSettings();
         
-        // Determine final gateway
-        const activeGateway = (preferredGateway && (preferredGateway === 'paytm' || preferredGateway === 'cashfree'))
-            ? preferredGateway 
-            : (settings.activePaymentGateway || 'paytm');
+        // Force Cashfree as the only gateway
+        const activeGateway = 'cashfree';
 
         console.log(`Creating order ${orderId} via ${activeGateway} for amount ${orderAmount}`);
 
@@ -346,139 +333,60 @@ const createOrderHandler = async (req, res) => {
         const projectId = process.env.GCLOUD_PROJECT || 'bigyapon2-cfa39'; 
         const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/createPayment`;
 
-        if (activeGateway === 'paytm') {
-            const MID = settings.paytmMid;
-            const MKEY = settings.paytmMerchantKey;
+        // CASHFREE Logic
+        const CASHFREE_ID = settings.paymentGatewayApiId;
+        const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
 
-            if (!MID || !MKEY) throw new Error('Paytm credentials missing in settings');
+        if (!CASHFREE_ID || !CASHFREE_SECRET) throw new Error('Cashfree credentials missing in settings');
 
-            const paytmParams = {};
-            paytmParams.body = {
-                "requestType": "Payment",
-                "mid": MID,
-                "websiteName": "DEFAULT",
-                "orderId": orderId,
-                "callbackUrl": `${functionUrl}/verify-order/${orderId}`,
-                "txnAmount": {
-                    "value": orderAmount.toString(),
-                    "currency": "INR",
+        const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
+        const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
+
+        // Use origin from request if available for return_url
+        const origin = req.headers.origin || "https://www.bigyapon.com";
+
+        const response = await fetch(baseUrl, {
+            method: "POST",
+            headers: {
+                "x-api-version": "2023-08-01",
+                "x-client-id": CASHFREE_ID,
+                "x-client-secret": CASHFREE_SECRET,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                order_id: orderId,
+                order_amount: orderAmount,
+                order_currency: "INR",
+                order_note: purpose || 'Payment',
+                customer_details: {
+                    customer_id: "CUST_" + userId.substring(0, 10),
+                    customer_email: customerEmail,
+                    customer_phone: customerPhone.replace(/\D/g, '').slice(-10),
+                    customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                 },
-                "userInfo": {
-                    "custId": userId,
-                    "mobile": customerPhone,
-                    "email": customerEmail
-                },
-            };
+                order_meta: {
+                    // Ensure correct return URL for redirection flow
+                    return_url: `${origin}/payment-success?order_id=${orderId}&gateway=cashfree`,
+                    notify_url: `${functionUrl}/verify-order/${orderId}`
+                }
+            }),
+        });
 
-            const checksum = await PaytmChecksum.generateSignature(JSON.stringify(paytmParams.body), MKEY);
-            paytmParams.head = {
-                "signature": checksum
-            };
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Cashfree Error');
 
-            const post_data = JSON.stringify(paytmParams);
-
-            const requestPromise = new Promise((resolve, reject) => {
-                const options = {
-                    hostname: 'securegw.paytm.in',
-                    port: 443,
-                    path: `/theia/api/v1/initiateTransaction?mid=${MID}&orderId=${orderId}`,
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': post_data.length
-                    }
-                };
-
-                const apiReq = https.request(options, (apiRes) => {
-                    let responseData = "";
-                    apiRes.on('data', (chunk) => { responseData += chunk; });
-                    apiRes.on('end', () => { 
-                        try {
-                            resolve(JSON.parse(responseData)); 
-                        } catch (e) {
-                            console.error("Paytm Response Parse Error. Raw:", responseData);
-                            reject(new Error("Invalid JSON response from Paytm"));
-                        }
-                    });
-                });
-
-                apiReq.on('error', (e) => { reject(e); });
-                apiReq.write(post_data);
-                apiReq.end();
-            });
-
-            const response = await requestPromise;
-            
-            if (response.body && response.body.txnToken) {
-                return res.status(200).send({
-                    gateway: 'paytm',
-                    txnToken: response.body.txnToken,
-                    order_id: orderId,
-                    amount: orderAmount,
-                    internal_order_id: orderId,
-                    mid: MID
-                });
-            } else {
-                console.error("Paytm Init Failed:", response);
-                throw new Error(response.body?.resultInfo?.resultMsg || 'Paytm Initiation Failed');
-            }
-
-        } else {
-            // CASHFREE
-            const CASHFREE_ID = settings.paymentGatewayApiId;
-            const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
-
-            if (!CASHFREE_ID || !CASHFREE_SECRET) throw new Error('Cashfree credentials missing in settings');
-
-            const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
-            const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
-
-            // Use origin from request if available for return_url
-            const origin = req.headers.origin || "https://www.bigyapon.com";
-
-            const response = await fetch(baseUrl, {
-                method: "POST",
-                headers: {
-                    "x-api-version": "2023-08-01",
-                    "x-client-id": CASHFREE_ID,
-                    "x-client-secret": CASHFREE_SECRET,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    order_id: orderId,
-                    order_amount: orderAmount,
-                    order_currency: "INR",
-                    order_note: purpose || 'Payment',
-                    customer_details: {
-                        customer_id: "CUST_" + userId.substring(0, 10),
-                        customer_email: customerEmail,
-                        customer_phone: customerPhone.replace(/\D/g, '').slice(-10),
-                        customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
-                    },
-                    order_meta: {
-                        // Ensure correct return URL for redirection flow
-                        return_url: `${origin}/payment-success?order_id=${orderId}&gateway=cashfree`,
-                        notify_url: `${functionUrl}/verify-order/${orderId}`
-                    }
-                }),
-            });
-
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Cashfree Error');
-
-            return res.status(200).send({ 
-                gateway: 'cashfree',
-                payment_session_id: data.payment_session_id,
-                paymentSessionId: data.payment_session_id, // Alias for frontend convenience
-                environment: isSandbox ? 'sandbox' : 'production',
-                id: data.payment_session_id,
-                payment_link: data.payment_link,
-                coinsUsed: coinsUsed || 0,
-                cf: data,
-                // Pass back return url for client fallback if needed
-                return_url: data.order_meta?.return_url 
-            });
-        }
+        return res.status(200).send({ 
+            gateway: 'cashfree',
+            payment_session_id: data.payment_session_id,
+            paymentSessionId: data.payment_session_id, // Alias for frontend convenience
+            environment: isSandbox ? 'sandbox' : 'production',
+            id: data.payment_session_id,
+            payment_link: data.payment_link,
+            coinsUsed: coinsUsed || 0,
+            cf: data,
+            // Pass back return url for client fallback if needed
+            return_url: data.order_meta?.return_url 
+        });
 
     } catch (error) {
         console.error(`Create Order Error (${orderId}):`, error.message);
@@ -502,58 +410,8 @@ const verifyOrderHandler = async (req, res) => {
         const transactionData = transactionDoc.data();
         const settings = await getPaymentSettings();
 
-        // Paytm Verification
-        if (transactionData.status === 'pending' && transactionData.paymentGateway === 'paytm') {
-             const MID = settings.paytmMid;
-             const MKEY = settings.paytmMerchantKey;
-
-             if (MID && MKEY) {
-                 const paytmParams = {};
-                 paytmParams.body = { "mid": MID, "orderId": orderId };
-
-                 const checksum = await PaytmChecksum.generateSignature(JSON.stringify(paytmParams.body), MKEY);
-                 paytmParams.head = { "signature": checksum };
-
-                 const post_data = JSON.stringify(paytmParams);
-
-                 const requestPromise = new Promise((resolve, reject) => {
-                     const options = {
-                         hostname: 'securegw.paytm.in',
-                         port: 443,
-                         path: '/v3/order/status',
-                         method: 'POST',
-                         headers: {
-                             'Content-Type': 'application/json',
-                             'Content-Length': post_data.length
-                         }
-                     };
-
-                     const apiReq = https.request(options, (apiRes) => {
-                         let responseData = "";
-                         apiRes.on('data', (chunk) => { responseData += chunk; });
-                         apiRes.on('end', () => { 
-                             try {
-                                resolve(JSON.parse(responseData)); 
-                             } catch(e) {
-                                reject(new Error("Failed to parse Paytm verify response"));
-                             }
-                         });
-                     });
-                     apiReq.on('error', (e) => { reject(e); });
-                     apiReq.write(post_data);
-                     apiReq.end();
-                 });
-
-                 const response = await requestPromise;
-                 if (response.body && response.body.resultInfo && response.body.resultInfo.resultStatus === 'TXN_SUCCESS') {
-                     await fulfillOrder(orderId, transactionData, response.body);
-                     return res.status(200).send({ order_id: orderId, order_status: 'PAID' });
-                 }
-             }
-        }
-        
         // Cashfree Verification
-        else if (transactionData.status === 'pending' && transactionData.paymentGateway === 'cashfree') {
+        if (transactionData.status === 'pending' && transactionData.paymentGateway === 'cashfree') {
              const CASHFREE_ID = settings.paymentGatewayApiId;
              const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
              
@@ -648,23 +506,12 @@ const applyReferralHandler = async (req, res) => {
 };
 
 const setPaymentGatewayHandler = async (req, res) => {
-    const { gateway } = req.body;
-    try {
-        if (!db) return res.status(503).send({ message: "DB not connected" });
-        await db.collection('settings').doc('platform').set({ activePaymentGateway: gateway }, { merge: true });
-        return res.status(200).send({ success: true, active: gateway });
-    } catch (error) {
-        return res.status(500).send({ message: error.message });
-    }
+    // Currently ignored as we only support Cashfree
+    return res.status(200).send({ success: true, active: 'cashfree' });
 };
 
 const getActiveGatewayHandler = async (req, res) => {
-    try {
-        const settings = await getPaymentSettings();
-        res.status(200).send({ active: settings.activePaymentGateway || 'paytm' });
-    } catch (error) {
-        res.status(500).send({ message: error.message });
-    }
+    res.status(200).send({ active: 'cashfree' });
 };
 
 // Define Routes

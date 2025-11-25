@@ -84,15 +84,6 @@ const SettingsPanel: React.FC<{ onSettingsUpdate: () => void }> = ({ onSettingsU
         if (!settings || !isDirty) return;
         setIsSaving(true); setError(null); setSuccess(null);
         try {
-            // If active gateway changed, use the dedicated API endpoint to ensure immediate backend update
-            if (settings.activePaymentGateway) {
-                try {
-                    await apiService.setPaymentGateway(settings.activePaymentGateway);
-                } catch(e) {
-                    console.warn("Failed to update gateway via API, falling back to Firestore update only", e);
-                }
-            }
-
             await apiService.updatePlatformSettings(settings);
             setSuccess('Settings saved successfully!'); setIsDirty(false);
             onSettingsUpdate();
@@ -228,61 +219,23 @@ const SettingsPanel: React.FC<{ onSettingsUpdate: () => void }> = ({ onSettingsU
                     </div>
                 </SettingRow>
 
-                <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Payment Gateway</h4></div>
-                <SettingRow label="Active Gateway (Admin Mode)">
-                    <select 
-                        value={settings.activePaymentGateway || 'paytm'} 
-                        onChange={(e) => handleSettingChange('activePaymentGateway', e.target.value)} 
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                    >
-                        <option value="paytm">Paytm</option>
-                        <option value="cashfree">Cashfree</option>
-                    </select>
+                <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Payment Gateway (Cashfree)</h4></div>
+                <SettingRow label="Cashfree App ID">
+                    <input 
+                        type="text" 
+                        value={settings.paymentGatewayApiId || ''} 
+                        onChange={(e) => handleSettingChange('paymentGatewayApiId', e.target.value)} 
+                        className="w-full rounded-md border-gray-300 shadow-sm"
+                    />
                 </SettingRow>
-                
-                {settings.activePaymentGateway === 'paytm' && (
-                    <>
-                        <SettingRow label="Paytm Merchant ID (MID)">
-                            <input 
-                                type="text" 
-                                value={settings.paytmMid || ''} 
-                                onChange={(e) => handleSettingChange('paytmMid', e.target.value)} 
-                                className="w-full rounded-md border-gray-300 shadow-sm"
-                                placeholder="Enter your Paytm MID" 
-                            />
-                        </SettingRow>
-                        <SettingRow label="Paytm Merchant Key">
-                            <input 
-                                type="password" 
-                                value={settings.paytmMerchantKey || ''} 
-                                onChange={(e) => handleSettingChange('paytmMerchantKey', e.target.value)} 
-                                className="w-full rounded-md border-gray-300 shadow-sm"
-                                placeholder="Enter your Paytm Merchant Key"
-                            />
-                        </SettingRow>
-                    </>
-                )}
-
-                {settings.activePaymentGateway === 'cashfree' && (
-                    <>
-                        <SettingRow label="Cashfree App ID">
-                            <input 
-                                type="text" 
-                                value={settings.paymentGatewayApiId || ''} 
-                                onChange={(e) => handleSettingChange('paymentGatewayApiId', e.target.value)} 
-                                className="w-full rounded-md border-gray-300 shadow-sm"
-                            />
-                        </SettingRow>
-                        <SettingRow label="Cashfree Secret Key">
-                            <input 
-                                type="password" 
-                                value={settings.paymentGatewayApiSecret || ''} 
-                                onChange={(e) => handleSettingChange('paymentGatewayApiSecret', e.target.value)} 
-                                className="w-full rounded-md border-gray-300 shadow-sm"
-                            />
-                        </SettingRow>
-                    </>
-                )}
+                <SettingRow label="Cashfree Secret Key">
+                    <input 
+                        type="password" 
+                        value={settings.paymentGatewayApiSecret || ''} 
+                        onChange={(e) => handleSettingChange('paymentGatewayApiSecret', e.target.value)} 
+                        className="w-full rounded-md border-gray-300 shadow-sm"
+                    />
+                </SettingRow>
                 
                 <div className="px-6 py-3 bg-gray-50"><h4 className="font-semibold text-gray-600">Manual KYC Settings</h4></div>
                 <SettingRow label="Require ID Proof Upload"><ToggleSwitch enabled={settings.isKycIdProofRequired} onChange={(val) => handleSettingChange('isKycIdProofRequired', val)} /></SettingRow>

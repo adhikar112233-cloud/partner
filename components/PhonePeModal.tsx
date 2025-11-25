@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, PlatformSettings } from '../types';
-import { auth, BACKEND_URL, PAYTM_MID } from '../services/firebase';
+import { auth, BACKEND_URL } from '../services/firebase';
 import { CoinIcon, LockClosedIcon } from './Icons';
 
 interface PaymentModalProps {
@@ -28,7 +28,6 @@ interface PaymentModalProps {
 
 declare global {
   interface Window {
-    Paytm: any;
     Cashfree: any;
   }
 }
@@ -65,16 +64,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const discountAmount = useCoins ? maxRedeemableCoins : 0;
   const finalPayableAmount = Math.max(0, grossTotal - discountAmount);
 
-  useEffect(() => {
-    // Cleanup any existing Paytm scripts on mount/unmount to prevent duplicates
-    return () => {
-        const existingScript = document.getElementById('paytm-checkoutjs');
-        if (existingScript) {
-            existingScript.remove();
-        }
-    };
-  }, []);
-
   const handlePayment = async () => {
     const cleanPhone = (needsPhone ? phoneNumber : user.mobileNumber)
       .replace(/\D/g, '')
@@ -98,18 +87,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         throw new Error("You must be logged in to make a payment.");
       }
 
-      // Get current gateway preference
-      const gateway = platformSettings.activePaymentGateway || 'paytm';
-      const method = gateway.toUpperCase(); // "PAYTM" or "CASHFREE"
-
       // Construct Request Body
       const body = {
         orderId: clientOrderId,
         amount: Number(finalPayableAmount.toFixed(2)),
         customerId: user.id,
-        
-        // Additional fields required for app logic
-        method: method,
+        method: 'CASHFREE', // Forced Cashfree
         userId: user.id,
         coinsUsed: coinsToUse,
         description: transactionDetails.description,
@@ -148,94 +131,47 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       // Use the Order ID from backend if provided, else fallback to our client ID
       const orderId = data.orderId || data.order_id || clientOrderId;
 
-      if (method === "PAYTM") {
-          if (data.txnToken) {
-             const txnToken = data.txnToken;
-             const paytmMid = data.mid || platformSettings.paytmMid || PAYTM_MID; 
-             
-             // Initialize Paytm JS Checkout
-             const existingScript = document.getElementById('paytm-checkoutjs');
-             if (existingScript) existingScript.remove();
-
-             const script = document.createElement('script');
-             script.id = 'paytm-checkoutjs';
-             script.src = `https://securegw.paytm.in/merchantpgpui/checkoutjs/merchants/${paytmMid}.js`;
-             script.crossOrigin = "anonymous";
-             
-             script.onload = () => {
-                 if (window.Paytm && window.Paytm.CheckoutJS) {
-                     const config = {
-                         "root": "",
-                         "flow": "DEFAULT",
-                         "data": { 
-                             "orderId": orderId,
-                             "token": txnToken, 
-                             "tokenType": "TXN_TOKEN", 
-                             "amount": body.amount.toString() 
-                         },
-                         "handler": {
-                             "transactionStatus": function(paymentStatus: any) {
-                                window.Paytm.CheckoutJS.close();
-                                // Redirect to success page
-                                window.location.href = `/?order_id=${orderId}&gateway=paytm`;
-                             },
-                             "notifyMerchant": function(eventName: string, data: any) { console.log("Paytm Notify:", eventName, data); }
-                         }
-                     };
-                     window.Paytm.CheckoutJS.init(config).then(() => window.Paytm.CheckoutJS.invoke()).catch(() => { throw new Error("Paytm Init Failed"); });
-                 } else {
-                     throw new Error("Paytm SDK not loaded");
-                 }
-             };
-             script.onerror = () => { throw new Error("Paytm Script Failed to Load"); };
-             document.body.appendChild(script);
-
-          } else {
-              throw new Error("Paytm Token missing from response");
+      // CASHFREE LOGIC
+      const sessionId = data.paymentSessionId || data.payment_session_id;
+      
+      if (!sessionId) {
+          // Handle wallet only success where amount is 0
+          if (body.amount === 0 && data.success) {
+              window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
+              return;
           }
-      } else {
-          // CASHFREE (Default)
-          const sessionId = data.paymentSessionId || data.payment_session_id;
+          throw new Error("Cashfree payment token missing. Please try again.");
+      }
+
+      const appId = platformSettings.paymentGatewayApiId || "";
+      const isSandbox = appId.toUpperCase().startsWith("TEST");
+      const mode = isSandbox ? "sandbox" : "production";
+
+      try {
+          let cashfree;
           
-          if (!sessionId) {
-              // Handle wallet only success where amount is 0
-              if (body.amount === 0 && data.success) {
-                  window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
-                  return;
-              }
-              throw new Error("Cashfree payment token missing. Please try again.");
+          // 1. Try using window.Cashfree (loaded via script tag in index.html)
+          if (window.Cashfree) {
+              // SDK v3 usage: Factory function without 'new'
+              cashfree = window.Cashfree({ mode: mode });
+          } else {
+              throw new Error("Cashfree SDK not loaded in browser");
           }
 
-          const appId = platformSettings.paymentGatewayApiId || "";
-          const isSandbox = appId.toUpperCase().startsWith("TEST");
-          const mode = isSandbox ? "sandbox" : "production";
+          if (!cashfree) throw new Error("Failed to initialize Cashfree SDK");
 
-          try {
-              let cashfree;
-              
-              // 1. Try using window.Cashfree (loaded via script tag in index.html)
-              if (window.Cashfree) {
-                  // SDK v3 usage: Factory function without 'new'
-                  cashfree = window.Cashfree({ mode: mode });
-              } else {
-                  throw new Error("Cashfree SDK not loaded in browser");
-              }
+          await cashfree.checkout({
+              paymentSessionId: sessionId,
+              redirectTarget: "_self"
+          });
 
-              if (!cashfree) throw new Error("Failed to initialize Cashfree SDK");
-
-              await cashfree.checkout({
-                  paymentSessionId: sessionId,
-                  redirectTarget: "_self"
-              });
-
-          } catch (sdkError) {
-              console.error("Cashfree SDK Error", sdkError);
-              // Fallback to payment link if SDK fails entirely
-              if (data.payment_link) {
-                  window.location.href = data.payment_link;
-              } else {
-                  throw new Error("Cashfree SDK failed to load: " + (sdkError as Error).message);
-              }
+      } catch (sdkError) {
+          console.error("Cashfree SDK Error", sdkError);
+          // Fallback to payment link if SDK fails entirely
+          if (data.payment_link) {
+              window.location.href = data.payment_link;
+          } else {
+              throw new Error("Cashfree SDK failed to load: " + (sdkError as Error).message);
           }
       }
 

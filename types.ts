@@ -308,14 +308,11 @@ export interface PlatformSettings {
   isWelcomeMessageEnabled: boolean;
   
   // Payment Gateway Settings
-  activePaymentGateway: 'cashfree' | 'paytm';
+  activePaymentGateway: 'cashfree'; // Locked to cashfree
   paymentGatewayApiId: string; // Cashfree App ID
   paymentGatewayApiSecret: string; // Cashfree Secret Key
   paymentGatewaySourceCode: string; // Misc config
   
-  paytmMid?: string; // Paytm Merchant ID
-  paytmMerchantKey?: string; // Paytm Merchant Key
-
   otpApiId: string;
   otpApiSecret: string;
   otpApiSourceCode: string;
@@ -597,7 +594,7 @@ export interface Transaction {
   timestamp: any;
   isCredit?: boolean;
   currency?: 'INR' | 'COINS';
-  paymentGateway?: 'razorpay' | 'cashfree' | 'paytm' | 'wallet';
+  paymentGateway?: 'cashfree' | 'wallet';
   paymentGatewayDetails?: any;
 }
 

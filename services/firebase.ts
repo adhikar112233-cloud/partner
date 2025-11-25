@@ -12,13 +12,7 @@ import { getMessaging, type Messaging } from 'firebase/messaging';
 export const BACKEND_URL = "https://us-central1-bigyapon2-cfa39.cloudfunctions.net/createPayment"; 
 
 // Specific Gateway URLs
-export const PAYTM_URL = BACKEND_URL; 
 export const CASHFREE_URL = BACKEND_URL;
-
-// Paytm MID (Frontend Safe Only)
-export const PAYTM_MID =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_PAYTM_MID) ||
-  "YOUR_PAYTM_MID_HERE";
 
 
 // -------------------- FIREBASE CONFIG --------------------

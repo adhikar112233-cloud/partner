@@ -133,37 +133,28 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       console.log("Payment Response:", data);
 
-      // Use the Order ID from backend if provided, else fallback to our client ID
-      const orderId = data.orderId || data.order_id || clientOrderId;
-
-      // CASHFREE LOGIC: Check both snake_case and camelCase
+      // Check both camelCase (new API) and snake_case (older API)
       const sessionId = data.payment_session_id || data.paymentSessionId;
       
       if (!sessionId) {
           // Handle wallet only success where amount is 0
           if (body.amount === 0 && data.success) {
-              window.location.href = `/?order_id=${orderId}&gateway=wallet&fallback=true`;
+              window.location.href = `/?order_id=${data.orderId || data.order_id || clientOrderId}&gateway=wallet&fallback=true`;
               return;
           }
-          throw new Error("Payment failed — backend could not create order (Session ID missing).");
+          throw new Error("Payment failed — backend could not create order.");
       }
 
       try {
-          let cashfree;
-          
           // 1. Try using window.Cashfree (loaded via script tag in index.html)
-          if (window.Cashfree) {
-              // Use environment from response or fallback to logic
-              const appId = platformSettings.paymentGatewayApiId || "";
-              const isSandbox = appId.toUpperCase().startsWith("TEST");
-              const mode = data.environment || (isSandbox ? "sandbox" : "production");
-              
-              cashfree = window.Cashfree({ mode: mode });
-          } else {
+          if (!window.Cashfree) {
               throw new Error("Cashfree SDK not loaded in browser");
           }
 
-          if (!cashfree) throw new Error("Failed to initialize Cashfree SDK");
+          // Use environment from response or fallback to logic
+          const mode = data.environment || "production";
+          
+          const cashfree = new window.Cashfree({ mode: mode });
 
           await cashfree.checkout({
               paymentSessionId: sessionId,
@@ -172,7 +163,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       } catch (sdkError) {
           console.error("Cashfree SDK Error", sdkError);
-          // Fallback to payment link if SDK fails entirely
+          // Fallback to payment link if SDK fails entirely and link is available
           if (data.payment_link) {
               window.location.href = data.payment_link;
           } else {

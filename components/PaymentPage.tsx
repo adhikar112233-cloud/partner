@@ -61,25 +61,20 @@ const PaymentPage: React.FC = () => {
             const data = await response.json();
             console.log("Payment response:", data);
 
-            if (!response.ok) {
-                throw new Error(data.message || "Failed to initiate payment");
+            if (!data.payment_session_id && !data.paymentSessionId) {
+                throw new Error("Payment failed — backend could not create order.");
             }
 
-            // Robust check for session ID (snake_case or camelCase)
             const paymentSessionId = data.payment_session_id || data.paymentSessionId;
-
-            if (!paymentSessionId) {
-                throw new Error("Payment failed — backend could not create order (Session ID missing).");
-            }
 
             // 2. Checkout
             if (!window.Cashfree) {
                 throw new Error("Cashfree SDK not loaded");
             }
 
-            // Use production mode by default or from backend response
+            // Use production mode as per snippet logic, or fallback to backend hint
             const mode = data.environment || "production"; 
-            const cashfree = window.Cashfree({ mode: mode });
+            const cashfree = new window.Cashfree({ mode: mode });
             
             await cashfree.checkout({
                 paymentSessionId: paymentSessionId,

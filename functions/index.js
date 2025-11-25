@@ -14,7 +14,7 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
-// Helper to calculate expiry
+// Helper to calculate expiry for memberships
 const getExpiryDate = (planId) => {
     const now = new Date();
     if (['basic'].includes(planId)) { // 1 Month
@@ -27,26 +27,31 @@ const getExpiryDate = (planId) => {
     return new Date(now.setFullYear(now.getFullYear() + 1));
 };
 
-// 1. Create Payment (Handled at root of function URL)
+// 1. Create Payment (Root endpoint)
 app.post('/', async (req, res) => {
     try {
-        const { amount, phone, customerId, collabType, relatedId, collabId, userId, description } = req.body;
+        const { amount, phone, customerId, collabType, relatedId, collabId, userId, description, coinsUsed } = req.body;
         
-        // Basic validation
+        // Validate required fields
         if (amount === undefined || !phone) return res.status(400).json({ message: "Missing required fields" });
 
+        // Fetch Payment Gateway Settings
         const settingsDoc = await db.doc('settings/platform').get();
         const settings = settingsDoc.data() || {};
         const appId = settings.paymentGatewayApiId;
         const secretKey = settings.paymentGatewayApiSecret;
-        const baseUrl = appId?.startsWith("TEST") ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
+        
+        // Determine API Environment
+        const isTest = appId && appId.startsWith("TEST");
+        const baseUrl = isTest ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
 
         const orderId = "ORDER-" + Date.now();
         
-        // Store pending order in Firestore to track context
+        // Store pending order in Firestore
         await db.collection('pending_orders').doc(orderId).set({
             userId: userId || customerId,
             amount,
+            coinsUsed: coinsUsed || 0,
             collabType,
             relatedId: relatedId || 'unknown',
             collabId: collabId || 'unknown',
@@ -55,16 +60,17 @@ app.post('/', async (req, res) => {
             status: 'PENDING'
         });
 
-        // If amount is 0 (full coin redemption), skip gateway
+        // Handle full coin redemption (zero amount)
         if (amount === 0) {
              return res.json({
                 success: true,
                 orderId: orderId,
-                paymentSessionId: null, // Signal frontend to skip SDK
+                paymentSessionId: null, // No session needed
                 message: "Paid with coins"
             });
         }
 
+        // Prepare Cashfree Payload
         const payload = {
             order_id: orderId,
             order_amount: amount,
@@ -82,7 +88,7 @@ app.post('/', async (req, res) => {
             }
         };
 
-        // Call Cashfree
+        // Call Cashfree API
         const response = await fetch(`${baseUrl}/orders`, {
             method: 'POST',
             headers: {
@@ -101,7 +107,7 @@ app.post('/', async (req, res) => {
                 success: true,
                 paymentSessionId: data.payment_session_id,
                 orderId: orderId,
-                environment: appId?.startsWith("TEST") ? "sandbox" : "production"
+                environment: isTest ? "sandbox" : "production"
             });
         } else {
             console.error("Cashfree Error:", data);
@@ -114,33 +120,31 @@ app.post('/', async (req, res) => {
     }
 });
 
-// 2. Verify Order & Fulfill
+// 2. Verify Order & Fulfill Service
 app.get('/verify-order/:orderId', async (req, res) => {
     const { orderId } = req.params;
-    console.log(`Verifying order: ${orderId}`);
-
+    
     try {
         const orderRef = db.collection('pending_orders').doc(orderId);
         const orderDoc = await orderRef.get();
         
         if (!orderDoc.exists) {
-            return res.status(404).json({ message: "Order context not found" });
+            return res.status(404).json({ message: "Order not found" });
         }
 
         const orderData = orderDoc.data();
         let status = 'PENDING';
         let gatewayDetails = {};
 
-        // If amount was 0, it's a wallet transaction, auto-approve
+        // Bypass gateway check for zero-amount orders (Wallet payments)
         if (orderData.amount === 0) {
             status = 'PAID';
         } else {
-            // Verify with Gateway
             const settingsDoc = await db.doc('settings/platform').get();
             const settings = settingsDoc.data() || {};
             const appId = settings.paymentGatewayApiId;
             const secretKey = settings.paymentGatewayApiSecret;
-            const baseUrl = appId?.startsWith("TEST") ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
+            const baseUrl = (appId && appId.startsWith("TEST")) ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
 
             const response = await fetch(`${baseUrl}/orders/${orderId}`, {
                 method: 'GET',
@@ -151,32 +155,32 @@ app.get('/verify-order/:orderId', async (req, res) => {
                 }
             });
 
-            const data = await response.json();
-            
-            if (!response.ok) {
-                // In development/emulator, allow skipping verification if headers missing
-                console.warn("Gateway verification failed, check credentials.");
-                return res.status(400).json({ message: "Failed to verify with gateway" });
+            if (response.ok) {
+                const data = await response.json();
+                status = data.order_status;
+                gatewayDetails = data;
+            } else {
+                console.warn("Gateway verification failed for order:", orderId);
             }
-            
-            status = data.order_status;
-            gatewayDetails = data;
         }
 
+        // Process Fulfillment if PAID
         if (status === 'PAID') {
-            // Check if already processed to avoid duplicates
             if (orderData.status === 'COMPLETED') {
                 return res.json({ order_status: 'PAID', message: "Already processed" });
             }
 
-            const { userId, collabType, relatedId, amount, description, collabId } = orderData;
+            const { userId, collabType, relatedId, amount, description, collabId, coinsUsed } = orderData;
+
+            const batch = db.batch();
 
             // A. Create Transaction Record
             const txRef = db.collection('transactions').doc(orderId);
-            await txRef.set({
+            batch.set(txRef, {
                 transactionId: orderId,
                 userId: userId,
                 amount: amount,
+                coinsUsed: coinsUsed || 0,
                 type: 'payment',
                 status: 'completed',
                 description: description,
@@ -184,34 +188,36 @@ app.get('/verify-order/:orderId', async (req, res) => {
                 collabId: collabId || 'N/A',
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 paymentGatewayDetails: gatewayDetails
-            }, { merge: true });
+            });
 
-            // B. Update User/Membership/Collaboration
+            // B. Deduct Coins if used
+            if (coinsUsed > 0) {
+                const userRef = db.collection('users').doc(userId);
+                batch.update(userRef, {
+                    coins: admin.firestore.FieldValue.increment(-coinsUsed)
+                });
+            }
+
+            // C. Fulfill Service based on Type
             if (collabType === 'membership') {
                 const planId = relatedId;
                 const expiresAt = getExpiryDate(planId);
+                const userRef = db.collection('users').doc(userId);
                 
-                // Update User Membership
-                await db.collection('users').doc(userId).update({
+                batch.update(userRef, {
                     'membership.plan': planId,
                     'membership.isActive': true,
                     'membership.startsAt': admin.firestore.FieldValue.serverTimestamp(),
                     'membership.expiresAt': admin.firestore.Timestamp.fromDate(expiresAt)
                 });
 
-                // If influencer, update public profile
-                const userSnap = await db.collection('users').doc(userId).get();
-                if (userSnap.exists && userSnap.data().role === 'influencer') {
-                    await db.collection('influencers').doc(userId).set({
-                        membershipActive: true
-                    }, { merge: true });
-                }
             } else if (collabType === 'boost_profile') {
                  const days = 7;
                  const expiresAt = new Date();
                  expiresAt.setDate(expiresAt.getDate() + days);
                  
-                 await db.collection('boosts').add({
+                 const boostRef = db.collection('boosts').doc();
+                 batch.set(boostRef, {
                      userId,
                      plan: 'profile',
                      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
@@ -219,15 +225,83 @@ app.get('/verify-order/:orderId', async (req, res) => {
                      targetId: userId,
                      targetType: 'profile'
                  });
+
+            } else if (collabType === 'boost_campaign') {
+                 const days = 7;
+                 const expiresAt = new Date();
+                 expiresAt.setDate(expiresAt.getDate() + days);
                  
-                 const userSnap = await db.collection('users').doc(userId).get();
-                 const collectionName = userSnap.data().role === 'influencer' ? 'influencers' : 'livetv_channels';
-                 if (['influencer', 'livetv'].includes(userSnap.data().role)) {
-                     await db.collection(collectionName).doc(userId).set({ isBoosted: true }, { merge: true });
+                 const boostRef = db.collection('boosts').doc();
+                 batch.set(boostRef, { 
+                     userId, 
+                     plan: 'campaign', 
+                     expiresAt: admin.firestore.Timestamp.fromDate(expiresAt), 
+                     createdAt: admin.firestore.FieldValue.serverTimestamp(), 
+                     targetId: relatedId, 
+                     targetType: 'campaign' 
+                 });
+                 
+                 const campRef = db.collection('campaigns').doc(relatedId);
+                 batch.update(campRef, { isBoosted: true });
+
+            } else if (collabType === 'boost_banner') {
+                 const days = 7;
+                 const expiresAt = new Date();
+                 expiresAt.setDate(expiresAt.getDate() + days);
+                 
+                 const boostRef = db.collection('boosts').doc();
+                 batch.set(boostRef, { 
+                     userId, 
+                     plan: 'banner', 
+                     expiresAt: admin.firestore.Timestamp.fromDate(expiresAt), 
+                     createdAt: admin.firestore.FieldValue.serverTimestamp(), 
+                     targetId: relatedId, 
+                     targetType: 'banner' 
+                 });
+                 
+                 const bannerRef = db.collection('banner_ads').doc(relatedId);
+                 batch.update(bannerRef, { isBoosted: true });
+
+            } else if (collabType === 'direct') {
+                const reqRef = db.collection('collaboration_requests').doc(relatedId);
+                batch.update(reqRef, { paymentStatus: 'paid', status: 'in_progress' });
+
+            } else if (collabType === 'campaign') {
+                const appRef = db.collection('campaign_applications').doc(relatedId);
+                batch.update(appRef, { paymentStatus: 'paid', status: 'in_progress' });
+
+            } else if (collabType === 'ad_slot') {
+                const reqRef = db.collection('ad_slot_requests').doc(relatedId);
+                batch.update(reqRef, { paymentStatus: 'paid', status: 'in_progress' });
+
+            } else if (collabType === 'banner_booking') {
+                const reqRef = db.collection('banner_booking_requests').doc(relatedId);
+                batch.update(reqRef, { paymentStatus: 'paid', status: 'in_progress' });
+            }
+
+            await batch.commit();
+
+            // Post-batch secondary updates (non-transactional safety)
+            if (collabType === 'membership') {
+                 const infRef = db.collection('influencers').doc(userId);
+                 const infDoc = await infRef.get();
+                 if (infDoc.exists) {
+                     await infRef.update({ membershipActive: true });
                  }
             }
-            
-            // Mark Order as Completed locally
+            if (collabType === 'boost_profile') {
+                const uDoc = await db.collection('users').doc(userId).get();
+                if (uDoc.exists) {
+                    const role = uDoc.data().role;
+                    if (role === 'influencer') {
+                        await db.collection('influencers').doc(userId).update({ isBoosted: true }).catch(()=>{});
+                    } else if (role === 'livetv') {
+                        await db.collection('livetv_channels').doc(userId).update({ isBoosted: true }).catch(()=>{});
+                    }
+                }
+            }
+
+            // Mark order processed in pending table
             await orderRef.update({ status: 'COMPLETED' });
         }
 
@@ -239,5 +313,5 @@ app.get('/verify-order/:orderId', async (req, res) => {
     }
 });
 
-// IMPORTANT: The export name must match the URL slug.
+// Export the function
 exports.createpayment = functions.https.onRequest(app);

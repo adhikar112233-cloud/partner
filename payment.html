@@ -159,7 +159,6 @@
 
             try {
                 // 1. Create Order
-                // We pass a generated customerId so the backend doesn't reject it for missing userId
                 const guestId = "GUEST_" + Date.now();
                 
                 const response = await fetch(backendURL, {
@@ -169,9 +168,8 @@
                         amount: Number(amount),
                         phone: phone,
                         customerId: guestId, 
-                        collabType: "direct", // Default type for standalone page
+                        collabType: "direct", 
                         purpose: "Web Payment",
-                        // Pass generic IDs to satisfy backend schema if needed
                         relatedId: "payment_page_" + Date.now(),
                         collabId: "PAY_" + Date.now()
                     }),
@@ -189,11 +187,8 @@
                     throw new Error("Session ID missing from response");
                 }
 
-                // 2. Checkout
-                // IMPORTANT: Ensure the mode matches your backend (sandbox vs production)
-                // The backend response usually tells us the environment, or we default to production for live URL
                 const mode = data.environment || "production"; 
-                const cashfree = Cashfree({ mode: mode });
+                const cashfree = new Cashfree({ mode: mode });
                 
                 await cashfree.checkout({
                     paymentSessionId: paymentSessionId,

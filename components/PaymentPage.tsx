@@ -12,10 +12,17 @@ const PaymentPage: React.FC = () => {
         if (!amount || !phone) { setError("Fill all fields"); return; }
         setIsLoading(true);
         try {
+            const returnUrl = window.location.origin + '/';
             const res = await fetch(BACKEND_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ amount, phone, customerId: "guest", collabType: "direct" })
+                body: JSON.stringify({ 
+                    amount, 
+                    phone, 
+                    customerId: "guest", 
+                    collabType: "direct",
+                    returnUrl: returnUrl
+                })
             });
             const data = await res.json();
             if(!res.ok) throw new Error(data.message);

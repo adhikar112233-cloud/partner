@@ -7,13 +7,11 @@ const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Initialize Admin SDK
 if (!admin.apps.length) {
     admin.initializeApp();
 }
 const db = admin.firestore();
 
-// Helper: Calculate Expiry Date for Memberships
 const getExpiryDate = (planId) => {
     const now = new Date();
     if (['basic'].includes(planId)) return new Date(now.setMonth(now.getMonth() + 1));
@@ -21,33 +19,23 @@ const getExpiryDate = (planId) => {
     return new Date(now.setFullYear(now.getFullYear() + 1));
 };
 
-// ------------------------------------------------------------------
-// 1. CREATE ORDER (The app asks this function to start a payment)
-// ------------------------------------------------------------------
 app.post('/', async (req, res) => {
     try {
-        const { amount, phone, customerId, collabType, relatedId, collabId, userId, description, coinsUsed } = req.body;
+        const { amount, phone, customerId, collabType, relatedId, collabId, userId, description, coinsUsed, returnUrl } = req.body;
         
-        // 1. Get your Cashfree Keys from the Database (Admin Panel Settings)
         const settingsDoc = await db.doc('settings/platform').get();
         const settings = settingsDoc.data() || {};
         const appId = settings.paymentGatewayApiId;
         const secretKey = settings.paymentGatewayApiSecret;
         
         if (!appId || !secretKey) {
-            // Fallback for testing if keys aren't in DB yet
-            console.warn("Cashfree keys missing in Firestore settings.");
             return res.status(500).json({ message: "Payment Gateway not configured in Admin Settings." });
         }
 
-        // 2. Check if keys are for TEST (Sandbox) or LIVE (Production)
         const isTest = appId.includes("TEST");
         const baseUrl = isTest ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg";
-
-        // 3. Create a unique Order ID
         const orderId = "ORDER-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
         
-        // 4. Save the order intent
         await db.collection('pending_orders').doc(orderId).set({
             userId: userId || customerId,
             amount: Number(amount),
@@ -60,14 +48,16 @@ app.post('/', async (req, res) => {
             status: 'PENDING'
         });
 
-        // 5. Handle 0 Amount (Paid fully by coins)
         if (Number(amount) === 0) {
              return res.json({ success: true, orderId: orderId, paymentSessionId: "COIN-ONLY", message: "Paid with coins" });
         }
 
-        // 6. Talk to Cashfree to get a Session ID
         const fetch = require("node-fetch"); 
         
+        // Use provided returnUrl or fallback to a default
+        // Appending ?order_id=... allows the frontend to verify payment on load
+        const finalReturnUrl = returnUrl ? `${returnUrl}?order_id=${orderId}` : `https://bigyapon.com/?order_id=${orderId}`;
+
         const payload = {
             order_id: orderId,
             order_amount: Number(amount),
@@ -77,8 +67,7 @@ app.post('/', async (req, res) => {
                 customer_phone: String(phone)
             },
             order_meta: {
-                // This return_url is handled by the frontend mostly, but required by API
-                return_url: `https://bigyapon.com/payment?order_id=${orderId}`
+                return_url: finalReturnUrl
             }
         };
 
@@ -113,9 +102,6 @@ app.post('/', async (req, res) => {
     }
 });
 
-// ------------------------------------------------------------------
-// 2. VERIFY ORDER (The app asks this function: "Did they pay?")
-// ------------------------------------------------------------------
 app.get('/verify-order/:orderId', async (req, res) => {
     const { orderId } = req.params;
     try {
@@ -127,16 +113,13 @@ app.get('/verify-order/:orderId', async (req, res) => {
         const orderData = orderDoc.data();
         let status = orderData.status;
 
-        // If already completed, return success immediately
         if (status === 'COMPLETED') {
              return res.json({ order_status: 'PAID' });
         }
 
-        // Logic check
         if (orderData.amount === 0) {
             status = 'PAID';
         } else {
-            // Get Keys again
             const settingsDoc = await db.doc('settings/platform').get();
             const settings = settingsDoc.data() || {};
             const appId = settings.paymentGatewayApiId;
@@ -158,17 +141,15 @@ app.get('/verify-order/:orderId', async (req, res) => {
 
                 if (response.ok) {
                     const data = await response.json();
-                    status = data.order_status; // PAID, ACTIVE, etc.
+                    status = data.order_status;
                 }
             }
         }
 
-        // If Paid, Deliver the Service (Update Database)
         if (status === 'PAID' && orderData.status !== 'COMPLETED') {
             const batch = db.batch();
             const { userId, collabType, relatedId, description } = orderData;
 
-            // 1. Record Transaction
             const transactionRef = db.collection('transactions').doc(orderId);
             batch.set(transactionRef, {
                 transactionId: orderId,
@@ -186,7 +167,6 @@ app.get('/verify-order/:orderId', async (req, res) => {
                 }
             });
 
-            // 2. Handle specific services
             if (collabType === 'membership') {
                 const userRef = db.collection('users').doc(userId);
                 batch.update(userRef, {
@@ -194,8 +174,6 @@ app.get('/verify-order/:orderId', async (req, res) => {
                     'membership.plan': relatedId,
                     'membership.expiresAt': admin.firestore.Timestamp.fromDate(getExpiryDate(relatedId))
                 });
-                
-                // Also update influencer profile if exists
                 const infRef = db.collection('influencers').doc(userId);
                 const infDoc = await infRef.get();
                 if (infDoc.exists) {
@@ -206,7 +184,6 @@ app.get('/verify-order/:orderId', async (req, res) => {
                 const boostRef = db.collection('boosts').doc();
                 const expiresAt = new Date();
                 expiresAt.setDate(expiresAt.getDate() + 7);
-                
                 batch.set(boostRef, {
                     userId,
                     plan: 'profile',
@@ -215,15 +192,8 @@ app.get('/verify-order/:orderId', async (req, res) => {
                     targetId: relatedId,
                     targetType: 'profile'
                 });
-                
-                // Attempt to update influencer or live tv channel
                 const infRef = db.collection('influencers').doc(relatedId);
                 const tvRef = db.collection('livetv_channels').doc(relatedId);
-                
-                // Ideally we check existence, but for speed we can just try update in a transaction or optimistic
-                // Since we are in a batch, we need to know which doc. Assuming influencer for now or relying on frontend logic mapping.
-                // Actually, safer to just let frontend refresh see the boost active. 
-                // But to show 'Boosted' badge we need isBoosted: true on profile.
                 const infDoc = await infRef.get();
                 if (infDoc.exists) {
                     batch.update(infRef, { isBoosted: true });
@@ -233,9 +203,6 @@ app.get('/verify-order/:orderId', async (req, res) => {
                 }
             }
             else if (collabType === 'direct' || collabType === 'campaign' || collabType === 'ad_slot' || collabType === 'banner_booking') {
-                // Update the collaboration status to paid
-                // Need to know the collection name based on type. 
-                // relatedId is usually the document ID of the request.
                 let collectionName = '';
                 if (collabType === 'direct') collectionName = 'collaboration_requests';
                 if (collabType === 'campaign') collectionName = 'campaign_applications';
@@ -244,7 +211,6 @@ app.get('/verify-order/:orderId', async (req, res) => {
                 
                 if (collectionName) {
                     const collabRef = db.collection(collectionName).doc(relatedId);
-                    // We update paymentStatus to 'paid' and status to 'in_progress' if it was 'agreement_reached'
                     batch.update(collabRef, { 
                         paymentStatus: 'paid',
                         status: 'in_progress' 

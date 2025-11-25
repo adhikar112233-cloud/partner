@@ -60,6 +60,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setError(null);
 
     try {
+      // Get current domain to redirect back to
+      const returnUrl = window.location.origin + '/';
+
       // 1. Talk to our "Brain" (Backend) to get permission
       const response = await fetch(BACKEND_URL, {
         method: "POST",
@@ -72,7 +75,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           description: transactionDetails.description,
           relatedId: transactionDetails.relatedId,
           collabType: collabType,
-          coinsUsed: useCoins ? maxRedeemableCoins : 0
+          coinsUsed: useCoins ? maxRedeemableCoins : 0,
+          returnUrl: returnUrl // Send current domain
         }),
       });
 

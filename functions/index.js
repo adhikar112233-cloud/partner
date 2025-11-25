@@ -341,6 +341,11 @@ const createOrderHandler = async (req, res) => {
             paymentGateway: activeGateway,
         });
 
+        // Determine correct base URL based on region
+        const region = process.env.FUNCTION_REGION || 'asia-south1';
+        const projectId = process.env.GCLOUD_PROJECT;
+        const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/createPayment`;
+
         if (activeGateway === 'paytm') {
             const MID = settings.paytmMid;
             const MKEY = settings.paytmMerchantKey;
@@ -353,7 +358,7 @@ const createOrderHandler = async (req, res) => {
                 "mid": MID,
                 "websiteName": "DEFAULT",
                 "orderId": orderId,
-                "callbackUrl": `https://partnerpayment-backend.onrender.com/verify-order/${orderId}`,
+                "callbackUrl": `${functionUrl}/verify-order/${orderId}`,
                 "txnAmount": {
                     "value": orderAmount.toString(),
                     "currency": "INR",
@@ -448,8 +453,9 @@ const createOrderHandler = async (req, res) => {
                         customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                     },
                     order_meta: {
-                        return_url: `https://www.bigyapon.com/payment-success?order_id={order_id}`,
-                        notify_url: `https://partnerpayment-backend.onrender.com/verify-order/${orderId}`
+                        // Using the origin from request if available, else fallback
+                        return_url: (req.headers.origin || "https://www.bigyapon.com") + `/payment-success?order_id=${orderId}`,
+                        notify_url: `${functionUrl}/verify-order/${orderId}`
                     }
                 }),
             });

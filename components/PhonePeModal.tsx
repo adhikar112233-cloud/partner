@@ -207,22 +207,26 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               throw new Error("Cashfree payment token missing. Please try again.");
           }
 
+          const appId = platformSettings.paymentGatewayApiId || "";
+          const isSandbox = appId.toUpperCase().startsWith("TEST");
+          const mode = isSandbox ? "sandbox" : "production";
+
           // Use window.Cashfree from the SDK loaded in index.html
           if (window.Cashfree) {
-              const checkoutOptions = {
+              const cashfree = new window.Cashfree({ mode: mode });
+              await cashfree.checkout({
                   paymentSessionId: sessionId,
                   redirectTarget: "_self",
-              };
-              const cashfree = new window.Cashfree(checkoutOptions);
-              cashfree.requestPayment();
+                  returnUrl: data.return_url || window.location.origin + `/payment-success?order_id=${orderId}`
+              });
           } else {
               console.warn("Cashfree SDK not loaded on window, attempting import fallback");
               try {
-                  const cashfree = await load({ mode: "production" });
+                  const cashfree = await load({ mode: mode });
                   cashfree.checkout({
                       paymentSessionId: sessionId,
                       redirectTarget: "_self",
-                      returnUrl: data.return_url
+                      returnUrl: data.return_url || window.location.origin + `/payment-success?order_id=${orderId}`
                   });
               } catch (sdkError) {
                   console.error("Cashfree SDK Error", sdkError);

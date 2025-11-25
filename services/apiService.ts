@@ -1,4 +1,6 @@
 
+
+
 // ... (imports remain same)
 import { Influencer, Message, User, PlatformSettings, Attachment, CollaborationRequest, CollabRequestStatus, Conversation, ConversationParticipant, Campaign, CampaignApplication, LiveTvChannel, AdSlotRequest, BannerAd, BannerAdBookingRequest, SupportTicket, TicketReply, SupportTicketStatus, Membership, UserRole, PayoutRequest, CampaignApplicationStatus, AdBookingStatus, AnyCollaboration, DailyPayoutRequest, Post, Comment, Dispute, MembershipPlan, Transaction, KycDetails, KycStatus, PlatformBanner, PushNotification, Boost, BoostType, LiveHelpMessage, LiveHelpSession, RefundRequest, View, QuickReply, CreatorVerificationDetails, CreatorVerificationStatus, AppNotification, NotificationType, Partner } from '../types';
 import { db, storage, auth, BACKEND_URL } from './firebase';
@@ -34,6 +36,19 @@ import { ref, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase
 const DEFAULT_AVATAR_URL = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDRjMCAwIDAtMSAwLTJoMTJ2Mmg0di00YzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==';
 
 const generateCollabId = (): string => `CRI${String(Math.floor(Math.random() * 10000000000)).padStart(10, '0')}`;
+
+// Helper to safely get milliseconds from various timestamp formats
+const getMillis = (ts: any) => {
+    if (!ts) return 0;
+    if (typeof ts.toMillis === 'function') return ts.toMillis(); // Firestore Timestamp
+    if (ts instanceof Date) return ts.getTime(); // JS Date
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime(); // Legacy Firestore or similar object
+    if (typeof ts === 'number') return ts; // Raw millis
+    // If it's a string, try parsing
+    const d = new Date(ts);
+    if (!isNaN(d.getTime())) return d.getTime();
+    return 0;
+};
 
 export const apiService = {
   // ... (uploadKycFile, submitKyc, submitDigilockerKyc, updateKycStatus, getKycSubmissions)
@@ -336,11 +351,7 @@ export const apiService = {
       const q2 = query(messagesRef, where('senderId', '==', userId2), where('receiverId', '==', userId1));
       const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
       const allMessages = [...snap1.docs, ...snap2.docs].map(d => ({ id: d.id, ...d.data() } as Message));
-      return allMessages.sort((a, b) => {
-          const tA = a.timestamp?.toMillis ? a.timestamp.toMillis() : 0;
-          const tB = b.timestamp?.toMillis ? b.timestamp.toMillis() : 0;
-          return tA - tB;
-      });
+      return allMessages.sort((a, b) => getMillis(a.timestamp) - getMillis(b.timestamp));
   },
   getMessagesListener: (userId1: string, userId2: string, callback: (messages: Message[]) => void, onError: (error: Error) => void): (() => void) => {
       const messagesRef = collection(db, 'messages');
@@ -431,11 +442,7 @@ export const apiService = {
       const allAds = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as BannerAd));
       
       // Sort by timestamp client-side as secondary sort
-      allAds.sort((a, b) => {
-          const tA = a.timestamp?.toMillis ? a.timestamp.toMillis() : 0;
-          const tB = b.timestamp?.toMillis ? b.timestamp.toMillis() : 0;
-          return tB - tA;
-      });
+      allAds.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
 
       if (!queryStr) return allAds;
       const lowerQ = queryStr.toLowerCase();
@@ -469,11 +476,7 @@ export const apiService = {
       const snapshot = await getDocs(q);
       const banners = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PlatformBanner));
       // Sort client-side
-      return banners.sort((a, b) => {
-          const tA = a.createdAt && typeof a.createdAt.toMillis === 'function' ? a.createdAt.toMillis() : 0;
-          const tB = b.createdAt && typeof b.createdAt.toMillis === 'function' ? b.createdAt.toMillis() : 0;
-          return tB - tA;
-      });
+      return banners.sort((a, b) => getMillis(b.createdAt) - getMillis(a.createdAt));
   },
   createPlatformBanner: async (data: any) => { await addDoc(collection(db, 'platform_banners'), { ...data, createdAt: serverTimestamp() }); },
   updatePlatformBanner: async (id: string, data: any) => { await updateDoc(doc(db, 'platform_banners', id), data); },
@@ -571,10 +574,27 @@ export const apiService = {
   updatePayoutRequest: async (id: string, data: any) => { await updateDoc(doc(db, 'payout_requests', id), data); },
   submitPayoutRequest: async (data: any) => { await addDoc(collection(db, 'payout_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() }); },
   updatePayoutStatus: async (reqId: string, status: PayoutRequest['status'], collabId: string, collabType: PayoutRequest['collaborationType'], reason?: string) => { const payoutRef = doc(db, 'payout_requests', reqId); const updateData: any = { status }; if(reason) updateData.rejectionReason = reason; const batch = writeBatch(db); batch.update(payoutRef, updateData); if (status === 'approved' || status === 'completed') { const map: any = { 'direct': 'collaboration_requests', 'campaign': 'campaign_applications', 'ad_slot': 'ad_slot_requests', 'banner_booking': 'banner_booking_requests' }; if(map[collabType]) { const collabRef = doc(db, map[collabType], collabId); batch.update(collabRef, { paymentStatus: 'payout_complete' }); } } await batch.commit(); },
-  getTransactionsForUser: async (userId: string) => { const q = query(collection(db, 'transactions'), where('userId', '==', userId)); const snapshot = await getDocs(q); return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)).sort((a, b) => ((b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0))); },
-  getPayoutHistoryForUser: async (userId: string) => { const q = query(collection(db, 'payout_requests'), where('userId', '==', userId)); const snapshot = await getDocs(q); return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PayoutRequest)).sort((a, b) => ((b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0))); },
+  getTransactionsForUser: async (userId: string) => { 
+    const q = query(collection(db, 'transactions'), where('userId', '==', userId)); 
+    const snapshot = await getDocs(q); 
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction))
+    .sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp)); 
+  },
+  getPayoutHistoryForUser: async (userId: string) => { 
+    const q = query(collection(db, 'payout_requests'), where('userId', '==', userId)); 
+    const snapshot = await getDocs(q); 
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PayoutRequest))
+    .sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp)); 
+  },
   createNotification: async (notification: any) => { await addDoc(collection(db, 'notifications'), { ...notification, timestamp: serverTimestamp(), isRead: false }); },
-  getNotificationsForUserListener: (userId: string, cb: any, err: any) => { const q = query(collection(db, 'notifications'), where('userId', '==', userId), limit(50)); return onSnapshot(q, s => { const n = s.docs.map(d => ({ id: d.id, ...d.data() })); n.sort((a: any, b: any) => ((b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0))); cb(n); }, err); },
+  getNotificationsForUserListener: (userId: string, cb: any, err: any) => { 
+    const q = query(collection(db, 'notifications'), where('userId', '==', userId), limit(50)); 
+    return onSnapshot(q, s => { 
+        const n = s.docs.map(d => ({ id: d.id, ...d.data() })); 
+        n.sort((a: any, b: any) => getMillis(b.timestamp) - getMillis(a.timestamp)); 
+        cb(n); 
+    }, err); 
+  },
   markNotificationAsRead: async (id: string) => { await updateDoc(doc(db, 'notifications', id), { isRead: true }); },
   markAllNotificationsAsRead: async (userId: string) => { const q = query(collection(db, 'notifications'), where('userId', '==', userId), where('isRead', '==', false)); const s = await getDocs(q); const batch = writeBatch(db); s.docs.forEach(d => batch.update(d.ref, { isRead: true })); await batch.commit(); },
   getPartners: async () => { const q = query(collection(db, 'partners'), orderBy('createdAt', 'desc')); const snapshot = await getDocs(q); return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Partner)); },

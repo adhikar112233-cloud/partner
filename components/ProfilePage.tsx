@@ -12,6 +12,7 @@
 
 
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
@@ -483,6 +484,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
                 </div>
                 <button onClick={onGoToMembership} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-medium">
                     {isMembershipActive ? 'Manage Plan' : 'Upgrade'}
+                </button>
+            </dd>
+          </div>
+
+          <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
+            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Payment History</dt>
+            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center justify-between">
+                <span className="text-gray-600 dark:text-gray-400">View all transactions and invoices</span>
+                <button onClick={() => setActiveView(View.PAYMENT_HISTORY)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 text-sm font-medium">
+                    View History
                 </button>
             </dd>
           </div>

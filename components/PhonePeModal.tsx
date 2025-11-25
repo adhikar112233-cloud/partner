@@ -48,8 +48,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   });
   const userCoins = user.coins || 0;
   const [useCoins, setUseCoins] = useState(userCoins > 0);
-  const needsPhone = !user.mobileNumber && !phoneNumber;
-
+  
   // 1. Calculate Base Fees
   const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
@@ -137,8 +136,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       // Use the Order ID from backend if provided, else fallback to our client ID
       const orderId = data.orderId || data.order_id || clientOrderId;
 
-      // CASHFREE LOGIC
-      const sessionId = data.paymentSessionId || data.payment_session_id;
+      // CASHFREE LOGIC: Check both snake_case and camelCase
+      const sessionId = data.payment_session_id || data.paymentSessionId;
       
       if (!sessionId) {
           // Handle wallet only success where amount is 0
@@ -154,7 +153,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           
           // 1. Try using window.Cashfree (loaded via script tag in index.html)
           if (window.Cashfree) {
-              // SDK v3 usage: Factory function without 'new'
               // Use environment from response or fallback to logic
               const appId = platformSettings.paymentGatewayApiId || "";
               const isSandbox = appId.toUpperCase().startsWith("TEST");

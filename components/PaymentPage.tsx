@@ -37,7 +37,7 @@ const PaymentPage: React.FC = () => {
 
         setIsLoading(true);
 
-        // Persist phone for future use as per snippet logic
+        // Persist phone for future use
         localStorage.setItem("userPhone", phone);
 
         try {
@@ -65,7 +65,8 @@ const PaymentPage: React.FC = () => {
                 throw new Error(data.message || "Failed to initiate payment");
             }
 
-            const paymentSessionId = data.paymentSessionId || data.payment_session_id;
+            // Robust check for session ID (snake_case or camelCase)
+            const paymentSessionId = data.payment_session_id || data.paymentSessionId;
 
             if (!paymentSessionId) {
                 throw new Error("Payment failed — backend could not create order (Session ID missing).");

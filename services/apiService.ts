@@ -585,6 +585,8 @@ export const apiService = {
   deletePartner: async (id: string) => { await deleteDoc(doc(db, 'partners', id)); },
   uploadPartnerLogo: async (file: File) => {
       if (!storage) throw new Error("Firebase Storage is not initialized");
+      if (!file) throw new Error("No file provided"); // Added check
+      
       const cleanName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
       // Use simpler uploadBytes for reliability
       const storageRef = ref(storage, `partners/${Date.now()}_${cleanName}`);
@@ -594,7 +596,8 @@ export const apiService = {
           return await getDownloadURL(snapshot.ref);
       } catch (error: any) {
           console.error("Partner Logo Upload Error:", error);
-          throw new Error("Failed to upload partner logo: " + (error.message || "Unknown error"));
+          // Throw new error with specific message, preserving original message
+          throw new Error(`Failed to upload partner logo: ${error.message || "Unknown error"}`);
       }
   },
   

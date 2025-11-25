@@ -219,13 +219,10 @@ const createOrderHandler = async (req, res) => {
 
     if (!db) return res.status(503).send({ message: 'Service Unavailable: Database not connected' });
 
-    // Use 'method' as per user request to select gateway
-    let { amount, purpose, relatedId, collabId, collabType, phone, customerPhone: reqCustomerPhone, gateway, method, coinsUsed, orderId: clientOrderId, userId: reqUserId, customerId } = req.body;
+    let { amount, purpose, relatedId, collabId, collabType, phone, customerPhone: reqCustomerPhone, coinsUsed, orderId: clientOrderId, userId: reqUserId, customerId } = req.body;
     
-    // Fallback to customerId if userId is not provided directly
     let userId = reqUserId || customerId;
 
-    // If userId not in body, try to get from token
     if (!userId) {
         const idToken = req.headers.authorization?.split('Bearer ')[1];
         if (idToken) {
@@ -240,11 +237,9 @@ const createOrderHandler = async (req, res) => {
 
     if (!userId) return res.status(401).send({ message: 'Unauthorized: No User ID' });
 
-    // Provide defaults if missing
     if (!collabType) collabType = 'direct'; 
     if (!relatedId) relatedId = 'unknown';
 
-    // Check User Coin Balance if coins are used
     if (coinsUsed && coinsUsed > 0) {
         const userDoc = await db.collection('users').doc(userId).get();
         const userCoins = userDoc.data().coins || 0;
@@ -258,14 +253,12 @@ const createOrderHandler = async (req, res) => {
     }
 
     let orderAmount = parseFloat(amount);
-    // Allow 0 amount only if coins are used
     if (isNaN(orderAmount) || orderAmount < 0) return res.status(400).send({ message: 'Invalid amount' });
     if (orderAmount === 0 && (!coinsUsed || coinsUsed <= 0)) return res.status(400).send({ message: 'Invalid amount' });
 
     const orderId = clientOrderId || `order_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
     try {
-        // Handle Wallet-Only Payment (Full coverage by coins)
         if (orderAmount === 0 && coinsUsed > 0) {
             const transactionData = {
                 userId,
@@ -283,8 +276,6 @@ const createOrderHandler = async (req, res) => {
             };
             
             await db.collection('transactions').doc(orderId).set(transactionData);
-            
-            // Fulfill immediately
             await fulfillOrder(orderId, transactionData, { gateway: 'wallet' });
             
             return res.status(200).send({
@@ -301,18 +292,14 @@ const createOrderHandler = async (req, res) => {
         if (!userDoc.exists) return res.status(404).send({ message: 'User not found' });
         
         const userData = userDoc.data();
-        // Prioritize request provided phone (or customerPhone), fallback to profile
         const customerPhone = phone || reqCustomerPhone || userData.mobileNumber || "9999999999";
         const customerEmail = userData.email || "noemail@example.com";
 
         const settings = await getPaymentSettings();
-        
-        // Force Cashfree as the only gateway
         const activeGateway = 'cashfree';
 
         console.log(`Creating order ${orderId} via ${activeGateway} for amount ${orderAmount}`);
 
-        // Create pending transaction
         await db.collection('transactions').doc(orderId).set({
             userId,
             type: 'payment',
@@ -328,12 +315,10 @@ const createOrderHandler = async (req, res) => {
             paymentGateway: activeGateway,
         });
 
-        // Determine correct base URL based on region with fallback
         const region = process.env.FUNCTION_REGION || 'us-central1';
         const projectId = process.env.GCLOUD_PROJECT || 'bigyapon2-cfa39'; 
         const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/createPayment`;
 
-        // CASHFREE Logic
         const CASHFREE_ID = settings.paymentGatewayApiId;
         const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
 
@@ -341,8 +326,6 @@ const createOrderHandler = async (req, res) => {
 
         const isSandbox = CASHFREE_ID.toUpperCase().startsWith("TEST");
         const baseUrl = isSandbox ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
-
-        // Use origin from request if available for return_url
         const origin = req.headers.origin || "https://www.bigyapon.com";
 
         const response = await fetch(baseUrl, {
@@ -365,7 +348,6 @@ const createOrderHandler = async (req, res) => {
                     customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                 },
                 order_meta: {
-                    // Ensure correct return URL for redirection flow
                     return_url: `${origin}/payment-success?order_id=${orderId}&gateway=cashfree`,
                     notify_url: `${functionUrl}/verify-order/${orderId}`
                 }
@@ -378,13 +360,12 @@ const createOrderHandler = async (req, res) => {
         return res.status(200).send({ 
             gateway: 'cashfree',
             payment_session_id: data.payment_session_id,
-            paymentSessionId: data.payment_session_id, // Alias for frontend convenience
+            paymentSessionId: data.payment_session_id,
             environment: isSandbox ? 'sandbox' : 'production',
             id: data.payment_session_id,
             payment_link: data.payment_link,
             coinsUsed: coinsUsed || 0,
             cf: data,
-            // Pass back return url for client fallback if needed
             return_url: data.order_meta?.return_url 
         });
 
@@ -410,7 +391,6 @@ const verifyOrderHandler = async (req, res) => {
         const transactionData = transactionDoc.data();
         const settings = await getPaymentSettings();
 
-        // Cashfree Verification
         if (transactionData.status === 'pending' && transactionData.paymentGateway === 'cashfree') {
              const CASHFREE_ID = settings.paymentGatewayApiId;
              const CASHFREE_SECRET = settings.paymentGatewayApiSecret;
@@ -505,27 +485,13 @@ const applyReferralHandler = async (req, res) => {
     }
 };
 
-const setPaymentGatewayHandler = async (req, res) => {
-    // Currently ignored as we only support Cashfree
-    return res.status(200).send({ success: true, active: 'cashfree' });
-};
-
-const getActiveGatewayHandler = async (req, res) => {
-    res.status(200).send({ active: 'cashfree' });
-};
-
 // Define Routes
 app.post('/createOrder', createOrderHandler);
-// Handle root request as well to match the specific URL provided
 app.post('/', createOrderHandler); 
 
 app.get('/verify-order/:orderId', verifyOrderHandler);
 app.post('/verify-order/:orderId', verifyOrderHandler);
 app.post('/process-payout', processPayoutHandler);
 app.post('/apply-referral', applyReferralHandler);
-app.post('/setPaymentGateway', setPaymentGatewayHandler);
-app.get('/getActiveGateway', getActiveGatewayHandler);
 
-// Export the API
-// Matches URL https://us-central1-bigyapon2-cfa39.cloudfunctions.net/createPayment
 exports.createPayment = functions.region('us-central1').https.onRequest(app);

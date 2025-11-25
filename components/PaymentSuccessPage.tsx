@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { auth, db, BACKEND_URL } from '../services/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { auth, BACKEND_URL } from '../services/firebase';
 
 interface PaymentSuccessPageProps {
     user: User;
@@ -10,121 +9,72 @@ interface PaymentSuccessPageProps {
 }
 
 const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplete }) => {
-    const [status, setStatus] = useState("⌛ Checking payment...");
-    const [isSuccess, setIsSuccess] = useState(false);
+    const [status, setStatus] = useState("Checking...");
+    const [orderId, setOrderId] = useState<string | null>(null);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const orderId = params.get("order_id");
-        const isFallback = params.get("fallback") === "true";
-        const gateway = params.get("gateway");
+        const id = params.get("order_id");
+        setOrderId(id);
 
-        let isMounted = true;
-
-        async function check() {
-            if (!orderId) {
-                if (isMounted) setStatus("⚠️ Order ID missing.");
+        const checkStatus = async () => {
+            if (!id) {
+                setStatus("Order ID missing");
                 return;
             }
 
-            // Robustness: Handle local fallback verification if the initial payment used fallback mode
-            // or if it was a wallet payment which is processed client-side/serverless-side transactionally.
-            if (isFallback || gateway === 'wallet') {
-                try {
-                    if (!auth.currentUser) throw new Error("User not authenticated");
-                    const docRef = doc(db, 'transactions', orderId);
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists() && docSnap.data().status === 'completed') {
-                        if (isMounted) {
-                            setStatus("🎉 Payment Successful!");
-                            setIsSuccess(true);
-                        }
-                    } else {
-                        if (isMounted) setStatus("⚠️ Could not verify payment locally. It may be pending.");
-                    }
-                } catch (e) {
-                    console.error(e);
-                    if (isMounted) setStatus("⚠️ Error checking local record.");
-                }
-                return;
-            }
-
-            // Main Logic: Poll the backend for standard Gateway payments
             try {
-                if (!auth.currentUser) {
-                    if (isMounted) setStatus("⚠️ Authentication required.");
-                    return;
+                // Use existing auth if available for backend verification
+                let headers: Record<string, string> = { "Content-Type": "application/json" };
+                const currentUser = auth.currentUser;
+                if (currentUser) {
+                    const token = await currentUser.getIdToken();
+                    headers['Authorization'] = `Bearer ${token}`;
                 }
 
-                const token = await auth.currentUser.getIdToken();
+                const response = await fetch(`${BACKEND_URL}/verify-order/${id}`, {
+                    method: 'GET',
+                    headers: headers
+                });
 
-                const res = await fetch(
-                    `${BACKEND_URL}/verify-order/${orderId}`,
-                    {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }
-                );
-
-                if (!res.ok) {
-                    throw new Error(`Server error: ${res.status}`);
-                }
-
-                const data = await res.json();
-
-                if (data.order_status === 'PAID' || data.order_status === 'completed') {
-                    if (isMounted) {
-                        setStatus("🎉 Payment Successful!");
-                        setIsSuccess(true);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.order_status === 'PAID' || data.order_status === 'completed') {
+                        setStatus("PAID");
+                    } else {
+                        setStatus(data.order_status || "PENDING");
                     }
                 } else {
-                    if (isMounted) setStatus("⌛ Payment processing... please wait.");
-                    // Retry after 3 seconds to allow webhook/processing time
-                    setTimeout(() => {
-                        if (isMounted) check();
-                    }, 3000);
+                    setStatus("Error verifying");
                 }
-            } catch (err) {
-                console.error(err);
-                if (isMounted) setStatus("⚠️ Error verifying payment. Please contact support.");
+            } catch (e) {
+                console.error(e);
+                setStatus("Network Error");
             }
-        }
-
-        check();
-
-        return () => {
-            isMounted = false;
         };
-    }, [user]);
+
+        // Initial check with a small delay to allow webhook processing
+        const timer = setTimeout(checkStatus, 1500);
+        return () => clearTimeout(timer);
+    }, []);
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-            <div className="max-w-md w-full bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl text-center border border-gray-100 dark:border-gray-700">
-                <div className="text-6xl mb-6 animate-bounce">
-                    {isSuccess ? '🎉' : status.includes('Error') || status.includes('⚠️') ? '⚠️' : '⏳'}
-                </div>
+        <div className="min-h-screen flex flex-col items-center pt-20 bg-gray-50 font-sans text-center">
+            <div className="border-2 border-green-500 p-8 inline-block rounded-xl bg-white shadow-lg max-w-md w-full mx-4">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">🎉 Payment Successful!</h2>
+                <p className="text-gray-600 mb-2">
+                    Order ID: <span className="font-mono font-medium select-all">{orderId || '...'}</span>
+                </p>
+                <p className="text-lg mb-6">
+                    Status: <strong className={`font-bold ${status === 'PAID' ? 'text-green-600' : 'text-yellow-600'}`}>{status}</strong>
+                </p>
                 
-                <h1 className="text-2xl font-extrabold text-gray-900 dark:text-gray-100 mb-4">
-                    {status}
-                </h1>
-                
-                {!isSuccess && !status.includes('Error') && !status.includes('⚠️') && (
-                     <p className="text-gray-500 dark:text-gray-400 mt-2">Please do not close this window while we confirm your transaction.</p>
-                )}
-
-                {isSuccess && (
-                    <div className="mt-8">
-                        <button 
-                            onClick={onComplete}
-                            className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
-                        >
-                            Continue to Dashboard
-                        </button>
-                    </div>
-                )}
+                <button 
+                    onClick={onComplete}
+                    className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-md"
+                >
+                    Continue to Dashboard
+                </button>
             </div>
         </div>
     );

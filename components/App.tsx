@@ -136,7 +136,7 @@ service cloud.firestore {
             fixTitle: "Troubleshooting Steps",
             fixSteps: (
                  <ol className="list-decimal list-inside space-y-2">
-                    <li>Verify the <strong>projectId</strong> in <code>../services/firebase.ts</code> matches your Firebase project.</li>
+                    <li>Verify the <strong>projectId</strong> in <code>services/firebase.ts</code> matches your Firebase project.</li>
                     <li>Ensure you have an active internet connection.</li>
                     <li>Check the <a href="https://status.firebase.google.com/" target="_blank" rel="noreferrer" className="text-indigo-600 underline">Firebase Status Dashboard</a> for outages.</li>
                 </ol>
@@ -662,7 +662,9 @@ const App: React.FC = () => {
                   }}
                />;
       case View.PAYMENT_SUCCESS:
-        return <PaymentSuccessPage user={user} onComplete={() => {
+        return <PaymentSuccessPage user={user} onComplete={async () => {
+            // FIX: Update to await refreshUser to ensure the state is updated before view change.
+            await refreshUser();
             window.history.replaceState({}, document.title, window.location.pathname);
             refreshAllData();
             setActiveView(View.DASHBOARD);
@@ -719,7 +721,7 @@ const App: React.FC = () => {
                     allUsers={allUsers} 
                     allTransactions={allTransactions} 
                     allPayouts={allPayouts} 
-                    allCollabs={allCollabs}
+                    allCollabs={allCollabs} 
                     allRefunds={allRefunds}
                     allDailyPayouts={allDailyPayouts}
                     platformSettings={platformSettings} 

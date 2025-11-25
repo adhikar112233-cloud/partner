@@ -303,8 +303,12 @@ app.get('/verify-order/:orderId', async (req, res) => {
 app.post('/webhook', async (req, res) => {
     try {
         const data = req.body;
+        // Cashfree expects 200 OK immediately
         res.status(200).send('OK');
 
+        console.log("Webhook Received:", JSON.stringify(data));
+
+        // 1. Payment Gateway Success
         if (data.type === "PAYMENT_SUCCESS_WEBHOOK") {
             const orderId = data.data?.order?.order_id;
             if (orderId) {
@@ -314,6 +318,46 @@ app.post('/webhook', async (req, res) => {
                 }
             }
         }
+        // 2. Payout Updates (Transfer Success/Failed/Reversed)
+        else if (["TRANSFER_SUCCESS", "TRANSFER_FAILED", "TRANSFER_REVERSED"].includes(data.type)) {
+             const transfer = data.data;
+             const transferId = transfer.transferId;
+             const referenceId = transfer.referenceId;
+             
+             let newStatus = 'pending';
+             if (data.type === "TRANSFER_SUCCESS") newStatus = 'completed';
+             else newStatus = 'failed'; // or rejected
+
+             console.log(`Processing Payout Webhook: ${transferId} -> ${newStatus}`);
+
+             const txRef = db.collection('transactions').doc(transferId);
+             const txDoc = await txRef.get();
+
+             if (txDoc.exists) {
+                 await txRef.update({ 
+                     status: newStatus, 
+                     'paymentGatewayDetails.referenceId': referenceId || '' 
+                 });
+
+                 const txData = txDoc.data();
+                 const payoutId = txData.relatedId; // This is the doc ID of the request
+
+                 // Try to find the request in payout_requests or daily_payout_requests
+                 const collections = ['payout_requests', 'daily_payout_requests'];
+                 for (const col of collections) {
+                     const pRef = db.collection(col).doc(payoutId);
+                     const pDoc = await pRef.get();
+                     if (pDoc.exists) {
+                         await pRef.update({ status: newStatus });
+                         console.log(`Updated ${col}/${payoutId} to ${newStatus}`);
+                         break;
+                     }
+                 }
+             } else {
+                 console.log(`Transaction not found for transferId: ${transferId}`);
+             }
+        }
+
     } catch (error) {
         console.error("Webhook Logic Error:", error);
         if (!res.headersSent) {
@@ -439,8 +483,9 @@ app.post('/initiate-payout', async (req, res) => {
 
         if (transferData.status === 'SUCCESS' || transferData.subCode === '200') {
              // 5. Update Firestore
+             // Note: We mark it pending/completed here, but webhook will confirm final success
              await docRef.update({
-                 status: 'completed', 
+                 status: 'processing', 
                  transactionReference: transferData.data?.referenceId || 'PENDING',
                  payoutTimestamp: admin.firestore.FieldValue.serverTimestamp()
              });
@@ -450,7 +495,7 @@ app.post('/initiate-payout', async (req, res) => {
                 userId: payoutData.userId,
                 amount: amount,
                 type: 'payout',
-                status: 'completed',
+                status: 'pending', // Will update to completed via webhook
                 description: `Payout for ${payoutData.collaborationTitle || 'Earnings'}`,
                 relatedId: payoutId,
                 collabId: payoutData.collabId || '',

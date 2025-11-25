@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
+import { BACKEND_URL } from '../services/firebase';
 
 interface SettingsPanelProps {
     onSettingsUpdate: () => void;
@@ -86,6 +87,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                     <textarea value={settings.welcomeMessage || ''} onChange={e => handleSettingChange('welcomeMessage', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" rows={3} />
                 </SettingRow>
                 
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Integration Helper</h4></div>
+                <SettingRow label="Webhook URL">
+                    <div className="flex items-center gap-2">
+                        <code className="flex-1 p-2 bg-gray-100 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-600 text-sm font-mono text-gray-800 dark:text-gray-300 break-all">
+                            {`${BACKEND_URL}/webhook`}
+                        </code>
+                        <button 
+                            onClick={() => { navigator.clipboard.writeText(`${BACKEND_URL}/webhook`); alert("URL Copied!"); }}
+                            className="px-3 py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 text-sm font-medium"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Use this URL for both Payment Gateway and Payouts (Version 1) webhooks.</p>
+                </SettingRow>
+
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Payment & Payout Keys (Cashfree)</h4></div>
                 <SettingRow label="Active Gateway">
                     <select value={settings.activePaymentGateway} onChange={e => handleSettingChange('activePaymentGateway', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white">

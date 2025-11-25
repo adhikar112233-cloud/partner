@@ -348,7 +348,8 @@ const createOrderHandler = async (req, res) => {
                     customer_name: userData.name ? userData.name.substring(0, 50).replace(/[^a-zA-Z0-9 ]/g, '') : "Customer",
                 },
                 order_meta: {
-                    return_url: `${origin}/payment-success?order_id=${orderId}&gateway=cashfree`,
+                    // Updated return_url to point to success.html as requested
+                    return_url: `${origin}/success.html?order_id={order_id}`,
                     notify_url: `${functionUrl}/verify-order/${orderId}`
                 }
             }),

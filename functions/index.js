@@ -27,8 +27,8 @@ const getExpiryDate = (planId) => {
     return new Date(now.setFullYear(now.getFullYear() + 1));
 };
 
-// 1. Create Payment
-app.post('/createPayment', async (req, res) => {
+// 1. Create Payment (Handled at root of function URL)
+app.post('/', async (req, res) => {
     try {
         const { amount, phone, customerId, collabType, relatedId, collabId, userId, description } = req.body;
         
@@ -239,4 +239,4 @@ app.get('/verify-order/:orderId', async (req, res) => {
     }
 });
 
-exports.createPayment = functions.https.onRequest(app);
+exports.createpayment = functions.https.onRequest(app);

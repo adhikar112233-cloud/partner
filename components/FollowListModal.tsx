@@ -8,7 +8,7 @@ interface FollowListModalProps {
     userIds: string[];
     currentUser: User;
     onClose: () => void;
-    onToggleFollow: (targetId: string) => void; // To update local state
+    onToggleFollow: (targetId: string) => void;
 }
 
 const FollowListModal: React.FC<FollowListModalProps> = ({ title, userIds, currentUser, onClose, onToggleFollow }) => {
@@ -36,21 +36,7 @@ const FollowListModal: React.FC<FollowListModalProps> = ({ title, userIds, curre
     }, [userIds]);
 
     const handleFollowClick = async (targetUser: User) => {
-        const isFollowing = currentUser.following?.includes(targetUser.id);
-        
-        // Optimistic UI update
-        onToggleFollow(targetUser.id); 
-
-        try {
-            if (isFollowing) {
-                await apiService.unfollowUser(currentUser.id, targetUser.id);
-            } else {
-                await apiService.followUser(currentUser.id, targetUser.id);
-            }
-        } catch (error) {
-            console.error("Failed to toggle follow:", error);
-            // Revert if failed (requires more complex state management, skipping for simplicity)
-        }
+        onToggleFollow(targetUser.id);
     };
 
     return (

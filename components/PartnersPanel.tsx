@@ -24,11 +24,16 @@ const PartnerModal: React.FC<{
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
+            if (file.size > 5 * 1024 * 1024) {
+                setError("File size is too large. Max 5MB.");
+                return;
+            }
             setLogoFile(file);
             if (logoPreview) {
                 URL.revokeObjectURL(logoPreview);
             }
             setLogoPreview(URL.createObjectURL(file));
+            setError(null);
         }
     };
 
@@ -104,7 +109,7 @@ const PartnerModal: React.FC<{
                                     onClick={() => fileInputRef.current?.click()} 
                                     className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
                                 >
-                                    {logoPreview ? 'Change Image' : 'Select Image'}
+                                    {logoPreview ? 'Change Image' : 'Select Image (Max 5MB)'}
                                 </button>
                                 <input 
                                     type="file" 

@@ -77,6 +77,12 @@ const getUserProfile = async (uid: string): Promise<Omit<User, 'id' | 'email'>> 
             referralCode: data.referralCode,
             referredBy: data.referredBy,
             coins: data.coins || 0,
+            followers: data.followers || [],
+            following: data.following || [],
+            savedBankDetails: data.savedBankDetails,
+            savedUpiId: data.savedUpiId,
+            isUpiVerified: data.isUpiVerified,
+            fcmToken: data.fcmToken,
         };
     }
     throw new Error('User profile not found.');
@@ -157,6 +163,8 @@ export const authService = {
             creatorVerificationDetails: {},
             msmeRegistrationNumber: '',
             coins: 0,
+            followers: [],
+            following: [],
         };
 
         if (role === 'staff') {

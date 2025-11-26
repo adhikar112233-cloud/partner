@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, SupportTicket, TicketReply, SupportTicketStatus, Attachment, PlatformSettings, LiveHelpSession } from '../types';
 import { apiService } from '../services/apiService';
@@ -37,6 +38,7 @@ const TicketConversation: React.FC<{ ticket: SupportTicket, user: User, onReply:
     const [isLoading, setIsLoading] = useState(true);
     const [newReply, setNewReply] = useState("");
     const [attachments, setAttachments] = useState<File[]>([]);
+    const [isSending, setIsSending] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -59,32 +61,50 @@ const TicketConversation: React.FC<{ ticket: SupportTicket, user: User, onReply:
     }, [replies]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]);
+        if (e.target.files) {
+            const files: File[] = Array.from(e.target.files);
+            const validFiles = files.filter(file => {
+                if (file.size > 5 * 1024 * 1024) {
+                    alert(`File ${file.name} is too large. Max 5MB.`);
+                    return false;
+                }
+                return true;
+            });
+            setAttachments(prev => [...prev, ...validFiles]);
+        }
     };
 
     const handleSendReply = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newReply.trim() && attachments.length === 0) return;
         
-        const uploadPromises = attachments.map(async file => {
-            const url = await apiService.uploadTicketAttachment(ticket.id, file);
-            return { url, type: getFileType(file), name: file.name };
-        });
-        const uploadedAttachments = await Promise.all(uploadPromises);
+        setIsSending(true);
+        try {
+            const uploadPromises = attachments.map(async file => {
+                const url = await apiService.uploadTicketAttachment(ticket.id, file);
+                return { url, type: getFileType(file), name: file.name };
+            });
+            const uploadedAttachments = await Promise.all(uploadPromises);
 
-        await apiService.addTicketReply({
-            ticketId: ticket.id,
-            senderId: user.id,
-            senderName: user.name,
-            senderAvatar: user.avatar || '',
-            senderRole: user.role,
-            text: newReply,
-            attachments: uploadedAttachments,
-        });
-        setNewReply('');
-        setAttachments([]);
-        fetchReplies();
-        onReply(); // To refresh the main list's updatedAt
+            await apiService.addTicketReply({
+                ticketId: ticket.id,
+                senderId: user.id,
+                senderName: user.name,
+                senderAvatar: user.avatar || '',
+                senderRole: user.role,
+                text: newReply,
+                attachments: uploadedAttachments,
+            });
+            setNewReply('');
+            setAttachments([]);
+            fetchReplies();
+            onReply(); // To refresh the main list's updatedAt
+        } catch (error: any) {
+            console.error("Failed to send reply:", error);
+            alert(error.message || "Failed to send reply. Please try again.");
+        } finally {
+            setIsSending(false);
+        }
     };
 
     return (
@@ -127,7 +147,9 @@ const TicketConversation: React.FC<{ ticket: SupportTicket, user: User, onReply:
                     <textarea value={newReply} onChange={e => setNewReply(e.target.value)} placeholder="Type your reply..." rows={3} className="w-full p-2 border rounded-md resize-none pr-24"/>
                     <div className="absolute right-2 top-2 flex flex-col gap-2">
                         <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-500 hover:bg-gray-200 rounded-full">📎</button>
-                        <button type="submit" className="p-2 text-indigo-500 hover:bg-indigo-100 rounded-full">➢</button>
+                        <button type="submit" disabled={isSending} className="p-2 text-indigo-500 hover:bg-indigo-100 rounded-full disabled:opacity-50">
+                            {isSending ? '...' : '➢'}
+                        </button>
                     </div>
                 </div>
             </form>
@@ -166,8 +188,6 @@ const UserSupportPage: React.FC<{ user: User, platformSettings: PlatformSettings
     }, [user.id]);
 
     const handleNewChat = async () => {
-        // FIX: The getOrCreateLiveHelpSession function requires a staffId.
-        // This logic finds an available staff member to assign the chat to before creating the session.
         const allUsers = await apiService.getAllUsers();
         const staffUser = allUsers.find(u => u.role === 'staff' && !u.isBlocked);
 

@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { User, KycDetails, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
 import CameraCapture from './CameraCapture';
-import { LogoIcon, ImageIcon, CheckBadgeIcon } from './Icons';
+import { LogoIcon, ImageIcon, CheckBadgeIcon, SparklesIcon } from './Icons';
 
 interface KycPageProps {
     user: User;
@@ -13,7 +13,7 @@ interface KycPageProps {
 }
 
 const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = false, platformSettings }) => {
-    const [mode, setMode] = useState<'options' | 'manual' | 'aadhaar_otp' | 'pan_verify' | 'dl_verify'>('options');
+    const [mode, setMode] = useState<'options' | 'instant_options' | 'manual' | 'aadhaar_otp' | 'pan_verify' | 'dl_verify'>('options');
     const [formData, setFormData] = useState<KycDetails>(user.kycDetails || {});
     
     // Manual Files
@@ -193,67 +193,74 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                 
                 <p className="text-center text-gray-500 dark:text-gray-400 mb-8">
                     {mode === 'options' 
-                        ? 'Select a verification method to proceed' 
-                        : 'Enter details accurately to avoid rejection'
+                        ? 'Select verification mode' 
+                        : mode === 'instant_options' 
+                            ? 'Choose a document for instant verification'
+                            : 'Enter details accurately to avoid rejection'
                     }
                 </p>
 
+                {/* Root Options */}
                 {mode === 'options' && (
                     <div className="space-y-6 animate-fade-in-down">
                         {platformSettings.isInstantKycEnabled && (
-                            <div className="space-y-3">
-                                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide dark:text-gray-500">Instant Verification (Recommended)</p>
-                                
-                                <button onClick={() => setMode('aadhaar_otp')} className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group dark:bg-indigo-900/20 dark:border-indigo-800 dark:hover:bg-indigo-900/40">
-                                    <div className="flex items-center space-x-4">
-                                        <div className="p-2 bg-indigo-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
-                                        <div className="text-left">
-                                            <p className="font-bold text-gray-800 dark:text-white">Aadhaar Card</p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">Verify via OTP</p>
-                                        </div>
-                                    </div>
-                                    <span className="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform dark:text-indigo-400">&rarr;</span>
-                                </button>
-
-                                <button onClick={() => setMode('pan_verify')} className="w-full flex items-center justify-between p-4 bg-teal-50 border border-teal-100 rounded-xl hover:bg-teal-100 transition-colors group dark:bg-teal-900/20 dark:border-teal-800 dark:hover:bg-teal-900/40">
-                                    <div className="flex items-center space-x-4">
-                                        <div className="p-2 bg-teal-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
-                                        <div className="text-left">
-                                            <p className="font-bold text-gray-800 dark:text-white">PAN Card</p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">Instant Name Match</p>
-                                        </div>
-                                    </div>
-                                    <span className="text-teal-600 font-bold group-hover:translate-x-1 transition-transform dark:text-teal-400">&rarr;</span>
-                                </button>
-
-                                <button onClick={() => setMode('dl_verify')} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group dark:bg-blue-900/20 dark:border-blue-800 dark:hover:bg-blue-900/40">
-                                    <div className="flex items-center space-x-4">
-                                        <div className="p-2 bg-blue-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
-                                        <div className="text-left">
-                                            <p className="font-bold text-gray-800 dark:text-white">Driving License</p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">Verify Credentials</p>
-                                        </div>
-                                    </div>
-                                    <span className="text-blue-600 font-bold group-hover:translate-x-1 transition-transform dark:text-blue-400">&rarr;</span>
-                                </button>
-                            </div>
-                        )}
-
-                        <div className="space-y-3">
-                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide dark:text-gray-500">Manual Verification</p>
-                            <button onClick={() => setMode('manual')} className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-600">
+                            <button onClick={() => setMode('instant_options')} className="w-full flex items-center justify-between p-6 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl hover:shadow-md transition-all group dark:from-indigo-900/20 dark:to-blue-900/20 dark:border-indigo-800">
                                 <div className="flex items-center space-x-4">
-                                    <div className="p-2 bg-gray-200 text-gray-600 rounded-lg dark:bg-gray-600 dark:text-gray-300">
-                                        <ImageIcon className="w-6 h-6" />
-                                    </div>
+                                    <div className="p-3 bg-indigo-600 text-white rounded-xl"><SparklesIcon className="w-8 h-8" /></div>
                                     <div className="text-left">
-                                        <p className="font-bold text-gray-800 dark:text-gray-100">Upload Documents</p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">If instant verification fails</p>
+                                        <p className="font-bold text-lg text-gray-800 dark:text-white">Instant Verification</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">Verify using Aadhaar, PAN, or Driving License instantly.</p>
                                     </div>
                                 </div>
-                                <span className="text-gray-400 font-bold">&rarr;</span>
+                                <span className="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform dark:text-indigo-400">&rarr;</span>
                             </button>
-                        </div>
+                        )}
+
+                        <button onClick={() => setMode('manual')} className="w-full flex items-center justify-between p-6 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all group dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700">
+                            <div className="flex items-center space-x-4">
+                                <div className="p-3 bg-gray-200 text-gray-600 rounded-xl dark:bg-gray-700 dark:text-gray-300">
+                                    <ImageIcon className="w-8 h-8" />
+                                </div>
+                                <div className="text-left">
+                                    <p className="font-bold text-lg text-gray-800 dark:text-gray-100">Manual Verification</p>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">Upload documents manually. Takes 24-48 hours.</p>
+                                </div>
+                            </div>
+                            <span className="text-gray-400 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                        </button>
+                    </div>
+                )}
+
+                {/* Instant Options Selection */}
+                {mode === 'instant_options' && (
+                    <div className="space-y-4 animate-fade-in-down">
+                        <button onClick={() => setMode('aadhaar_otp')} className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors dark:bg-indigo-900/20 dark:border-indigo-800 dark:hover:bg-indigo-900/40">
+                            <div className="flex items-center space-x-3">
+                                <CheckBadgeIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                                <span className="font-semibold text-gray-800 dark:text-white">Aadhaar Card (OTP)</span>
+                            </div>
+                            <span className="text-gray-400 text-sm">Fastest</span>
+                        </button>
+
+                        <button onClick={() => setMode('pan_verify')} className="w-full flex items-center justify-between p-4 bg-teal-50 border border-teal-100 rounded-xl hover:bg-teal-100 transition-colors dark:bg-teal-900/20 dark:border-teal-800 dark:hover:bg-teal-900/40">
+                            <div className="flex items-center space-x-3">
+                                <CheckBadgeIcon className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+                                <span className="font-semibold text-gray-800 dark:text-white">PAN Card</span>
+                            </div>
+                            <span className="text-gray-400 text-sm">Name Match</span>
+                        </button>
+
+                        <button onClick={() => setMode('dl_verify')} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors dark:bg-blue-900/20 dark:border-blue-800 dark:hover:bg-blue-900/40">
+                            <div className="flex items-center space-x-3">
+                                <CheckBadgeIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                                <span className="font-semibold text-gray-800 dark:text-white">Driving License</span>
+                            </div>
+                            <span className="text-gray-400 text-sm">ID Verification</span>
+                        </button>
+
+                        <button onClick={() => setMode('options')} className="w-full py-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 mt-4">
+                            &larr; Back to Methods
+                        </button>
                     </div>
                 )}
 
@@ -401,7 +408,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                     </div>
                 )}
 
-                {mode !== 'options' && (
+                {mode !== 'options' && mode !== 'instant_options' && (
                     <button 
                         onClick={() => { setMode('options'); setError(null); setSuccess(null); }} 
                         className="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 font-medium"

@@ -41,11 +41,16 @@ const PostBannerAdModal: React.FC<PostBannerAdModalProps> = ({ user, onClose, on
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
+            if (file.size > 5 * 1024 * 1024) {
+                setError("File size is too large. Max 5MB.");
+                return;
+            }
             setPhotoFile(file);
             if (photoPreview) {
                 URL.revokeObjectURL(photoPreview);
             }
             setPhotoPreview(URL.createObjectURL(file));
+            setError(null); // clear error on valid file
         }
     };
 
@@ -77,9 +82,9 @@ const PostBannerAdModal: React.FC<PostBannerAdModalProps> = ({ user, onClose, on
             });
             onAdPosted();
             onClose();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            setError("Failed to post ad. Please try again.");
+            setError(err.message || "Failed to post ad. Please try again.");
         } finally {
             setIsLoading(false);
         }
@@ -137,7 +142,7 @@ const PostBannerAdModal: React.FC<PostBannerAdModalProps> = ({ user, onClose, on
                                     </label>
                                     <p className="pl-1">or drag and drop</p>
                                 </div>
-                                <p className="text-xs text-gray-500 dark:text-gray-500">PNG or JPG up to 10MB</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-500">PNG or JPG up to 5MB</p>
                             </div>
                         </div>
                     </div>

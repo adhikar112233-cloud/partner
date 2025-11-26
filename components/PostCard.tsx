@@ -98,7 +98,7 @@ interface PostCardProps {
     onUpdate: (postId: string, data: Partial<Post>) => Promise<void> | void;
     onToggleLike: (postId: string, currentLikes: string[]) => void;
     onCommentChange: (postId: string, change: 'increment' | 'decrement') => void;
-    onToggleFollow?: (targetId: string) => void; // New prop
+    onToggleFollow?: (targetId: string) => void;
 }
 
 const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpdate, onToggleLike, onCommentChange, onToggleFollow }) => {
@@ -159,19 +159,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpda
         setShowOptions(false);
     }
 
-    const handleFollowClick = async (e: React.MouseEvent) => {
+    const handleFollowClick = (e: React.MouseEvent) => {
         e.preventDefault();
         if (onToggleFollow) {
             onToggleFollow(post.userId);
-            try {
-                if (isFollowing) {
-                    await apiService.unfollowUser(currentUser.id, post.userId);
-                } else {
-                    await apiService.followUser(currentUser.id, post.userId);
-                }
-            } catch (err) {
-                console.error("Follow toggle failed:", err);
-            }
         }
     };
 
@@ -253,7 +244,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpda
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {!isOwner && (
+                    {!isOwner && onToggleFollow && (
                         <button 
                             onClick={handleFollowClick}
                             className={`text-xs font-bold px-3 py-1.5 rounded-full transition-colors ${isFollowing ? 'text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-300' : 'text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm'}`}

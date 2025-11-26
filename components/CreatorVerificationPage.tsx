@@ -34,6 +34,13 @@ const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user,
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, key: string, setFile: React.Dispatch<React.SetStateAction<File | null>>) => {
     if (e.target.files?.[0]) {
         const file = e.target.files[0];
+        
+        // File size validation (5MB limit)
+        if (file.size > 5 * 1024 * 1024) {
+            alert("File size is too large. Please upload an image smaller than 5MB.");
+            return;
+        }
+
         setFile(file);
         setPreviews(prev => ({ ...prev, [key]: URL.createObjectURL(file) }));
     }
@@ -72,6 +79,7 @@ const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user,
         setTimeout(onVerificationSubmitted, 2000);
 
     } catch (err: any) {
+        console.error("Submit Error:", err);
         setError(err.message || "Failed to submit verification.");
     } finally {
         setIsLoading(false);
@@ -89,7 +97,7 @@ const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user,
           ) : (
               <label className="cursor-pointer flex flex-col items-center justify-center h-32">
                   <ImageIcon className="w-8 h-8 text-gray-400 mb-2" />
-                  <span className="text-xs text-indigo-600">Click to Upload</span>
+                  <span className="text-xs text-indigo-600">Click to Upload (Max 5MB)</span>
                   <input type="file" className="hidden" onChange={(e) => handleFileChange(e, fileKey, setFile)} accept="image/*,.pdf" />
               </label>
           )}

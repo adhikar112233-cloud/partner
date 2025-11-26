@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
-import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon } from './Icons';
+import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon } from './Icons';
 import { authService } from '../services/authService';
 import FollowListModal from './FollowListModal';
 
@@ -15,8 +15,9 @@ interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
   appMode?: 'dashboard' | 'community';
-  communityFeedFilter?: 'global' | 'my_posts';
-  setCommunityFeedFilter?: (filter: 'global' | 'my_posts') => void;
+  communityFeedFilter?: 'global' | 'my_posts' | 'following';
+  setCommunityFeedFilter?: (filter: 'global' | 'my_posts' | 'following') => void;
+  onToggleFollow?: (targetId: string) => void;
 }
 
 const MembershipStatusCard: React.FC<{ user: User; onClick: () => void }> = ({ user, onClick }) => {
@@ -49,17 +50,10 @@ const MembershipStatusCard: React.FC<{ user: User; onClick: () => void }> = ({ u
     );
   };
 
-const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isMobile = false, isOpen = false, onClose = () => {}, appMode = 'dashboard', communityFeedFilter, setCommunityFeedFilter }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isMobile = false, isOpen = false, onClose = () => {}, appMode = 'dashboard', communityFeedFilter, setCommunityFeedFilter, onToggleFollow }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [followModalType, setFollowModalType] = useState<'followers' | 'following' | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  // Local state to force re-render when following changes in modal (though App.tsx refreshes user usually, this is for immediate feedback)
-  const [localUser, setLocalUser] = useState<User>(user);
-
-  useEffect(() => {
-      setLocalUser(user);
-  }, [user]);
 
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -72,18 +66,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
           document.removeEventListener("mousedown", handleClickOutside);
       };
   }, []);
-
-  const handleToggleFollow = (targetId: string) => {
-      // Optimistic update for sidebar modal usage
-      const currentFollowing = localUser.following || [];
-      let newFollowing;
-      if (currentFollowing.includes(targetId)) {
-          newFollowing = currentFollowing.filter(id => id !== targetId);
-      } else {
-          newFollowing = [...currentFollowing, targetId];
-      }
-      setLocalUser({ ...localUser, following: newFollowing });
-  };
 
   const allNavItems = [
     // User's Profile (Handled separately now)
@@ -145,6 +127,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
       displayNavItems = [
           { view: View.PROFILE, label: 'My Account', icon: ProfileIcon },
           { view: View.COMMUNITY, label: 'Global Feed', icon: GlobeIcon, filter: 'global' },
+          { view: View.COMMUNITY, label: 'Following', icon: UserGroupIcon, filter: 'following' },
           { view: View.COMMUNITY, label: 'My Posts', icon: DocumentIcon, filter: 'my_posts' }
       ];
   } else {
@@ -156,7 +139,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
       });
   }
 
-  const handleItemClick = (view: View, filter?: 'global' | 'my_posts') => {
+  const handleItemClick = (view: View, filter?: 'global' | 'my_posts' | 'following') => {
     setActiveView(view);
     if (filter && setCommunityFeedFilter) {
         setCommunityFeedFilter(filter);
@@ -241,11 +224,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
             <div className="px-6 pb-2 mb-2 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between text-sm">
                     <button onClick={() => setFollowModalType('followers')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
-                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{localUser.followers?.length || 0}</span>
+                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{user.followers?.length || 0}</span>
                         <span className="text-gray-500 dark:text-gray-400 text-xs">Followers</span>
                     </button>
                     <button onClick={() => setFollowModalType('following')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
-                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{localUser.following?.length || 0}</span>
+                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{user.following?.length || 0}</span>
                         <span className="text-gray-500 dark:text-gray-400 text-xs">Following</span>
                     </button>
                 </div>
@@ -282,13 +265,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
         </aside>
       )}
 
-      {followModalType && (
+      {followModalType && onToggleFollow && (
           <FollowListModal 
               title={followModalType === 'followers' ? 'Followers' : 'Following'}
-              userIds={followModalType === 'followers' ? (localUser.followers || []) : (localUser.following || [])}
-              currentUser={localUser}
+              userIds={followModalType === 'followers' ? (user.followers || []) : (user.following || [])}
+              currentUser={user}
               onClose={() => setFollowModalType(null)}
-              onToggleFollow={handleToggleFollow}
+              onToggleFollow={onToggleFollow}
           />
       )}
     </>

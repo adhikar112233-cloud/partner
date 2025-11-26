@@ -3,12 +3,17 @@ import React from 'react';
 
 interface LogoIconProps {
   showTagline?: boolean;
+  iconOnly?: boolean;
   className?: string;
 }
 
-export const LogoIcon: React.FC<LogoIconProps> = ({ showTagline = false, className = "" }) => {
+export const LogoIcon: React.FC<LogoIconProps> = ({ showTagline = false, iconOnly = false, className = "" }) => {
     // Wider viewBox to prevent clipping of the full text
-    const svgViewBox = showTagline ? "0 0 260 65" : "0 0 260 55"; 
+    let svgViewBox = showTagline ? "0 0 260 65" : "0 0 260 55"; 
+    if (iconOnly) {
+        svgViewBox = "0 0 52 52";
+    }
+
     const defaultClass = showTagline ? "h-14 w-auto" : "h-10 w-auto";
     const combinedClass = className || defaultClass;
 
@@ -35,12 +40,15 @@ export const LogoIcon: React.FC<LogoIconProps> = ({ showTagline = false, classNa
             </g>
             <text x="26" y="38" fontSize="32" fontWeight="900" fontFamily="Arial, sans-serif" textAnchor="middle" fill="white" filter="url(#logoShadow)" style={{ userSelect: 'none' }}>B</text>
             
-            {/* BIGYAPON text */}
-            <text x="60" y="38" fontSize="30" fontWeight="900" fontFamily="Arial, sans-serif" fill="url(#text-gradient)" filter="url(#logoShadow)" letterSpacing="-0.5" style={{ userSelect: 'none' }}>BIGYAPON</text>
-            
-            {/* Tagline */}
-            {showTagline && (
-                <text x="60" y="56" fontSize="13" fontWeight="500" fontFamily="Arial, sans-serif" fill="#64748b" letterSpacing="0.5" style={{ userSelect: 'none' }}>Promote Smart. Grow Fast.</text>
+            {/* BIGYAPON text - Only render if not iconOnly to keep DOM light, though viewBox hides it anyway */}
+            {!iconOnly && (
+                <>
+                    <text x="60" y="38" fontSize="30" fontWeight="900" fontFamily="Arial, sans-serif" fill="url(#text-gradient)" filter="url(#logoShadow)" letterSpacing="-0.5" style={{ userSelect: 'none' }}>BIGYAPON</text>
+                    {/* Tagline */}
+                    {showTagline && (
+                        <text x="60" y="56" fontSize="13" fontWeight="500" fontFamily="Arial, sans-serif" fill="#64748b" letterSpacing="0.5" style={{ userSelect: 'none' }}>Promote Smart. Grow Fast.</text>
+                    )}
+                </>
             )}
         </svg>
     );

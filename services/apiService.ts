@@ -35,6 +35,53 @@ const DISPUTES_COLLECTION = 'disputes';
 const PARTNERS_COLLECTION = 'partners';
 const BANNERS_COLLECTION = 'platform_banners';
 
+// Helper function for robust file uploads with timeout and error handling
+const uploadFileToStorage = async (path: string, file: File): Promise<string> => {
+    if (!storage) {
+        throw new Error("Firebase Storage is not initialized. Please check your configuration in services/firebase.ts.");
+    }
+    
+    // Sanitize filename
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+    const finalPath = `${path}_${Date.now()}_${sanitizedName}`;
+    const storageRef = ref(storage, finalPath);
+
+    try {
+        // Create the upload task
+        const uploadTask = uploadBytes(storageRef, file);
+        
+        // Create a timeout promise that rejects after 15 seconds
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("Upload timed out (15s). Please check your internet connection.")), 15000);
+        });
+
+        // Race the upload against the timeout
+        const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+        
+        // Get URL
+        const url = await getDownloadURL(snapshot.ref);
+        return url;
+    } catch (error: any) {
+        console.error(`Upload failed for ${path}:`, error);
+        
+        let friendlyMessage = `Failed to upload image: ${error.message}`;
+        
+        if (error.code === 'storage/unauthorized') {
+             friendlyMessage = "Permission Denied: Upload rejected. Please go to Firebase Console > Storage > Rules and change 'allow read, write: if false;' to 'allow read, write: if true;' (or 'if request.auth != null;').";
+        } else if (error.code === 'storage/retry-limit-exceeded') {
+             friendlyMessage = "Upload failed. Network retry limit exceeded. Check your connection.";
+        } else if (error.code === 'storage/canceled') {
+             friendlyMessage = "Upload was canceled.";
+        } else if (error.code === 'storage/object-not-found') {
+             friendlyMessage = "Storage bucket not found. Ensure 'storageBucket' in services/firebase.ts matches your Firebase Console (likely 'bigyapon2-cfa39.firebasestorage.app').";
+        } else if (error.message && error.message.includes("timed out")) {
+             friendlyMessage = error.message;
+        }
+        
+        throw new Error(friendlyMessage);
+    }
+};
+
 export const apiService = {
     // --- Verification Services ---
     verifyAadhaarOtp: async (aadhaar: string) => {
@@ -131,9 +178,7 @@ export const apiService = {
     submitCreatorVerification: async (userId: string, details: CreatorVerificationDetails, files: { [key: string]: File | null }) => {
         const uploadPromises = Object.entries(files).map(async ([key, file]) => {
             if (file) {
-                const fileRef = ref(storage, `creator_verification/${userId}/${key}_${Date.now()}`);
-                await uploadBytes(fileRef, file);
-                const url = await getDownloadURL(fileRef);
+                const url = await uploadFileToStorage(`creator_verification/${userId}/${key}`, file);
                 return { key, url };
             }
             return null;
@@ -190,9 +235,24 @@ export const apiService = {
             isPayoutInstantVerificationEnabled: true,
             isInstantKycEnabled: true, // Default enabled
             isGoogleLoginEnabled: true,
-            payoutSettings: { requireSelfieForPayout: true, requireLiveVideoForDailyPayout: true }
+            payoutSettings: { requireSelfieForPayout: true, requireLiveVideoForDailyPayout: true },
+            agreements: {
+                brand: "Default Brand Agreement...",
+                influencer: "Default Influencer Agreement...",
+                livetv: "Default Live TV Agreement...",
+                banneragency: "Default Banner Agency Agreement..."
+            }
         };
-        return docSnap.exists() ? { ...defaults, ...docSnap.data() } : defaults as PlatformSettings;
+        
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            // Ensure agreements object exists even if merging old data
+            if (!data.agreements) {
+                data.agreements = defaults.agreements;
+            }
+            return { ...defaults, ...data } as PlatformSettings;
+        }
+        return defaults as PlatformSettings;
     },
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
@@ -238,12 +298,10 @@ export const apiService = {
         const currentUserRef = doc(db, USERS_COLLECTION, currentUserId);
         const targetUserRef = doc(db, USERS_COLLECTION, targetUserId);
 
-        // Add target to current user's "following" list
         await updateDoc(currentUserRef, {
             following: arrayUnion(targetUserId)
         });
 
-        // Add current user to target's "followers" list
         await updateDoc(targetUserRef, {
             followers: arrayUnion(currentUserId)
         });
@@ -253,12 +311,10 @@ export const apiService = {
         const currentUserRef = doc(db, USERS_COLLECTION, currentUserId);
         const targetUserRef = doc(db, USERS_COLLECTION, targetUserId);
 
-        // Remove target from current user's "following" list
         await updateDoc(currentUserRef, {
             following: arrayRemove(targetUserId)
         });
 
-        // Remove current user from target's "followers" list
         await updateDoc(targetUserRef, {
             followers: arrayRemove(currentUserId)
         });
@@ -266,10 +322,6 @@ export const apiService = {
 
     getUsersByIds: async (userIds: string[]) => {
         if (!userIds || userIds.length === 0) return [];
-        // Firestore 'in' queries are limited to 10 items. For larger lists, we need to batch or just fetch all if manageable, 
-        // or fetch individually. For this implementation, we will fetch individually in parallel as it's simpler for client-side logic
-        // without complex batching for now, though production should batch.
-        
         const promises = userIds.map(id => getDoc(doc(db, USERS_COLLECTION, id)));
         const snapshots = await Promise.all(promises);
         return snapshots
@@ -314,9 +366,7 @@ export const apiService = {
         await deleteDoc(doc(db, BANNERS_COLLECTION, id));
     },
     uploadPlatformBannerImage: async (file: File) => {
-        const storageRef = ref(storage, `banners/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`banners`, file);
     },
 
     // --- Collaboration & Requests ---
@@ -430,9 +480,7 @@ export const apiService = {
         return snap.docs.map(d => ({ id: d.id, ...d.data() })) as BannerAd[];
     },
     uploadBannerAdPhoto: async (userId: string, file: File) => {
-        const storageRef = ref(storage, `banner_photos/${userId}/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`banner_photos/${userId}`, file);
     },
     sendBannerAdBookingRequest: async (data: any) => {
         await addDoc(collection(db, BANNER_BOOKINGS_COLLECTION), { ...data, status: 'pending_approval', timestamp: serverTimestamp() });
@@ -537,14 +585,11 @@ export const apiService = {
         if (!response.ok) throw new Error("Payout API failed");
     },
     uploadPayoutSelfie: async (userId: string, file: File) => {
-        const storageRef = ref(storage, `payout_selfies/${userId}/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`payout_selfies/${userId}`, file);
     },
     uploadDailyPayoutVideo: async (userId: string, blob: Blob) => {
-        const storageRef = ref(storage, `daily_payout_videos/${userId}/${Date.now()}.webm`);
-        await uploadBytes(storageRef, blob);
-        return await getDownloadURL(storageRef);
+        const file = new File([blob], "proof.webm", { type: 'video/webm' });
+        return await uploadFileToStorage(`daily_payout_videos/${userId}`, file);
     },
 
     // --- Support ---
@@ -575,9 +620,7 @@ export const apiService = {
         await updateDoc(doc(db, TICKETS_COLLECTION, id), { status });
     },
     uploadTicketAttachment: async (ticketId: string, file: File) => {
-        const storageRef = ref(storage, `tickets/${ticketId}/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`tickets/${ticketId}`, file);
     },
 
     // --- Live Help ---
@@ -656,9 +699,7 @@ export const apiService = {
         await deleteDoc(doc(db, POSTS_COLLECTION, id));
     },
     uploadPostImage: async (postId: string, file: File) => {
-        const storageRef = ref(storage, `posts/${postId}/${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`posts/${postId}`, file);
     },
     toggleLikePost: async (postId: string, userId: string) => {
         const postRef = doc(db, POSTS_COLLECTION, postId);
@@ -714,9 +755,7 @@ export const apiService = {
         await Promise.all([updateConvo(senderId, recipientId), updateConvo(recipientId, senderId)]);
     },
     uploadMessageAttachment: async (messageId: string, file: File) => {
-        const storageRef = ref(storage, `chat_attachments/${messageId}/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`chat_attachments/${messageId}`, file);
     },
     getConversations: async (userId: string) => {
         const q = query(collection(db, `users/${userId}/conversations`), orderBy('updatedAt', 'desc'));
@@ -740,9 +779,7 @@ export const apiService = {
 
     // --- Other ---
     uploadProfilePicture: async (userId: string, file: File) => {
-        const storageRef = ref(storage, `avatars/${userId}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`avatars/${userId}`, file);
     },
     createDispute: async (data: any) => {
         await addDoc(collection(db, DISPUTES_COLLECTION), { ...data, status: 'open', timestamp: serverTimestamp() });
@@ -774,9 +811,7 @@ export const apiService = {
         await deleteDoc(doc(db, PARTNERS_COLLECTION, id));
     },
     uploadPartnerLogo: async (file: File) => {
-        const storageRef = ref(storage, `partners/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+        return await uploadFileToStorage(`partners`, file);
     },
     sendBulkEmail: async (role: string, subject: string, body: string) => {
         // Backend function trigger
@@ -798,15 +833,11 @@ export const apiService = {
         let panCardUrl = details.panCardUrl;
 
         if(file1) {
-            const ref1 = ref(storage, `kyc/${userId}/id_proof`);
-            await uploadBytes(ref1, file1);
-            idProofUrl = await getDownloadURL(ref1);
+            idProofUrl = await uploadFileToStorage(`kyc/${userId}/id_proof`, file1);
         }
         
         if (panFile) {
-            const refPan = ref(storage, `kyc/${userId}/pan_card`);
-            await uploadBytes(refPan, panFile);
-            panCardUrl = await getDownloadURL(refPan);
+            panCardUrl = await uploadFileToStorage(`kyc/${userId}/pan_card`, panFile);
         }
 
         await updateDoc(doc(db, USERS_COLLECTION, userId), { 

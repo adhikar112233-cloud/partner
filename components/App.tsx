@@ -100,6 +100,15 @@ service cloud.firestore {
                         <p className="text-sm bg-yellow-50 p-3 rounded border border-yellow-200 text-yellow-800">
                             <strong>Note:</strong> These rules allow <strong>public access</strong>. This is fine for development but should be restricted for production.
                         </p>
+                        
+                        <h4 className="font-bold mt-4">Check Firebase Storage Rules Too:</h4>
+                        <p>If image uploads are failing, ensure you have enabled Storage and set its rules:</p>
+                        <ol className="list-decimal list-inside space-y-2 mt-1">
+                            <li>Go to the <strong>Storage</strong> tab in Firebase Console.</li>
+                            <li>Click <strong>Get Started</strong> if you haven't already.</li>
+                            <li>Set rules to: <code>allow read, write: if true;</code> (for development).</li>
+                        </ol>
+
                         <p className="mt-2">Click <strong>Publish</strong>, wait 30 seconds, and then reload this page.</p>
                     </>
                 )
@@ -274,7 +283,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState<View>(View.DASHBOARD);
   const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
-  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts'>('global'); // New State
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global'); // Updated State
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -369,6 +378,37 @@ const App: React.FC = () => {
         }
     }
 }, []);
+
+  const handleToggleFollow = useCallback(async (targetUserId: string) => {
+      if (!user) return;
+      
+      const isFollowing = user.following?.includes(targetUserId) || false;
+      const currentFollowing = user.following || [];
+      
+      let newFollowing: string[];
+      if (isFollowing) {
+          newFollowing = currentFollowing.filter(id => id !== targetUserId);
+      } else {
+          newFollowing = [...currentFollowing, targetUserId];
+      }
+      
+      // Optimistic Update
+      const updatedUser = { ...user, following: newFollowing };
+      setUser(updatedUser);
+
+      try {
+          if (isFollowing) {
+              await apiService.unfollowUser(user.id, targetUserId);
+          } else {
+              await apiService.followUser(user.id, targetUserId);
+          }
+      } catch (error) {
+          console.error("Follow action failed:", error);
+          // Revert
+          setUser(user);
+          alert("Failed to update follow status.");
+      }
+  }, [user]);
 
   const refreshAllData = useCallback(async () => {
       if (user && platformSettings) {
@@ -760,7 +800,7 @@ const App: React.FC = () => {
         if (!platformSettings.isCommunityFeedEnabled) {
             return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Community Feed Disabled</h2><p className="dark:text-gray-300">This feature is currently turned off by the administrator.</p></div>;
         }
-        return <CommunityPage user={user} feedType={communityFeedFilter} />;
+        return <CommunityPage user={user} feedType={communityFeedFilter} onToggleFollow={handleToggleFollow} />;
       case View.MESSAGES:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Messages</h2><p className="dark:text-gray-300">Select a conversation from the header to start chatting.</p></div>;
       case View.COLLAB_REQUESTS:
@@ -804,6 +844,7 @@ const App: React.FC = () => {
         appMode={appMode}
         communityFeedFilter={communityFeedFilter}
         setCommunityFeedFilter={setCommunityFeedFilter}
+        onToggleFollow={handleToggleFollow}
       />
       <Sidebar 
         isMobile
@@ -817,6 +858,7 @@ const App: React.FC = () => {
         appMode={appMode}
         communityFeedFilter={communityFeedFilter}
         setCommunityFeedFilter={setCommunityFeedFilter}
+        onToggleFollow={handleToggleFollow}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <NotificationManager user={user} />

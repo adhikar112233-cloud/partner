@@ -218,6 +218,14 @@ export interface PlatformSettings {
         creatorMembership: DiscountSetting;
         brandCampaignBoost: DiscountSetting;
     };
+
+    // Agreements
+    agreements: {
+        brand: string;
+        influencer: string;
+        livetv: string;
+        banneragency: string;
+    };
 }
 
 export enum View {

@@ -716,8 +716,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                         {authMode === 'login' && loginMethod === 'email' && (
                             <div className="space-y-4 animate-fade-in-down">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
-                                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" required className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email or Mobile Number</label>
+                                    <input 
+                                        type="text" 
+                                        value={email} 
+                                        onChange={e => setEmail(e.target.value)} 
+                                        placeholder="Enter email or mobile number" 
+                                        required 
+                                        className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" 
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
@@ -858,31 +865,41 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                             </div>
                         )}
 
-                        {authMode === 'login' && (
-                            <div className="text-center text-sm text-gray-600 mt-4 dark:text-gray-400">
-                                <button type="button" onClick={() => { setLoginMethod(loginMethod === 'email' ? 'otp' : 'email'); resetFormFields(); }} className="font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
-                                    {loginMethod === 'email' ? 'Login with Mobile OTP' : 'Login with Email'}
-                                </button>
-                            </div>
-                        )}
-
                         {renderError()}
                         
                         {/* Action Button */}
                         {authMode === 'login' ? (
                             loginMethod === 'otp' && !isOtpSent ? (
-                                <button
-                                    type="button"
-                                    onClick={handleSendLoginOtp}
-                                    disabled={isLoading}
-                                    className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isLoading ? 'Sending OTP...' : 'Send OTP'}
-                                </button>
-                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={handleSendLoginOtp}
+                                        disabled={isLoading}
+                                        className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isLoading ? 'Sending OTP...' : 'Send OTP'}
+                                    </button>
+                                    <div className="text-center text-sm text-gray-600 mt-4 dark:text-gray-400">
+                                        <button type="button" onClick={() => { setLoginMethod('email'); resetFormFields(); }} className="font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
+                                            Login with Password
+                                        </button>
+                                    </div>
+                                </>
+                            ) : loginMethod === 'otp' && isOtpSent ? (
                                 <button type="submit" disabled={isLoading} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
                                     {isLoading ? 'Processing...' : 'Login'}
                                 </button>
+                            ) : (
+                                <>
+                                    <button type="submit" disabled={isLoading} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        {isLoading ? 'Processing...' : 'Login'}
+                                    </button>
+                                    <div className="text-center text-sm text-gray-600 mt-4 dark:text-gray-400">
+                                        <button type="button" onClick={() => { setLoginMethod('otp'); resetFormFields(); }} className="font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
+                                            Login via Mobile OTP
+                                        </button>
+                                    </div>
+                                </>
                             )
                         ) : (
                             // Signup Buttons

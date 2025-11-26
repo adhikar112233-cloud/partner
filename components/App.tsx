@@ -670,6 +670,7 @@ const App: React.FC = () => {
                       setRefundingCollab(null);
                       refreshAllData();
                   }}
+                  platformSettings={platformSettings}
                />;
       case View.PAYMENT_SUCCESS:
         return <PaymentSuccessPage user={user} onComplete={async () => {

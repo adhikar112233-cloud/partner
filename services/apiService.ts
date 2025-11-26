@@ -1,12 +1,4 @@
 
-
-
-
-
-
-
-
-
 import { db, storage, auth, BACKEND_URL } from './firebase';
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, 
@@ -195,6 +187,8 @@ export const apiService = {
             boostPrices: { profile: 500, campaign: 1000, banner: 800 },
             membershipPrices: { pro_10: 2000, pro_20: 3500, pro_unlimited: 5000, basic: 500, pro: 1500, premium: 3000 },
             discountSettings: { creatorProfileBoost: { isEnabled: false, percentage: 0 }, brandMembership: { isEnabled: false, percentage: 0 }, creatorMembership: { isEnabled: false, percentage: 0 }, brandCampaignBoost: { isEnabled: false, percentage: 0 } },
+            isPayoutInstantVerificationEnabled: true,
+            isInstantKycEnabled: true, // Default enabled
             payoutSettings: { requireSelfieForPayout: true, requireLiveVideoForDailyPayout: true }
         };
         return docSnap.exists() ? { ...defaults, ...docSnap.data() } : defaults as PlatformSettings;

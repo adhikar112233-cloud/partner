@@ -149,11 +149,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 </SettingRow>
 
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Verification & KYC</h4></div>
+                <SettingRow label="Enable Instant KYC (Identity)">
+                    <input type="checkbox" checked={settings.isInstantKycEnabled} onChange={e => handleSettingChange('isInstantKycEnabled', e.target.checked)} />
+                </SettingRow>
                 <SettingRow label="Require ID Proof for KYC">
                     <input type="checkbox" checked={settings.isKycIdProofRequired} onChange={e => handleSettingChange('isKycIdProofRequired', e.target.checked)} />
                 </SettingRow>
                 <SettingRow label="Require Live Selfie for KYC">
                     <input type="checkbox" checked={settings.isKycSelfieRequired} onChange={e => handleSettingChange('isKycSelfieRequired', e.target.checked)} />
+                </SettingRow>
+                <SettingRow label="Enable Instant Bank/UPI Verification for Payouts">
+                    <input type="checkbox" checked={settings.isPayoutInstantVerificationEnabled} onChange={e => handleSettingChange('isPayoutInstantVerificationEnabled', e.target.checked)} />
                 </SettingRow>
                 <SettingRow label="Require Selfie for Payouts">
                     <input type="checkbox" checked={settings.payoutSettings.requireSelfieForPayout} onChange={e => handleNestedChange('payoutSettings', 'requireSelfieForPayout', e.target.checked)} />

@@ -121,7 +121,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         }
     };
 
-    // --- INSTANT: Driving License ---
+    // --- INSTANT: DL ---
     const verifyDl = async () => {
         if(!dlNumber || !dob) { setError("Please enter DL Number and Date of Birth."); return; }
         setIsLoading(true);
@@ -177,42 +177,44 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
 
                 {mode === 'options' && (
                     <div className="space-y-6">
-                        <div className="space-y-3">
-                            <p className="text-sm font-bold text-gray-400 uppercase tracking-wide">Instant Verification (Fastest)</p>
-                            
-                            <button onClick={() => setMode('aadhaar_otp')} className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group">
-                                <div className="flex items-center space-x-4">
-                                    <div className="p-2 bg-indigo-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
-                                    <div className="text-left">
-                                        <p className="font-bold text-gray-800">Aadhaar Card</p>
-                                        <p className="text-xs text-gray-500">Verify via OTP</p>
+                        {platformSettings.isInstantKycEnabled && (
+                            <div className="space-y-3">
+                                <p className="text-sm font-bold text-gray-400 uppercase tracking-wide">Instant Verification (Fastest)</p>
+                                
+                                <button onClick={() => setMode('aadhaar_otp')} className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group">
+                                    <div className="flex items-center space-x-4">
+                                        <div className="p-2 bg-indigo-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
+                                        <div className="text-left">
+                                            <p className="font-bold text-gray-800">Aadhaar Card</p>
+                                            <p className="text-xs text-gray-500">Verify via OTP</p>
+                                        </div>
                                     </div>
-                                </div>
-                                <span className="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
-                            </button>
+                                    <span className="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                                </button>
 
-                            <button onClick={() => setMode('pan_verify')} className="w-full flex items-center justify-between p-4 bg-teal-50 border border-teal-100 rounded-xl hover:bg-teal-100 transition-colors group">
-                                <div className="flex items-center space-x-4">
-                                    <div className="p-2 bg-teal-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
-                                    <div className="text-left">
-                                        <p className="font-bold text-gray-800">PAN Card</p>
-                                        <p className="text-xs text-gray-500">Verify Instantly</p>
+                                <button onClick={() => setMode('pan_verify')} className="w-full flex items-center justify-between p-4 bg-teal-50 border border-teal-100 rounded-xl hover:bg-teal-100 transition-colors group">
+                                    <div className="flex items-center space-x-4">
+                                        <div className="p-2 bg-teal-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
+                                        <div className="text-left">
+                                            <p className="font-bold text-gray-800">PAN Card</p>
+                                            <p className="text-xs text-gray-500">Verify Instantly</p>
+                                        </div>
                                     </div>
-                                </div>
-                                <span className="text-teal-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
-                            </button>
+                                    <span className="text-teal-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                                </button>
 
-                            <button onClick={() => setMode('dl_verify')} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group">
-                                <div className="flex items-center space-x-4">
-                                    <div className="p-2 bg-blue-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
-                                    <div className="text-left">
-                                        <p className="font-bold text-gray-800">Driving License</p>
-                                        <p className="text-xs text-gray-500">Verify Instantly</p>
+                                <button onClick={() => setMode('dl_verify')} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group">
+                                    <div className="flex items-center space-x-4">
+                                        <div className="p-2 bg-blue-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
+                                        <div className="text-left">
+                                            <p className="font-bold text-gray-800">Driving License</p>
+                                            <p className="text-xs text-gray-500">Verify Instantly</p>
+                                        </div>
                                     </div>
-                                </div>
-                                <span className="text-blue-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
-                            </button>
-                        </div>
+                                    <span className="text-blue-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                                </button>
+                            </div>
+                        )}
 
                         <div className="space-y-3">
                             <p className="text-sm font-bold text-gray-400 uppercase tracking-wide">Manual Verification (Takes 24-48h)</p>

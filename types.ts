@@ -45,6 +45,14 @@ export interface KycDetails {
     verifiedBy?: string;
 }
 
+export interface BankDetails {
+    accountHolderName: string;
+    accountNumber: string;
+    ifscCode: string;
+    bankName: string;
+    isVerified: boolean;
+}
+
 export type CreatorVerificationStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
 
 export interface CreatorVerificationDetails {
@@ -60,6 +68,9 @@ export interface CreatorVerificationDetails {
     registrationDocUrl?: string;
     officePhotoUrl?: string;
     businessPanUrl?: string;
+    gstRegisteredName?: string;
+    isGstVerified?: boolean;
+    isBusinessPanVerified?: boolean;
     
     // Live TV Specific
     channelStampUrl?: string;
@@ -87,6 +98,11 @@ export interface User {
     referredBy?: string;
     coins?: number;
     fcmToken?: string | null;
+    
+    // Saved Payment Details
+    savedBankDetails?: BankDetails;
+    savedUpiId?: string;
+    isUpiVerified?: boolean;
     
     // New Creator Verification
     creatorVerificationStatus?: CreatorVerificationStatus;
@@ -133,8 +149,12 @@ export interface PlatformSettings {
     isLiveHelpEnabled: boolean;
     isProfileBoostingEnabled: boolean;
     isCampaignBoostingEnabled: boolean;
+    
+    // KYC Settings
     isKycIdProofRequired: boolean;
     isKycSelfieRequired: boolean;
+    isInstantKycEnabled: boolean; // Controls Aadhaar/PAN/DL API availability
+    
     isForgotPasswordOtpEnabled: boolean;
     isOtpLoginEnabled: boolean;
     
@@ -180,6 +200,7 @@ export interface PlatformSettings {
     gstRate: number;
     
     // Payouts
+    isPayoutInstantVerificationEnabled: boolean; // Controls Bank/UPI API availability
     payoutSettings: {
         requireSelfieForPayout: boolean;
         requireLiveVideoForDailyPayout: boolean;

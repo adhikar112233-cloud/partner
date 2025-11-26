@@ -22,6 +22,10 @@ export type KycStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
 export type CreatorVerificationStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
 
 export interface KycDetails {
+    dob?: string;
+    gender?: string;
+    idType?: string;
+    idNumber?: string;
     address?: string;
     villageTown?: string;
     roadNameArea?: string;

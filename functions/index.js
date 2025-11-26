@@ -514,4 +514,43 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// --- NEW ENDPOINT: Mock KYC Verification (For Testing) ---
+app.post('/mock-kyc-verify', async (req, res) => {
+    try {
+        const { userId, status, details } = req.body;
+        if (!userId) {
+            return res.status(400).json({ message: "userId is required" });
+        }
+
+        const newStatus = status || 'approved';
+        
+        // Mock Data Generation
+        const mockKycData = details || {
+            verifiedBy: 'Mock DigiLocker',
+            verificationDate: new Date().toISOString(),
+            idType: 'Aadhaar',
+            idNumber: 'XXXX-XXXX-' + Math.floor(1000 + Math.random() * 9000),
+            name: 'Verified User',
+            dob: '01-01-1990',
+            gender: 'Male',
+            address: '123 Mock Street, Digital City, Internet',
+            pincode: '110001',
+            state: 'Delhi',
+            country: 'India'
+        };
+
+        await db.collection('users').doc(userId).update({
+            kycStatus: newStatus,
+            kycDetails: mockKycData
+        });
+
+        console.log(`Mock KYC Verification successful for user ${userId} with status ${newStatus}`);
+        res.json({ success: true, message: "Mock KYC Verification Processed", status: newStatus, data: mockKycData });
+
+    } catch (error) {
+        console.error("Mock KYC Verification Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
+
 exports.createpayment = functions.https.onRequest(app);

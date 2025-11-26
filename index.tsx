@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import App from './components/App';
 import SuccessPage from './components/SuccessPage';
 import PaymentPage from './components/PaymentPage';
+import MockDigiLockerPage from './components/MockDigiLockerPage';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -14,7 +15,8 @@ if (!rootElement) {
 const routes = [
   { path: "/", component: App },
   { path: "/success", component: SuccessPage },
-  { path: "/payment", component: PaymentPage }
+  { path: "/payment", component: PaymentPage },
+  { path: "/mock-digilocker", component: MockDigiLockerPage }
 ];
 
 const root = createRoot(rootElement);

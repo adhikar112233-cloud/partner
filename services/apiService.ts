@@ -492,22 +492,21 @@ export const apiService = {
 
     // --- KYC ---
     submitKyc: async (userId: string, data: any, idFile: File | null, selfieFile: File | null) => {
-        let idProofUrl = '';
-        let selfieUrl = '';
+        const kycData = { ...data };
 
         if (idFile) {
             const ref1 = ref(storage, `kyc/${userId}/id_proof`);
             await uploadBytes(ref1, idFile);
-            idProofUrl = await getDownloadURL(ref1);
+            kycData.idProofUrl = await getDownloadURL(ref1);
         }
         if (selfieFile) {
             const ref2 = ref(storage, `kyc/${userId}/selfie`);
             await uploadBytes(ref2, selfieFile);
-            selfieUrl = await getDownloadURL(ref2);
+            kycData.selfieUrl = await getDownloadURL(ref2);
         }
 
         await updateDoc(doc(db, 'users', userId), {
-            kycDetails: { ...data, idProofUrl, selfieUrl },
+            kycDetails: kycData,
             kycStatus: 'pending'
         });
     },

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
-import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus, UserRole } from '../types';
+import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus } from '../types';
 import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
@@ -33,7 +33,7 @@ import SupportAdminPage from './SupportAdminPage';
 import MembershipPage from './MembershipPage';
 import MyCollaborationsPage from './MyCollaborationsPage';
 import { MyApplicationsPage } from './MyApplicationsPage';
-import { MyAdBookingsPage } from './MyAdBookingsPage';
+import MyAdBookingsPage from './MyAdBookingsPage';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import CommunityPage from './CommunityPage';
 import SocialMediaFab from './SocialMediaFab';
@@ -49,6 +49,7 @@ import CreatorVerificationPage from './CreatorVerificationPage';
 import ActivityFeed from './ActivityFeed';
 import OurPartnersPage from './OurPartnersPage';
 import PaymentSuccessPage from './PaymentSuccessPage';
+import TopInfluencersList from './TopInfluencersList';
 
 const FirebaseConfigError: React.FC = () => (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
@@ -100,15 +101,6 @@ service cloud.firestore {
                         <p className="text-sm bg-yellow-50 p-3 rounded border border-yellow-200 text-yellow-800">
                             <strong>Note:</strong> These rules allow <strong>public access</strong>. This is fine for development but should be restricted for production.
                         </p>
-                        
-                        <h4 className="font-bold mt-4">Check Firebase Storage Rules Too:</h4>
-                        <p>If image uploads are failing, ensure you have enabled Storage and set its rules:</p>
-                        <ol className="list-decimal list-inside space-y-2 mt-1">
-                            <li>Go to the <strong>Storage</strong> tab in Firebase Console.</li>
-                            <li>Click <strong>Get Started</strong> if you haven't already.</li>
-                            <li>Set rules to: <code>allow read, write: if true;</code> (for development).</li>
-                        </ol>
-
                         <p className="mt-2">Click <strong>Publish</strong>, wait 30 seconds, and then reload this page.</p>
                     </>
                 )
@@ -235,31 +227,21 @@ const MembershipInactiveBanner: React.FC<{ onUpgrade: () => void }> = ({ onUpgra
 
 const CreatorVerificationBanner: React.FC<{
     status: CreatorVerificationStatus;
-    role: UserRole;
     onVerify: () => void;
     reason?: string;
-}> = ({ status, role, onVerify, reason }) => {
+}> = ({ status, onVerify, reason }) => {
     const isRejected = status === 'rejected';
     const bgColor = isRejected ? 'bg-red-600' : 'bg-yellow-500';
     const textColor = 'text-white';
     const buttonBg = 'bg-white';
     const buttonTextColor = isRejected ? 'text-red-600' : 'text-yellow-600';
 
-    let message = "You are not verified. Please verify for improved brand/customer trust.";
-    if (role === 'banneragency') message = "You are not verified (Your Business). Please verify for improved brand/customer trust.";
-    if (role === 'livetv') message = "You are not verified (Your Channel). Please verify for improved brand/customer trust.";
-    if (role === 'influencer') message = "You are not verified (Creator). Please verify for improved brand/customer trust.";
-
-    if (isRejected) {
-        message = `Verification Rejected. Reason: ${reason || 'Please review and resubmit your details.'}`;
-    }
-
     return (
         <div className={`${bgColor} ${textColor} text-sm font-medium p-3`}>
             <div className="container mx-auto flex justify-between items-center gap-4">
                 <div>
-                    <p className="font-bold">{isRejected ? 'Verification Rejected' : 'Verification Required'}</p>
-                    <p>{message}</p>
+                    <p className="font-bold">{isRejected ? 'Verification Rejected' : 'Creator Verification Required'}</p>
+                    <p>{isRejected ? `Reason: ${reason || 'Please review and resubmit your details.'}` : "You're unverified. Brands have low trust in unverified creators. Please verify your identity."}</p>
                 </div>
                 <button
                     onClick={onVerify}
@@ -282,8 +264,6 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState<View>(View.DASHBOARD);
-  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
-  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global'); // Updated State
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -301,7 +281,7 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [filteredInfluencers, setFilteredInfluencers] = useState<Influencer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isAiSearching, setIsAiSearching] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [platformBanners, setPlatformBanners] = useState<PlatformBanner[]>([]);
   
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
@@ -322,6 +302,8 @@ const App: React.FC = () => {
   const [liveHelpSessionId, setLiveHelpSessionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'following'>('global');
+  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -351,12 +333,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     refreshPlatformSettings();
-    if (user) {
-      apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
-          console.error("Failed to fetch platform banners:", err);
-      });
-    }
-  }, [refreshPlatformSettings, user]);
+    apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
+        console.error("Failed to fetch platform banners:", err);
+    });
+  }, [refreshPlatformSettings]);
 
  const refreshUser = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -378,37 +358,6 @@ const App: React.FC = () => {
         }
     }
 }, []);
-
-  const handleToggleFollow = useCallback(async (targetUserId: string) => {
-      if (!user) return;
-      
-      const isFollowing = user.following?.includes(targetUserId) || false;
-      const currentFollowing = user.following || [];
-      
-      let newFollowing: string[];
-      if (isFollowing) {
-          newFollowing = currentFollowing.filter(id => id !== targetUserId);
-      } else {
-          newFollowing = [...currentFollowing, targetUserId];
-      }
-      
-      // Optimistic Update
-      const updatedUser = { ...user, following: newFollowing };
-      setUser(updatedUser);
-
-      try {
-          if (isFollowing) {
-              await apiService.unfollowUser(user.id, targetUserId);
-          } else {
-              await apiService.followUser(user.id, targetUserId);
-          }
-      } catch (error) {
-          console.error("Follow action failed:", error);
-          // Revert
-          setUser(user);
-          alert("Failed to update follow status.");
-      }
-  }, [user]);
 
   const refreshAllData = useCallback(async () => {
       if (user && platformSettings) {
@@ -486,23 +435,8 @@ const App: React.FC = () => {
                 sessionStorage.setItem('hasSeenWelcome', 'true');
             }
         }
-        switch (firebaseUser.role) {
-            case 'staff': 
-                setAppMode('dashboard');
-                setActiveView(View.ADMIN); 
-                break;
-            case 'brand': 
-                setAppMode('dashboard');
-                setActiveView(View.INFLUENCERS); 
-                break;
-            default: 
-                setAppMode('dashboard');
-                setActiveView(View.DASHBOARD); 
-                break;
-        }
       } else {
         sessionStorage.removeItem('hasSeenWelcome');
-        setAppMode('dashboard');
         setActiveView(View.DASHBOARD);
         setActiveChat(null);
       }
@@ -510,6 +444,21 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("order_id");
+    
+    if (orderId) {
+        setActiveView(View.PAYMENT_SUCCESS);
+    } else if (user && activeView !== View.PAYMENT_SUCCESS) {
+        switch (user.role) {
+            case 'staff': setActiveView(View.ADMIN); break;
+            case 'brand': setActiveView(View.INFLUENCERS); break;
+            default: setActiveView(View.DASHBOARD); break;
+        }
+    }
+  }, [user]);
 
   useEffect(() => {
       refreshAllData();
@@ -555,21 +504,29 @@ const App: React.FC = () => {
     setUser(updatedUser);
   };
   
-  const handleAiSearch = async () => {
-      if (!searchQuery.trim()) {
-        setFilteredInfluencers(influencers);
-        return;
+  const handleSearch = () => {
+      const lowercasedQuery = searchQuery.toLowerCase().trim();
+      
+      if (!lowercasedQuery) {
+          setFilteredInfluencers(influencers);
+          return;
       }
-      setIsAiSearching(true);
-      try {
-        const matchingIds = await findInfluencersWithAI(searchQuery, influencers);
-        const matches = influencers.filter(inf => matchingIds.includes(inf.id));
-        setFilteredInfluencers(matches);
-      } catch (error) {
-        console.error("AI Search failed:", error);
-      } finally {
-        setIsAiSearching(false);
-      }
+  
+      setIsSearching(true);
+      setTimeout(() => {
+          const results = influencers.filter(inf => {
+              return (
+                  inf.name.toLowerCase().includes(lowercasedQuery) ||
+                  inf.handle.toLowerCase().includes(lowercasedQuery) ||
+                  inf.bio.toLowerCase().includes(lowercasedQuery) ||
+                  inf.niche.toLowerCase().includes(lowercasedQuery) ||
+                  (inf.location && inf.location.toLowerCase().includes(lowercasedQuery))
+              );
+          });
+  
+          setFilteredInfluencers(results);
+          setIsSearching(false);
+      }, 300); 
   };
 
   const handleViewProfileClick = (profile: ProfileData) => {
@@ -634,6 +591,23 @@ const App: React.FC = () => {
     setLiveHelpSessionId(sessionId);
   };
 
+  const handleToggleFollow = async (targetId: string) => {
+      if (!user) return;
+      
+      const isFollowing = user.following?.includes(targetId);
+      const updatedFollowing = isFollowing 
+          ? user.following?.filter(id => id !== targetId) || []
+          : [...(user.following || []), targetId];
+      
+      setUser({ ...user, following: updatedFollowing });
+      
+      if (isFollowing) {
+          await apiService.unfollowUser(user.id, targetId);
+      } else {
+          await apiService.followUser(user.id, targetId);
+      }
+  };
+
   if (configError) {
       return <DatabaseConfigError message={configError} />;
   }
@@ -680,6 +654,8 @@ const App: React.FC = () => {
             }}
             onBack={() => setActiveView(View.PROFILE)}
         />;
+      case View.TOP_INFLUENCERS:
+        return <TopInfluencersList />;
       case View.BOOST_PROFILE:
         return <BoostPage user={user} platformSettings={platformSettings} onBoostActivated={refreshAllData} />;
       case View.KYC:
@@ -722,11 +698,9 @@ const App: React.FC = () => {
                       setRefundingCollab(null);
                       refreshAllData();
                   }}
-                  platformSettings={platformSettings}
                />;
       case View.PAYMENT_SUCCESS:
-        return <PaymentSuccessPage user={user} onComplete={async () => {
-            await refreshUser();
+        return <PaymentSuccessPage user={user} onComplete={() => {
             window.history.replaceState({}, document.title, window.location.pathname);
             refreshAllData();
             setActiveView(View.DASHBOARD);
@@ -741,16 +715,16 @@ const App: React.FC = () => {
                 placeholder="Search by name, niche, location, or keywords in bio..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAiSearch()}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 className="w-full p-4 pr-28 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
               />
               <button
-                onClick={handleAiSearch}
-                disabled={isAiSearching}
+                onClick={handleSearch}
+                disabled={isSearching}
                 className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 disabled:opacity-50"
               >
-                <SparklesIcon className={`w-5 h-5 mr-2 ${isAiSearching ? 'animate-spin' : ''}`} />
-                {isAiSearching ? 'Searching...' : 'AI Search'}
+                <SearchIcon className={`w-5 h-5 mr-2`} />
+                {isSearching ? 'Searching...' : 'Search'}
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -783,7 +757,7 @@ const App: React.FC = () => {
                     allUsers={allUsers} 
                     allTransactions={allTransactions} 
                     allPayouts={allPayouts} 
-                    allCollabs={allCollabs} 
+                    allCollabs={allCollabs}
                     allRefunds={allRefunds}
                     allDailyPayouts={allDailyPayouts}
                     platformSettings={platformSettings} 
@@ -841,10 +815,7 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
-        appMode={appMode}
-        communityFeedFilter={communityFeedFilter}
         setCommunityFeedFilter={setCommunityFeedFilter}
-        onToggleFollow={handleToggleFollow}
       />
       <Sidebar 
         isMobile
@@ -855,10 +826,7 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
-        appMode={appMode}
-        communityFeedFilter={communityFeedFilter}
         setCommunityFeedFilter={setCommunityFeedFilter}
-        onToggleFollow={handleToggleFollow}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <NotificationManager user={user} />
@@ -872,12 +840,10 @@ const App: React.FC = () => {
         {showCreatorVerificationBanner && (
             <CreatorVerificationBanner
                 status={user.creatorVerificationStatus!}
-                role={user.role}
                 onVerify={() => setActiveView(View.CREATOR_VERIFICATION)}
                 reason={user.creatorVerificationDetails?.rejectionReason}
             />
         )}
-        
         <Header 
             user={user} 
             activeView={activeView}

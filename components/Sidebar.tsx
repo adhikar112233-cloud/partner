@@ -1,281 +1,150 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import { View, User, UserRole, PlatformSettings } from '../types';
-import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon } from './Icons';
+import React from 'react';
+import { User, View, PlatformSettings, UserRole, StaffPermission } from '../types';
+import { LogoIcon, DashboardIcon, TrophyIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, SettingsIcon, SupportIcon, CommunityIcon, PaymentIcon, MembershipIcon, LogoutIcon, CollabIcon, RocketIcon, CheckBadgeIcon } from './Icons';
 import { authService } from '../services/authService';
-import FollowListModal from './FollowListModal';
 
 interface SidebarProps {
-  user: User;
-  activeView: View;
-  setActiveView: (view: View) => void;
-  userRole: UserRole;
-  platformSettings: PlatformSettings;
-  isMobile?: boolean;
-  isOpen?: boolean;
-  onClose?: () => void;
-  appMode?: 'dashboard' | 'community';
-  communityFeedFilter?: 'global' | 'my_posts' | 'following';
-  setCommunityFeedFilter?: (filter: 'global' | 'my_posts' | 'following') => void;
-  onToggleFollow?: (targetId: string) => void;
+    user: User;
+    activeView: View;
+    setActiveView: (view: View) => void;
+    userRole: UserRole;
+    platformSettings: PlatformSettings;
+    isOpen?: boolean;
+    onClose?: () => void;
+    isMobile?: boolean;
 }
 
-const MembershipStatusCard: React.FC<{ user: User; onClick: () => void }> = ({ user, onClick }) => {
-    const planName = (user.membership?.plan || 'free').replace(/_/g, ' ').replace('normal ', '');
-    const isPro = user.membership?.isActive && user.membership.plan !== 'free';
-  
-    return (
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-        <button 
-            onClick={onClick} 
-            className="w-full p-4 bg-slate-100 dark:bg-gray-700/50 rounded-lg text-left hover:bg-slate-200 dark:hover:bg-gray-600/60 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Manage your membership plan"
-        >
-          <div className="flex items-center space-x-3">
-            <MembershipIcon className="w-8 h-8 text-indigo-500 dark:text-indigo-400 flex-shrink-0" />
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Current Plan</p>
-              <p className="font-bold text-gray-800 dark:text-white capitalize">{planName}</p>
-            </div>
-          </div>
-          <div className={`mt-3 w-full text-center px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${
-            isPro
-              ? 'bg-indigo-500 text-white hover:bg-indigo-600'
-              : 'bg-teal-500 text-white hover:bg-teal-600'
-          }`}>
-            {isPro ? 'Manage Plan' : 'Upgrade Plan'}
-          </div>
-        </button>
-      </div>
-    );
-  };
+interface SidebarItem {
+    view: View;
+    label: string;
+    icon: React.FC<{ className?: string }>;
+    roles: UserRole[];
+    requiredPermission?: StaffPermission;
+}
 
-const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isMobile = false, isOpen = false, onClose = () => {}, appMode = 'dashboard', communityFeedFilter, setCommunityFeedFilter, onToggleFollow }) => {
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [followModalType, setFollowModalType] = useState<'followers' | 'following' | null>(null);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
-          if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-              setIsProfileMenuOpen(false);
-          }
-      };
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-          document.removeEventListener("mousedown", handleClickOutside);
-      };
-  }, []);
-
-  const allNavItems = [
-    // User's Profile (Handled separately now)
-    { view: View.PROFILE, label: 'My Account', icon: ProfileIcon, roles: ['brand', 'influencer', 'banneragency', 'livetv', 'staff'] },
+const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isOpen, onClose, isMobile }) => {
     
-    // Dashboard first for all primary roles including LiveTV
-    { view: View.DASHBOARD, label: 'Dashboard', icon: DashboardIcon, roles: ['brand', 'influencer', 'banneragency', 'livetv'] },
-    
-    // LIVETV role specific action
-    { view: View.LIVETV, label: 'Collaboration Status', icon: CollabIcon, roles: ['livetv'] },
-    
-    // Other Roles (moved up)
-    { view: View.BANNERADS, label: 'My Banner Ads', icon: BannerAdsIcon, roles: ['banneragency'] },
+    const menuItems: SidebarItem[] = [
+        { view: View.DASHBOARD, label: 'Dashboard', icon: DashboardIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency', 'staff'] },
+        { view: View.PROFILE, label: 'My Profile', icon: SettingsIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
+        
+        // Brand specific
+        { view: View.INFLUENCERS, label: 'Find Influencers', icon: InfluencersIcon, roles: ['brand'] },
+        { view: View.CAMPAIGNS, label: 'My Campaigns', icon: RocketIcon, roles: ['brand'] },
+        { view: View.DISCOVER_LIVETV, label: 'Book Live TV', icon: LiveTvIcon, roles: ['brand'] },
+        { view: View.DISCOVER_BANNERADS, label: 'Book Banner Ads', icon: BannerAdsIcon, roles: ['brand'] },
+        { view: View.COLLAB_REQUESTS, label: 'My Collabs', icon: CollabIcon, roles: ['brand'] }, // Mapped to MY_COLLABORATIONS in App.tsx logic
+        { view: View.AD_BOOKINGS, label: 'Ad Bookings', icon: BannerAdsIcon, roles: ['brand'] },
 
-    // Payment History for non-brands
-    { view: View.PAYMENT_HISTORY, label: 'Payment History', icon: PaymentIcon, roles: ['livetv', 'banneragency']},
-    
-    // Brand - Discovery (Moved Up)
-    { view: View.INFLUENCERS, label: 'Find Influencers', icon: InfluencersIcon, roles: ['brand'] },
-    { view: View.DISCOVER_LIVETV, label: 'Book Live TV Ads', icon: LiveTvIcon, roles: ['brand'] },
-    { view: View.DISCOVER_BANNERADS, label: 'Book Banner Ads', icon: BannerAdsIcon, roles: ['brand'] },
+        // Influencer specific
+        { view: View.COLLAB_REQUESTS, label: 'Collab Requests', icon: CollabIcon, roles: ['influencer'] },
+        { view: View.CAMPAIGNS, label: 'Find Campaigns', icon: RocketIcon, roles: ['influencer'] },
+        { view: View.MY_APPLICATIONS, label: 'My Applications', icon: CheckBadgeIcon, roles: ['influencer'] },
 
-    // Community for non-brands
-    ...(platformSettings.isCommunityFeedEnabled ? [{ view: View.COMMUNITY, label: 'Community', icon: CommunityIcon, roles: ['livetv', 'banneragency', 'staff'] }] : []),
-    
-    // Brand - Management (Moved Down)
-    { view: View.CAMPAIGNS, label: 'My Campaigns', icon: CampaignIcon, roles: ['brand'] },
-    { view: View.MY_COLLABORATIONS, label: 'Direct Collaborations', icon: CollabIcon, roles: ['brand'] },
-    { view: View.AD_BOOKINGS, label: 'My Ad Bookings', icon: BannerAdsIcon, roles: ['brand'] },
-    
-    // Influencer
-    { view: View.CAMPAIGNS, label: 'Discover Campaigns', icon: CampaignIcon, roles: ['influencer'] },
-    { view: View.MY_APPLICATIONS, label: 'My Applications', icon: ApplicationsIcon, roles: ['influencer'] },
-    { view: View.COLLAB_REQUESTS, label: 'Direct Requests', icon: CollabIcon, roles: ['influencer'] },
-    { view: View.BOOST_PROFILE, label: 'Boost Profile', icon: RocketIcon, roles: ['influencer', 'livetv', 'banneragency'] },
-    
-    // Staff
-    { view: View.ADMIN, label: 'Admin Panel', icon: AdminIcon, roles: ['staff'] },
-    { view: View.SETTINGS, label: 'Settings', icon: SettingsIcon, roles: ['staff'], requiredPermission: 'super_admin' },
-    { view: View.SUPPORT, label: 'Support Center', icon: SupportIcon, roles: ['staff'] },
+        // Live TV specific
+        { view: View.LIVETV, label: 'Ad Requests', icon: LiveTvIcon, roles: ['livetv'] },
 
-    // ITEMS MOVED TO BOTTOM FOR BRAND ROLE
-    { view: View.PAYMENT_HISTORY, label: 'Payment History', icon: PaymentIcon, roles: ['brand']},
-    ...(platformSettings.isCommunityFeedEnabled ? [{ view: View.COMMUNITY, label: 'Community', icon: CommunityIcon, roles: ['brand'] }] : []),
+        // Banner Agency specific
+        { view: View.BANNERADS, label: 'Booking Requests', icon: BannerAdsIcon, roles: ['banneragency'] },
 
-    // ITEMS MOVED TO BOTTOM FOR INFLUENCER ROLE
-    { view: View.PAYMENT_HISTORY, label: 'Payment History', icon: PaymentIcon, roles: ['influencer']},
-    ...(platformSettings.isCommunityFeedEnabled ? [{ view: View.COMMUNITY, label: 'Community', icon: CommunityIcon, roles: ['influencer'] }] : []),
-  ];
+        // Common Financials
+        { view: View.PAYMENT_HISTORY, label: 'Payment History', icon: PaymentIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
+        { view: View.MEMBERSHIP, label: 'Membership', icon: MembershipIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
 
-  const hasPermission = (permission: string) => {
-      if (user.role !== 'staff') return false;
-      return user.staffPermissions?.includes('super_admin') || user.staffPermissions?.includes(permission as any);
-  };
+        // Community
+        { view: View.COMMUNITY, label: 'Community', icon: CommunityIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency', 'staff'] },
 
-  let displayNavItems: any[] = [];
+        // Support
+        { view: View.SUPPORT, label: 'Help & Support', icon: SupportIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
 
-  if (appMode === 'community') {
-      displayNavItems = [
-          { view: View.PROFILE, label: 'My Account', icon: ProfileIcon },
-          { view: View.COMMUNITY, label: 'Global Feed', icon: GlobeIcon, filter: 'global' },
-          { view: View.COMMUNITY, label: 'Following', icon: UserGroupIcon, filter: 'following' },
-          { view: View.COMMUNITY, label: 'My Posts', icon: DocumentIcon, filter: 'my_posts' }
-      ];
-  } else {
-      displayNavItems = allNavItems.filter(item => {
-        if (item.view === View.COMMUNITY) return false; // Hide generic community button in dashboard mode if it was there
+        // Staff
+        { view: View.ADMIN, label: 'Admin Panel', icon: AdminIcon, roles: ['staff'] },
+        { view: View.SETTINGS, label: 'Platform Settings', icon: SettingsIcon, roles: ['staff'], requiredPermission: 'super_admin' },
+        { view: View.SUPPORT, label: 'Support Center', icon: SupportIcon, roles: ['staff'] },
+
+        // Top 10 - Available for everyone
+        { view: View.TOP_INFLUENCERS, label: 'Top 10 of 2025', icon: TrophyIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency', 'staff'] },
+    ];
+
+    const filteredItems = menuItems.filter(item => {
         if (!item.roles.includes(userRole)) return false;
-        if (item.requiredPermission && !hasPermission(item.requiredPermission)) return false;
+        if (item.requiredPermission && user.staffPermissions && !user.staffPermissions.includes(item.requiredPermission)) return false;
+        // Adjust logic based on App.tsx view mapping if needed
         return true;
-      });
-  }
+    });
 
-  const handleItemClick = (view: View, filter?: 'global' | 'my_posts' | 'following') => {
-    setActiveView(view);
-    if (filter && setCommunityFeedFilter) {
-        setCommunityFeedFilter(filter);
-    }
-    setIsProfileMenuOpen(false);
-    if (isMobile) {
-      onClose();
-    }
-  };
+    const handleLogout = async () => {
+        await authService.logout();
+    };
 
-  const handleLogoClick = () => {
-    setActiveView(View.PARTNERS);
-    if (isMobile) {
-        onClose();
-    }
-  };
-
-  const navButtons = displayNavItems.map(item => {
-    if (item.view === View.PROFILE) {
-        return (
-            <div key="profile-menu" className="relative" ref={profileMenuRef}>
-                <button
-                    onClick={() => setIsProfileMenuOpen(prev => !prev)}
-                    className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                        isProfileMenuOpen || activeView === View.PROFILE || activeView === View.SETTINGS
-                            ? 'bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
-                    }`}
-                >
-                    <div className="flex items-center">
-                        <item.icon className="w-6 h-6 mr-3" />
-                        <span>{item.label}</span>
-                    </div>
-                    <ChevronDownIcon className={`w-5 h-5 transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {isProfileMenuOpen && (
-                    <div className="mt-2 pl-6 space-y-1 animate-fade-in-down">
-                        <button onClick={() => handleItemClick(View.PROFILE)} className="w-full text-left px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">My Profile</button>
-                        {(user.role !== 'staff' || (user.staffPermissions && user.staffPermissions.includes('super_admin'))) &&
-                            <button onClick={() => handleItemClick(View.SETTINGS)} className="w-full text-left px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">Settings</button>
-                        }
-                        <button onClick={() => authService.logout()} className="w-full flex items-center px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md">
-                            <LogoutIcon className="w-5 h-5 mr-2"/>
-                            Logout
-                        </button>
-                    </div>
+    const sidebarContent = (
+        <div className="flex flex-col h-full bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between h-20 px-6 border-b border-gray-200 dark:border-gray-700">
+                <LogoIcon className="h-10 w-auto" />
+                {isMobile && (
+                    <button onClick={onClose} className="p-2 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
                 )}
             </div>
+            
+            <div className="flex-1 overflow-y-auto py-4">
+                <nav className="px-4 space-y-1">
+                    {filteredItems.map((item) => (
+                        <button
+                            key={item.label}
+                            onClick={() => {
+                                setActiveView(item.view);
+                                if (isMobile && onClose) onClose();
+                            }}
+                            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-colors ${
+                                activeView === item.view
+                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                            }`}
+                        >
+                            <item.icon className={`mr-3 h-5 w-5 ${activeView === item.view ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`} />
+                            {item.label}
+                        </button>
+                    ))}
+                </nav>
+            </div>
+
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                >
+                    <LogoutIcon className="mr-3 h-5 w-5 text-red-500" />
+                    Logout
+                </button>
+            </div>
+        </div>
+    );
+
+    if (isMobile) {
+        return (
+            <>
+                <div 
+                    className={`fixed inset-0 z-40 bg-gray-600 bg-opacity-75 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} 
+                    onClick={onClose}
+                ></div>
+                <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-xl transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    {sidebarContent}
+                </div>
+            </>
         );
     }
-      const isActive = activeView === item.view && (!item.filter || item.filter === communityFeedFilter);
-      return (
-        <button
-          key={`${item.view}-${item.label}`}
-          onClick={() => handleItemClick(item.view, item.filter)}
-          className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200 ${
-            isActive
-              ? 'bg-gradient-to-r from-teal-400 to-indigo-600 text-white shadow-lg'
-              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
-          }`}
-        >
-          <item.icon className="w-6 h-6 mr-3" />
-          <span>{item.label}</span>
-        </button>
-      );
-    });
-  
-  const isCreator = ['influencer', 'livetv', 'banneragency'].includes(user.role);
-  // Hide membership card in community mode
-  const showMembershipCard = appMode === 'community' ? false : (isCreator ? platformSettings.isCreatorMembershipEnabled : platformSettings.isProMembershipEnabled);
 
-  const renderContent = () => (
-      <>
-        <div className="h-20 flex items-center px-6">
-            <button onClick={handleLogoClick} className="focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg">
-                <LogoIcon />
-            </button>
-        </div>
-        
-        {/* Follow Stats for Community Mode */}
-        {appMode === 'community' && (
-            <div className="px-6 pb-2 mb-2 border-b border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between text-sm">
-                    <button onClick={() => setFollowModalType('followers')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
-                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{user.followers?.length || 0}</span>
-                        <span className="text-gray-500 dark:text-gray-400 text-xs">Followers</span>
-                    </button>
-                    <button onClick={() => setFollowModalType('following')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
-                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{user.following?.length || 0}</span>
-                        <span className="text-gray-500 dark:text-gray-400 text-xs">Following</span>
-                    </button>
-                </div>
+    return (
+        <div className="hidden md:flex md:flex-shrink-0">
+            <div className="w-64 flex flex-col">
+                {sidebarContent}
             </div>
-        )}
-
-        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-            {navButtons}
-        </nav>
-        {showMembershipCard && <MembershipStatusCard user={user} onClick={() => handleItemClick(View.MEMBERSHIP)} />}
-      </>
-  );
-
-  return (
-    <>
-      {isMobile ? (
-        <>
-          {/* Overlay */}
-          <div 
-            className={`fixed inset-0 bg-black bg-opacity-50 z-30 transition-opacity md:hidden ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-            onClick={onClose}
-            aria-hidden="true"
-          ></div>
-          {/* Sidebar */}
-          <aside 
-            className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 flex flex-col z-40 transform transition-transform md:hidden dark:bg-gray-800 dark:border-gray-700 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
-          >
-            {renderContent()}
-          </aside>
-        </>
-      ) : (
-        <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:flex flex-col dark:bg-gray-800 dark:border-gray-700">
-          {renderContent()}
-        </aside>
-      )}
-
-      {followModalType && onToggleFollow && (
-          <FollowListModal 
-              title={followModalType === 'followers' ? 'Followers' : 'Following'}
-              userIds={followModalType === 'followers' ? (user.followers || []) : (user.following || [])}
-              currentUser={user}
-              onClose={() => setFollowModalType(null)}
-              onToggleFollow={onToggleFollow}
-          />
-      )}
-    </>
-  );
+        </div>
+    );
 };
 
 export default Sidebar;

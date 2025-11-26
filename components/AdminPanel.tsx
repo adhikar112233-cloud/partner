@@ -1,21 +1,565 @@
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { apiService } from '../services/apiService';
-import { PlatformSettings, User, PayoutRequest, Post, Influencer, SocialMediaLink, Transaction, KycStatus, KycDetails, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, CollabRequestStatus, CampaignApplicationStatus, AdBookingStatus, PlatformBanner, UserRole, StaffPermission, Message, RefundRequest, DailyPayoutRequest, Dispute, DiscountSetting, Membership, CombinedCollabItem, Partner, CreatorVerificationDetails } from '../types';
-import { Timestamp, doc, updateDoc, QueryDocumentSnapshot, DocumentData, setDoc } from 'firebase/firestore';
-import PostCard from './PostCard';
-import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
-import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, ChatBubbleLeftEllipsisIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, LockClosedIcon, LockOpenIcon, KeyIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, EnvelopeIcon, ProfileIcon, ShareIcon as SocialsIcon, TrashIcon, PencilIcon, CheckBadgeIcon } from './Icons';
-import LiveHelpPanel from './LiveHelpPanel';
-import { db, firebaseConfig } from '../services/firebase';
+import React, { useState, useMemo, useEffect } from 'react';
+import { User, StaffPermission, Transaction, PayoutRequest, RefundRequest, DailyPayoutRequest, PlatformSettings, CombinedCollabItem, SupportTicket, LiveHelpSession, AnyCollaboration, MembershipPlan, UserRole } from '../types';
+import { AnalyticsIcon, UserGroupIcon, CollabIcon, CheckBadgeIcon, PaymentIcon, TrophyIcon, CommunityIcon, ChatBubbleLeftEllipsisIcon, EnvelopeIcon, ExclamationTriangleIcon, SparklesIcon, BannerAdsIcon, RocketIcon, TrashIcon, LockClosedIcon, LockOpenIcon, EyeIcon, PencilIcon, DocumentIcon, PlusIcon } from './Icons';
+import TopInfluencersList from './TopInfluencersList';
 import PayoutsPanel from './PayoutsPanel';
-import { filterPostsWithAI, filterDisputesWithAI } from '../services/geminiService';
+import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
+import LiveHelpPanel from './LiveHelpPanel';
+import CommunityPage from './CommunityPage';
 import MarketingPanel from './MarketingPanel';
+import SupportAdminPage from './SupportAdminPage';
 import PlatformBannerPanel from './PlatformBannerPanel';
-import { authService } from '../services/authService';
 import PartnersPanel from './PartnersPanel';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import SettingsPanel from './SettingsPanel';
+import { apiService } from '../services/apiService';
+import { authService } from '../services/authService';
+import { Timestamp } from 'firebase/firestore';
+
+// --- Add User Modal ---
+const AddUserModal: React.FC<{ onClose: () => void; onUserAdded: () => void }> = ({ onClose, onUserAdded }) => {
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [role, setRole] = useState<UserRole>('brand');
+    const [mobileNumber, setMobileNumber] = useState('');
+    const [companyName, setCompanyName] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError(null);
+        try {
+            await authService.createUserByAdmin(email, password, role, name, companyName, mobileNumber);
+            onUserAdded();
+            onClose();
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || "Failed to create user. Email might be in use.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[70] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 w-full max-w-md relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-100">&times;</button>
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-6">Create New User</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
+                        <select value={role} onChange={e => setRole(e.target.value as UserRole)} className="mt-1 block w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <option value="brand">Brand</option>
+                            <option value="influencer">Influencer</option>
+                            <option value="livetv">Live TV</option>
+                            <option value="banneragency">Banner Agency</option>
+                            <option value="staff">Staff</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} required className="mt-1 block w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </div>
+                    {role !== 'influencer' && role !== 'staff' && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company/Channel Name</label>
+                            <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} required className="mt-1 block w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </div>
+                    )}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="mt-1 block w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mobile Number</label>
+                        <input type="tel" value={mobileNumber} onChange={e => setMobileNumber(e.target.value)} className="mt-1 block w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="mt-1 block w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" minLength={6} />
+                    </div>
+                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                    <button type="submit" disabled={isLoading} className="w-full py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50">
+                        {isLoading ? 'Creating...' : 'Create User'}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// --- User Details Modal ---
+
+const UserDetailsModal: React.FC<{
+    user: User;
+    onClose: () => void;
+    allTransactions: Transaction[];
+    allPayouts: PayoutRequest[];
+    allCollabs: AnyCollaboration[];
+    onUpdate: () => void;
+}> = ({ user, onClose, allTransactions, allPayouts, allCollabs, onUpdate }) => {
+    const [activeTab, setActiveTab] = useState<'profile' | 'financials' | 'membership' | 'collabs' | 'kyc'>('profile');
+    const [editingMembership, setEditingMembership] = useState(false);
+    const [newPlan, setNewPlan] = useState<MembershipPlan>(user.membership?.plan || 'free');
+    const [newExpiry, setNewExpiry] = useState<string>('');
+
+    // Filter data for this user
+    const userTransactions = useMemo(() => allTransactions.filter(t => t.userId === user.id), [allTransactions, user.id]);
+    const userPayouts = useMemo(() => allPayouts.filter(p => p.userId === user.id), [allPayouts, user.id]);
+    const userCollabs = useMemo(() => allCollabs.filter(c => 
+        ('brandId' in c && c.brandId === user.id) || 
+        ('influencerId' in c && c.influencerId === user.id) || 
+        ('agencyId' in c && c.agencyId === user.id) || 
+        ('liveTvId' in c && c.liveTvId === user.id)
+    ), [allCollabs, user.id]);
+
+    const handleUpdateMembership = async () => {
+        if (!newPlan) return;
+        let expiryDate: Timestamp | null = null;
+        if (newExpiry) {
+            expiryDate = Timestamp.fromDate(new Date(newExpiry));
+        } else if (user.membership?.expiresAt) {
+             // Keep existing if not changed, or set default if null
+             expiryDate = user.membership.expiresAt as Timestamp;
+        } else {
+             // Default to 1 year if absolutely nothing exists
+             const d = new Date();
+             d.setFullYear(d.getFullYear() + 1);
+             expiryDate = Timestamp.fromDate(d);
+        }
+        
+        await apiService.updateUserProfile(user.id, {
+            membership: {
+                ...user.membership,
+                plan: newPlan,
+                isActive: true,
+                expiresAt: expiryDate,
+                usage: user.membership?.usage || { directCollaborations: 0, campaigns: 0, liveTvBookings: 0, bannerAdBookings: 0 }
+            }
+        });
+        onUpdate();
+        setEditingMembership(false);
+        alert("Membership updated successfully.");
+    };
+
+    const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+    const formatDate = (ts: any) => {
+        if (!ts) return 'N/A';
+        if (ts instanceof Date) return ts.toLocaleDateString();
+        if (ts.toDate) return ts.toDate().toLocaleDateString();
+        if (typeof ts === 'string') return new Date(ts).toLocaleDateString();
+        return 'N/A';
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[60] p-4 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border dark:border-gray-700" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="p-6 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                        <img src={user.avatar} alt={user.name} className="w-16 h-16 rounded-full border-2 border-indigo-100 object-cover" />
+                        <div>
+                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{user.name}</h2>
+                            <div className="flex gap-2 text-sm mt-1">
+                                <span className="text-gray-500 dark:text-gray-400 font-mono">{user.piNumber}</span>
+                                <span className="text-gray-300 dark:text-gray-600">|</span>
+                                <span className="text-gray-500 dark:text-gray-400">{user.email}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400">&times;</button>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-x-auto">
+                    {['profile', 'financials', 'membership', 'collabs', 'kyc'].map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab as any)}
+                            className={`px-6 py-3 text-sm font-semibold whitespace-nowrap capitalize border-b-2 transition-colors ${
+                                activeTab === tab 
+                                    ? 'border-indigo-600 text-indigo-600 bg-white dark:bg-gray-800 dark:text-indigo-400' 
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                            }`}
+                        >
+                            {tab === 'financials' ? 'Financials' : tab === 'collabs' ? 'Collaborations' : tab}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Tab Content */}
+                <div className="flex-1 overflow-y-auto p-6 bg-gray-100 dark:bg-gray-900">
+                    
+                    {/* 1. PROFILE */}
+                    {activeTab === 'profile' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <h3 className="font-bold text-lg mb-4 dark:text-white">Personal Details</h3>
+                                <dl className="space-y-3">
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Name</dt><dd className="font-medium dark:text-white">{user.name}</dd></div>
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Email</dt><dd className="font-medium dark:text-white">{user.email}</dd></div>
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Mobile</dt><dd className="font-medium dark:text-white">{user.mobileNumber || 'N/A'}</dd></div>
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Role</dt><dd className="font-medium capitalize dark:text-white">{user.role}</dd></div>
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Location</dt><dd className="font-medium dark:text-white">{user.location || 'N/A'}</dd></div>
+                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">Status</dt><dd className={`font-medium ${user.isBlocked ? 'text-red-500' : 'text-green-500'}`}>{user.isBlocked ? 'Blocked' : 'Active'}</dd></div>
+                                </dl>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <h3 className="font-bold text-lg mb-4 dark:text-white">System Details</h3>
+                                <dl className="space-y-3">
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">User ID</dt><dd className="font-mono text-xs dark:text-white">{user.id}</dd></div>
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Profile ID (PI)</dt><dd className="font-mono dark:text-white">{user.piNumber}</dd></div>
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Referral Code</dt><dd className="font-mono dark:text-white">{user.referralCode || 'N/A'}</dd></div>
+                                    <div className="flex justify-between border-b dark:border-gray-700 pb-2"><dt className="text-gray-500 dark:text-gray-400">Wallet</dt><dd className="font-bold text-green-600">{user.coins || 0} Coins</dd></div>
+                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">Company</dt><dd className="font-medium dark:text-white">{user.companyName || 'N/A'}</dd></div>
+                                </dl>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 2. FINANCIALS */}
+                    {activeTab === 'financials' && (
+                        <div className="space-y-6">
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+                                <h3 className="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 font-bold text-gray-700 dark:text-gray-200 border-b dark:border-gray-700">Payments Made (Transactions)</h3>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                            <tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Description</th><th className="px-6 py-3">Amount</th><th className="px-6 py-3">Status</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y dark:divide-gray-700">
+                                            {userTransactions.length === 0 ? <tr><td colSpan={4} className="px-6 py-4 text-center text-gray-500">No transactions found.</td></tr> : 
+                                            userTransactions.map(t => (
+                                                <tr key={t.transactionId} className="dark:text-gray-300">
+                                                    <td className="px-6 py-3">{formatDate(t.timestamp)}</td>
+                                                    <td className="px-6 py-3 truncate max-w-xs">{t.description}</td>
+                                                    <td className="px-6 py-3 text-red-500">-{formatCurrency(t.amount)}</td>
+                                                    <td className="px-6 py-3"><span className={`px-2 py-0.5 text-xs rounded-full ${t.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{t.status}</span></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+                                <h3 className="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 font-bold text-gray-700 dark:text-gray-200 border-b dark:border-gray-700">Payouts (Earnings)</h3>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                            <tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Source</th><th className="px-6 py-3">Amount</th><th className="px-6 py-3">Status</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y dark:divide-gray-700">
+                                            {userPayouts.length === 0 ? <tr><td colSpan={4} className="px-6 py-4 text-center text-gray-500">No payouts found.</td></tr> :
+                                            userPayouts.map(p => (
+                                                <tr key={p.id} className="dark:text-gray-300">
+                                                    <td className="px-6 py-3">{formatDate(p.timestamp)}</td>
+                                                    <td className="px-6 py-3">{p.collaborationTitle}</td>
+                                                    <td className="px-6 py-3 text-green-500">+{formatCurrency(p.amount)}</td>
+                                                    <td className="px-6 py-3 capitalize">{p.status.replace('_', ' ')}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 3. MEMBERSHIP */}
+                    {activeTab === 'membership' && (
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                            <div className="flex justify-between items-center mb-6 border-b dark:border-gray-700 pb-4">
+                                <h3 className="font-bold text-lg dark:text-white">Membership Status</h3>
+                                {!editingMembership && (
+                                    <button onClick={() => setEditingMembership(true)} className="text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+                                        <PencilIcon className="w-4 h-4" /> Edit Access
+                                    </button>
+                                )}
+                            </div>
+                            
+                            {editingMembership ? (
+                                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-6 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                                    <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-4">Admin Override</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Plan</label>
+                                            <select value={newPlan} onChange={e => setNewPlan(e.target.value as MembershipPlan)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                                <option value="free">Free</option>
+                                                <option value="basic">Basic</option>
+                                                <option value="pro">Pro</option>
+                                                <option value="premium">Premium</option>
+                                                <option value="pro_10">Pro 10</option>
+                                                <option value="pro_20">Pro 20</option>
+                                                <option value="pro_unlimited">Pro Unlimited</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Expiry Date</label>
+                                            <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-6">
+                                        <button onClick={handleUpdateMembership} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Save Changes</button>
+                                        <button onClick={() => setEditingMembership(false)} className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">Cancel</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Current Plan</p>
+                                        <p className="text-xl font-bold capitalize text-indigo-600 dark:text-indigo-400">{user.membership?.plan.replace(/_/g, ' ') || 'Free'}</p>
+                                    </div>
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Expires On</p>
+                                        <p className="text-xl font-bold dark:text-white">{formatDate(user.membership?.expiresAt)}</p>
+                                    </div>
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg col-span-1 md:col-span-2">
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Active Status</p>
+                                        <p className={`text-xl font-bold ${user.membership?.isActive ? 'text-green-600' : 'text-red-500'}`}>{user.membership?.isActive ? 'Active' : 'Inactive'}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 4. COLLABS */}
+                    {activeTab === 'collabs' && (
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+                            <h3 className="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 font-bold text-gray-700 dark:text-gray-200 border-b dark:border-gray-700">Collaboration History</h3>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                        <tr><th className="px-6 py-3">Title/Campaign</th><th className="px-6 py-3">Role</th><th className="px-6 py-3">Status</th><th className="px-6 py-3">Updated</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y dark:divide-gray-700">
+                                        {userCollabs.length === 0 ? <tr><td colSpan={4} className="px-6 py-4 text-center text-gray-500">No collaborations found.</td></tr> :
+                                        userCollabs.map((c: any) => (
+                                            <tr key={c.id} className="dark:text-gray-300">
+                                                <td className="px-6 py-3 font-medium">{c.title || c.campaignTitle || c.campaignName}</td>
+                                                <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{c.brandId === user.id ? 'Brand' : 'Provider'}</td>
+                                                <td className="px-6 py-3"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full text-xs capitalize">{c.status.replace(/_/g, ' ')}</span></td>
+                                                <td className="px-6 py-3">{formatDate(c.timestamp)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 5. KYC */}
+                    {activeTab === 'kyc' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <h3 className="font-bold text-lg mb-4 dark:text-white border-b dark:border-gray-700 pb-2">User Identity (KYC)</h3>
+                                <dl className="space-y-3">
+                                    <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd className={`font-bold capitalize ${user.kycStatus === 'approved' ? 'text-green-600' : 'text-yellow-600'}`}>{user.kycStatus.replace(/_/g, ' ')}</dd></div>
+                                    <div className="flex justify-between"><dt className="text-gray-500">ID Type</dt><dd className="dark:text-white">{user.kycDetails?.idType || 'N/A'}</dd></div>
+                                    <div className="flex justify-between"><dt className="text-gray-500">ID Number</dt><dd className="dark:text-white font-mono">{user.kycDetails?.idNumber || 'N/A'}</dd></div>
+                                </dl>
+                                <div className="grid grid-cols-3 gap-2 mt-4">
+                                    {user.kycDetails?.idProofUrl && <a href={user.kycDetails.idProofUrl} target="_blank" rel="noreferrer" className="bg-gray-100 p-2 rounded text-center text-xs text-blue-600 block">ID Proof</a>}
+                                    {user.kycDetails?.panCardUrl && <a href={user.kycDetails.panCardUrl} target="_blank" rel="noreferrer" className="bg-gray-100 p-2 rounded text-center text-xs text-blue-600 block">PAN Card</a>}
+                                    {user.kycDetails?.selfieUrl && <a href={user.kycDetails.selfieUrl} target="_blank" rel="noreferrer" className="bg-gray-100 p-2 rounded text-center text-xs text-blue-600 block">Selfie</a>}
+                                </div>
+                            </div>
+
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <h3 className="font-bold text-lg mb-4 dark:text-white border-b dark:border-gray-700 pb-2">Creator / Business Verification</h3>
+                                <dl className="space-y-3">
+                                    <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd className={`font-bold capitalize ${user.creatorVerificationStatus === 'approved' ? 'text-green-600' : 'text-yellow-600'}`}>{user.creatorVerificationStatus?.replace(/_/g, ' ') || 'N/A'}</dd></div>
+                                    <div className="flex justify-between"><dt className="text-gray-500">GST Name</dt><dd className="dark:text-white">{user.creatorVerificationDetails?.gstRegisteredName || 'N/A'}</dd></div>
+                                </dl>
+                                <div className="grid grid-cols-2 gap-2 mt-4">
+                                    {user.creatorVerificationDetails?.registrationDocUrl && <a href={user.creatorVerificationDetails.registrationDocUrl} target="_blank" rel="noreferrer" className="bg-gray-100 p-2 rounded text-center text-xs text-blue-600 block">Reg Doc</a>}
+                                    {user.creatorVerificationDetails?.officePhotoUrl && <a href={user.creatorVerificationDetails.officePhotoUrl} target="_blank" rel="noreferrer" className="bg-gray-100 p-2 rounded text-center text-xs text-blue-600 block">Office Photo</a>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- User Management Panel ---
+
+const UserManagementPanel: React.FC<{
+    users: User[];
+    allTransactions: Transaction[];
+    allPayouts: PayoutRequest[];
+    allCollabs: AnyCollaboration[];
+    onUpdate: () => void;
+}> = ({ users, allTransactions, allPayouts, allCollabs, onUpdate }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedUser, setSelectedUser] = useState<User | null>(null);
+    const [showAddUserModal, setShowAddUserModal] = useState(false);
+
+    const filteredUsers = useMemo(() => {
+        const lower = searchTerm.toLowerCase();
+        return users.filter(u => 
+            u.name.toLowerCase().includes(lower) ||
+            u.email.toLowerCase().includes(lower) ||
+            (u.mobileNumber && u.mobileNumber.includes(lower)) ||
+            u.id.toLowerCase().includes(lower) ||
+            (u.piNumber && u.piNumber.toLowerCase().includes(lower))
+        );
+    }, [users, searchTerm]);
+
+    const handleBlock = async (user: User) => {
+        if (window.confirm(`Are you sure you want to ${user.isBlocked ? 'unblock' : 'block'} ${user.name}?`)) {
+            await apiService.updateUserProfile(user.id, { isBlocked: !user.isBlocked });
+            onUpdate();
+        }
+    };
+
+    const handleDelete = async (user: User) => {
+        if (window.confirm(`DANGER: Are you sure you want to DELETE ${user.name}? This cannot be undone.`)) {
+            const confirmName = prompt(`Type "${user.name}" to confirm deletion:`);
+            if (confirmName === user.name) {
+                await apiService.deleteUser(user.id);
+                onUpdate();
+            } else {
+                alert("Name did not match. Deletion cancelled.");
+            }
+        }
+    };
+
+    return (
+        <div className="h-full flex flex-col">
+            <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center flex-wrap gap-4 bg-white dark:bg-gray-800">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Management</h2>
+                <div className="flex gap-4 items-center">
+                    <div className="relative w-64">
+                        <input 
+                            type="text" 
+                            placeholder="Search users..." 
+                            value={searchTerm} 
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <svg className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <button onClick={() => setShowAddUserModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-medium flex items-center gap-2 shadow-md transition-all hover:shadow-lg">
+                        <PlusIcon className="w-5 h-5" /> Create User
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 text-xs uppercase font-semibold border-b dark:border-gray-600">
+                            <tr>
+                                <th className="p-4">User Name</th>
+                                <th className="p-4">User ID (PI)</th>
+                                <th className="p-4">Type</th>
+                                <th className="p-4">Email</th>
+                                <th className="p-4">Mobile</th>
+                                <th className="p-4">Membership</th>
+                                <th className="p-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y dark:divide-gray-700">
+                            {filteredUsers.map(user => (
+                                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                    <td className="p-4">
+                                        <div className="flex items-center gap-3">
+                                            <img src={user.avatar} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200 border dark:border-gray-600" />
+                                            <div>
+                                                <p className="font-bold text-gray-900 dark:text-white text-sm">{user.name}</p>
+                                                {user.companyName && <p className="text-xs text-gray-500">{user.companyName}</p>}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="p-4 text-sm">
+                                        <span className="font-mono font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{user.piNumber || 'N/A'}</span>
+                                    </td>
+                                    <td className="p-4">
+                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full capitalize 
+                                            ${user.role === 'brand' ? 'bg-blue-100 text-blue-800' : 
+                                              user.role === 'influencer' ? 'bg-purple-100 text-purple-800' : 
+                                              user.role === 'staff' ? 'bg-gray-800 text-white' :
+                                              'bg-gray-100 text-gray-800'}`}>
+                                            {user.role}
+                                        </span>
+                                    </td>
+                                    <td className="p-4 text-sm dark:text-gray-300 truncate max-w-[150px]" title={user.email}>
+                                        {user.email}
+                                    </td>
+                                    <td className="p-4 text-sm dark:text-gray-300">
+                                        {user.mobileNumber || '-'}
+                                    </td>
+                                    <td className="p-4">
+                                        {user.membership?.isActive ? (
+                                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full border border-green-200">
+                                                {user.membership.plan.replace(/_/g, ' ').replace('pro', 'Pro')}
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full border border-red-200">Inactive</span>
+                                        )}
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        <div className="flex justify-end gap-2">
+                                            <button 
+                                                onClick={() => setSelectedUser(user)} 
+                                                className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1 shadow-sm"
+                                                title="View Full Details"
+                                            >
+                                                <EyeIcon className="w-4 h-4" /> View Details
+                                            </button>
+                                            <button 
+                                                onClick={() => handleBlock(user)} 
+                                                className={`${user.isBlocked ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100' : 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100'} border px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1`}
+                                                title={user.isBlocked ? "Unblock User" : "Block User"}
+                                            >
+                                                {user.isBlocked ? <LockOpenIcon className="w-4 h-4" /> : <LockClosedIcon className="w-4 h-4" />}
+                                                {user.isBlocked ? 'Unblock' : 'Block'}
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDelete(user)} 
+                                                className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1"
+                                                title="Delete User"
+                                            >
+                                                <TrashIcon className="w-4 h-4" /> Delete
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {selectedUser && (
+                <UserDetailsModal 
+                    user={selectedUser} 
+                    onClose={() => setSelectedUser(null)} 
+                    allTransactions={allTransactions}
+                    allPayouts={allPayouts}
+                    allCollabs={allCollabs}
+                    onUpdate={() => { onUpdate(); setSelectedUser(null); }}
+                />
+            )}
+            {showAddUserModal && (
+                <AddUserModal 
+                    onClose={() => setShowAddUserModal(false)} 
+                    onUserAdded={() => { onUpdate(); }} 
+                />
+            )}
+        </div>
+    );
+};
+
+// --- Main Admin Panel Component ---
+
+type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands' | 'top_influencers' | 'support_tickets';
 
 interface AdminPanelProps {
     user: User;
@@ -29,964 +573,131 @@ interface AdminPanelProps {
     onUpdate: () => void;
 }
 
-const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void }> = ({ enabled, onChange }) => (
-    <button
-        type="button"
-        className={`${
-            enabled ? 'bg-indigo-600' : 'bg-gray-200'
-        } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
-        role="switch"
-        aria-checked={enabled}
-        onClick={() => onChange(!enabled)}
-    >
-        <span
-            aria-hidden="true"
-            className={`${
-                enabled ? 'translate-x-5' : 'translate-x-0'
-            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
-        />
-    </button>
-);
-
-const toJsDate = (ts: any): Date | undefined => {
-    if (!ts) return undefined;
-    if (ts instanceof Date) return ts;
-    if (typeof ts.toDate === 'function') return ts.toDate();
-    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
-    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
-    if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
-    return undefined;
-};
-
-type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands';
-
-
-// --- Creator Verification Components ---
-
-const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-    const details = user.creatorVerificationDetails;
-
-    const handleAction = async (status: 'approved' | 'rejected') => {
-        let reason: string | undefined;
-        if (status === 'rejected') {
-            reason = prompt("Please provide a reason for rejection:");
-            if (!reason) return;
-        }
-
-        if (!window.confirm(`Are you sure you want to ${status} this verification request?`)) return;
-
-        setIsProcessing(true);
-        try {
-            await apiService.updateCreatorVerificationStatus(user.id, status, reason);
-            onActionComplete();
-            onClose();
-        } catch (error) {
-            console.error(`Failed to ${status}`, error);
-            alert(`Could not ${status}. Please try again.`);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    if (!details) return null;
-
-    const PreviewImage = ({ label, url }: { label: string, url?: string }) => (
-        url ? (
-            <div className="border rounded-lg p-2 bg-gray-50 dark:bg-gray-900/50">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">{label}</p>
-                <img 
-                    src={url} 
-                    alt={label} 
-                    className="h-32 object-contain rounded cursor-zoom-in hover:opacity-90" 
-                    onClick={() => setZoomedImage(url)}
-                />
-            </div>
-        ) : null
-    );
-
-    return (
-        <>
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-                    <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Review Verification</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.name} ({user.role})</p>
-                        </div>
-                        <button onClick={onClose} className="text-gray-500 text-2xl">&times;</button>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-6">
-                        {user.role === 'influencer' ? (
-                            <div className="space-y-6">
-                                <div>
-                                    <h3 className="font-bold text-gray-700 dark:text-gray-200 mb-2">Social Media Links</h3>
-                                    <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded border dark:border-gray-700 whitespace-pre-wrap text-sm font-mono dark:text-gray-300">
-                                        {details.socialMediaLinks}
-                                    </div>
-                                </div>
-                                <PreviewImage label="Creator Proof / Acknowledgement" url={details.acknowledgementUrl} />
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="col-span-2">
-                                        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Doc Type: <span className="font-bold uppercase">{details.registrationDocType || 'MSME'}</span></p>
-                                    </div>
-                                    <PreviewImage label="Registration Document (MSME/GST/Trade License)" url={details.registrationDocUrl} />
-                                    <PreviewImage label="Office Photo" url={details.officePhotoUrl} />
-                                    <PreviewImage label="Business PAN" url={details.businessPanUrl} />
-                                    <PreviewImage label="Channel Stamp" url={details.channelStampUrl} />
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-end gap-3 rounded-b-2xl">
-                        <button onClick={() => handleAction('rejected')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Reject</button>
-                        <button onClick={() => handleAction('approved')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Approve</button>
-                    </div>
-                </div>
-            </div>
-            {zoomedImage && (
-                <div className="fixed inset-0 z-[60] bg-black bg-opacity-95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
-                    <img src={zoomedImage} className="max-w-full max-h-[90vh] rounded" />
-                    <button className="absolute top-6 right-6 text-white text-4xl">&times;</button>
-                </div>
-            )}
-        </>
-    );
-};
-
-const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
-    const [pendingUsers, setPendingUsers] = useState<User[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [selectedUser, setSelectedUser] = useState<User | null>(null);
-
-    const fetchPending = useCallback(() => {
-        setIsLoading(true);
-        apiService.getPendingCreatorVerifications()
-            .then(setPendingUsers)
-            .finally(() => setIsLoading(false));
-    }, []);
-
-    useEffect(() => {
-        fetchPending();
-    }, [fetchPending]);
-
-    if (isLoading) return <p className="p-8 text-center dark:text-gray-300">Loading...</p>;
-    
-    if (pendingUsers.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-                <CheckBadgeIcon className="w-12 h-12 mb-2 opacity-50" />
-                <p>No pending creator verification requests.</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Creator Verification Queue</h2>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
-                        <tr>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">User</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Role</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Submitted</th>
-                            <th className="p-4 text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {pendingUsers.map(user => (
-                            <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                <td className="p-4">
-                                    <div className="font-medium dark:text-gray-200">{user.name}</div>
-                                    <div className="text-xs text-gray-500">{user.email}</div>
-                                </td>
-                                <td className="p-4 capitalize text-gray-600 dark:text-gray-300">{user.role}</td>
-                                <td className="p-4 text-sm text-gray-500">Pending Review</td>
-                                <td className="p-4 text-right">
-                                    <button 
-                                        onClick={() => setSelectedUser(user)}
-                                        className="text-indigo-600 hover:text-indigo-800 text-sm font-medium px-3 py-1 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
-                                    >
-                                        Review
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            {selectedUser && (
-                <CreatorVerificationModal 
-                    user={selectedUser} 
-                    onClose={() => setSelectedUser(null)}
-                    onActionComplete={() => {
-                        fetchPending();
-                        onUpdate();
-                    }}
-                />
-            )}
-        </div>
-    );
-};
-
-
-// --- Existing Components (KycDetailModal, KycPanel, etc.) remain unchanged ---
-
-const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-    const { kycDetails } = user;
-
-    const handleAction = async (status: 'approved' | 'rejected') => {
-        let reason: string | undefined;
-        if (status === 'rejected') {
-            reason = prompt("Please provide a reason for rejection:");
-            if (!reason) return; 
-        }
-
-        if (!window.confirm(`Are you sure you want to ${status} this KYC submission?`)) return;
-
-        setIsProcessing(true);
-        try {
-            await apiService.updateKycStatus(user.id, status, reason);
-            onActionComplete();
-            onClose();
-        } catch (error) {
-            console.error(`Failed to ${status} KYC`, error);
-            alert(`Could not ${status} KYC. Please try again.`);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    if (!kycDetails) return null;
-
-    return (
-        <>
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
-                    <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 rounded-t-2xl">
-                        <div>
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">KYC Verification</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.name} ({user.role})</p>
-                        </div>
-                        <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-3xl leading-none">&times;</button>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-6">
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
-                            {/* Left: User Details */}
-                            <div className="bg-gray-50 dark:bg-gray-700/30 p-6 rounded-xl border border-gray-200 dark:border-gray-700 h-fit">
-                                <h3 className="font-bold text-lg mb-4 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-2">Submitted Data</h3>
-                                <dl className="space-y-3 text-sm dark:text-gray-300">
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">ID Type:</dt><dd className="font-medium">{kycDetails.idType || 'N/A'}</dd></div>
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">ID Number:</dt><dd className="font-mono font-medium bg-gray-200 dark:bg-gray-600 px-2 rounded">{kycDetails.idNumber || 'N/A'}</dd></div>
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">DOB:</dt><dd>{kycDetails.dob || 'N/A'}</dd></div>
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">Gender:</dt><dd>{kycDetails.gender || 'N/A'}</dd></div>
-                                    <div className="pt-3 border-t border-gray-200 dark:border-gray-600">
-                                        <dt className="text-gray-500 dark:text-gray-400 mb-1">Address:</dt>
-                                        <dd className="bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
-                                            {kycDetails.address}<br/>
-                                            {kycDetails.villageTown}, {kycDetails.roadNameArea}<br/>
-                                            {kycDetails.city}, {kycDetails.district}<br/>
-                                            {kycDetails.state} - {kycDetails.pincode}
-                                        </dd>
-                                    </div>
-                                </dl>
-                            </div>
-
-                            {/* Right: Documents */}
-                            <div className="space-y-6">
-                                <h3 className="font-bold text-lg mb-2 dark:text-gray-100">Documents</h3>
-                                <div>
-                                    <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">ID Proof Document</h4>
-                                    {kycDetails.idProofUrl ? (
-                                        <div 
-                                            className="border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden cursor-zoom-in hover:border-indigo-500 transition-colors bg-gray-100 dark:bg-gray-900 flex items-center justify-center h-64"
-                                            onClick={() => setZoomedImage(kycDetails.idProofUrl!)}
-                                        >
-                                            <img src={kycDetails.idProofUrl} alt="ID Proof" className="max-h-full max-w-full object-contain" />
-                                        </div>
-                                    ) : (
-                                        <div className="h-32 bg-red-50 border border-red-200 rounded-xl flex items-center justify-center text-red-500 text-sm">
-                                            Not Uploaded
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
-                                    <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Live Selfie</h4>
-                                    {kycDetails.selfieUrl ? (
-                                        <div 
-                                            className="border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden cursor-zoom-in hover:border-indigo-500 transition-colors bg-gray-100 dark:bg-gray-900 flex items-center justify-center h-64"
-                                            onClick={() => setZoomedImage(kycDetails.selfieUrl!)}
-                                        >
-                                            <img src={kycDetails.selfieUrl} alt="Selfie" className="max-h-full max-w-full object-contain" />
-                                        </div>
-                                    ) : (
-                                        <div className="h-32 bg-red-50 border border-red-200 rounded-xl flex items-center justify-center text-red-500 text-sm">
-                                            Not Uploaded
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-between items-center rounded-b-2xl">
-                        <div className="text-sm text-gray-500">Action required for verification.</div>
-                        <div className="flex gap-3">
-                            <button onClick={() => handleAction('rejected')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 shadow-sm">
-                                ✕ Reject
-                            </button>
-                            <button onClick={() => handleAction('approved')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm">
-                                ✓ Approve
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Lightbox */}
-            {zoomedImage && (
-                <div className="fixed inset-0 z-[60] bg-black bg-opacity-95 flex items-center justify-center p-4 animate-fade-in-down" onClick={() => setZoomedImage(null)}>
-                    <img src={zoomedImage} className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" alt="Zoomed Document" />
-                    <button className="absolute top-6 right-6 text-white text-4xl hover:text-gray-300">&times;</button>
-                    <p className="absolute bottom-6 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded-full">Click anywhere to close</p>
-                </div>
-            )}
-        </>
-    );
-};
-
-const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
-    const [submissions, setSubmissions] = useState<User[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [viewingUser, setViewingUser] = useState<User | null>(null);
-
-    const fetchSubmissions = useCallback(() => {
-        setIsLoading(true);
-        apiService.getKycSubmissions()
-            .then(setSubmissions)
-            .finally(() => setIsLoading(false));
-    }, []);
-
-    useEffect(() => {
-        fetchSubmissions();
-    }, [fetchSubmissions]);
-
-    if (isLoading) return <p className="p-8 text-center text-gray-500 dark:text-gray-400">Loading KYC submissions...</p>;
-    
-    if (submissions.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-                <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full mb-3">
-                    <KycIcon className="w-8 h-8 text-gray-400" />
-                </div>
-                <p>No pending KYC submissions.</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">KYC Verification Queue</h2>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {submissions.map(user => (
-                        <li key={user.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center space-x-4">
-                                    <div className="relative">
-                                        <img src={user.avatar} alt={user.name} className="w-12 h-12 rounded-full object-cover border border-gray-200 dark:border-gray-600" />
-                                        {user.kycDetails?.rejectionReason && (
-                                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white" title="Resubmitted after rejection"></span>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <p className="font-semibold text-gray-900 dark:text-gray-100">{user.name}</p>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">{user.email} • <span className="capitalize bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs">{user.role}</span></p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-xs font-medium text-yellow-600 bg-yellow-100 px-2.5 py-1 rounded-full">Pending Review</span>
-                                    <button 
-                                        onClick={() => setViewingUser(user)} 
-                                        className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors"
-                                    >
-                                        Review Documents
-                                    </button>
-                                </div>
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-            </div>
-            {viewingUser && (
-                <KycDetailModal 
-                    user={viewingUser}
-                    onClose={() => setViewingUser(null)}
-                    onActionComplete={() => {
-                        fetchSubmissions();
-                        onUpdate();
-                    }}
-                />
-            )}
-        </div>
-    );
-};
-
-const PayoutStatusBadge: React.FC<{ status: PayoutRequest['status'] | Transaction['status'] }> = ({ status }) => {
-    const baseClasses = "px-2 py-1 text-xs font-medium rounded-full capitalize";
-    const statusMap: Record<string, { text: string; classes: string }> = {
-        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100 dark:text-yellow-200 dark:bg-yellow-900/50" },
-        on_hold: { text: "On Hold", classes: "text-blue-800 bg-blue-100 dark:text-blue-200 dark:bg-blue-900/50" },
-        processing: { text: "Processing", classes: "text-purple-800 bg-purple-100 dark:text-purple-200 dark:bg-purple-900/50" },
-        approved: { text: "Approved", classes: "text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50" },
-        rejected: { text: "Rejected", classes: "text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50" },
-        completed: { text: "Completed", classes: "text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50" },
-        failed: { text: "Failed", classes: "text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50" },
-    };
-    const statusInfo = statusMap[status];
-
-    if (!statusInfo) {
-        return <span className={`${baseClasses} text-gray-800 bg-gray-100 dark:text-gray-200 dark:bg-gray-700`}>{status || 'Unknown'}</span>;
-    }
-
-    const { text, classes } = statusInfo;
-    return <span className={`${baseClasses} ${classes}`}>{text}</span>;
-};
-
-const CommunityManagementPanel: React.FC = () => {
-    const [posts, setPosts] = useState<Post[]>([]);
-    const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isAiSearching, setIsAiSearching] = useState(false);
-
-    const fetchPosts = useCallback(() => {
-        setIsLoading(true);
-        apiService.getPosts().then(data => {
-            setPosts(data);
-            setFilteredPosts(data);
-        }).finally(() => setIsLoading(false));
-    }, []);
-
-    useEffect(() => {
-        const dummyAdmin: User = { 
-            id: 'admin', 
-            name: 'Admin', 
-            email: '', 
-            role: 'staff', 
-            membership: {} as any, 
-            kycStatus: 'approved',
-            avatar: 'https://placehold.co/100x100?text=Admin' // Add avatar
-        };
-        setCurrentUser(dummyAdmin);
-        fetchPosts();
-    }, [fetchPosts]);
-    
-    const handleDelete = async (postId: string) => {
-        if(window.confirm("Are you sure you want to delete this post?")) {
-            await apiService.deletePost(postId);
-            fetchPosts();
-        }
-    };
-
-    const handleUpdate = async (postId: string, data: Partial<Post>) => {
-        await apiService.updatePost(postId, data);
-        fetchPosts();
-    };
-
-    const handleAiSearch = async () => {
-        if (!searchQuery.trim()) {
-            setFilteredPosts(posts);
-            return;
-        }
-        setIsAiSearching(true);
-        try {
-            const matchedIds = await filterPostsWithAI(searchQuery, posts);
-            setFilteredPosts(posts.filter(p => matchedIds.includes(p.id)));
-        } catch (err) {
-            console.error(err);
-            alert("AI Search failed. Showing all results.");
-            setFilteredPosts(posts);
-        } finally {
-            setIsAiSearching(false);
-        }
-    };
-
-    if (isLoading || !currentUser) return <p className="dark:text-gray-300 p-4">Loading posts...</p>;
-
-    return (
-        <div className="p-4 h-full flex flex-col">
-            <div className="mb-4 relative">
-                <input
-                    type="text"
-                    placeholder="AI search posts (e.g., 'posts by influencers', 'blocked content')"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAiSearch()}
-                    className="w-full p-3 pr-28 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                />
-                <button
-                    onClick={handleAiSearch}
-                    disabled={isAiSearching}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center px-3 py-1.5 text-sm font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-md shadow hover:shadow-md disabled:opacity-50"
-                >
-                    <SparklesIcon className={`w-4 h-4 mr-1 ${isAiSearching ? 'animate-spin' : ''}`} />
-                    {isAiSearching ? 'Searching...' : 'AI Search'}
-                </button>
-            </div>
-            <div className="flex-1 overflow-y-auto space-y-4">
-                 {filteredPosts.length === 0 ? (
-                    <p className="text-center text-gray-500 dark:text-gray-400 mt-8">No posts match your search.</p>
-                ) : (
-                    filteredPosts.map(post => (
-                        <PostCard 
-                            key={post.id} 
-                            post={post} 
-                            currentUser={currentUser}
-                            onDelete={handleDelete}
-                            onUpdate={handleUpdate}
-                            onToggleLike={() => {}} 
-                            onCommentChange={() => {}} 
-                        />
-                    ))
-                )}
-            </div>
-        </div>
-    );
-};
-
-const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabItem[], transactions: Transaction[], payouts: PayoutRequest[], dailyPayouts: DailyPayoutRequest[] }> = ({ users, collaborations, transactions, payouts, dailyPayouts }) => {
-    const stats = [
-        { label: 'Total Users', value: users.length, icon: UserGroupIcon, color: 'bg-blue-500' },
-        { label: 'Active Collabs', value: collaborations.filter(c => c.status === 'in_progress').length, icon: CollabIcon, color: 'bg-green-500' },
-        { label: 'Pending Payouts', value: payouts.filter(p => p.status === 'pending').length + dailyPayouts.filter(d => d.status === 'pending').length, icon: PaymentIcon, color: 'bg-yellow-500' },
-        { label: 'Total Revenue', value: `₹${transactions.filter(t => t.type === 'payment' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0).toLocaleString()}`, icon: AnalyticsIcon, color: 'bg-purple-500' },
-    ];
-
-    return (
-        <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Dashboard Overview</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, index) => (
-                    <div key={index} className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm flex items-center space-x-4">
-                        <div className={`p-3 rounded-full text-white ${stat.color}`}>
-                            <stat.icon className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-                            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{stat.value}</p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-const UserManagementPanel: React.FC<{ users: User[], onUserSelect: (user: User) => void }> = ({ users, onUserSelect }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    
-    const filteredUsers = users.filter(u => 
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.piNumber && u.piNumber.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-
-    return (
-        <div className="p-6 h-full flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Management</h2>
-                <input 
-                    type="text" 
-                    placeholder="Search users..." 
-                    className="p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-            </div>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
-                        <tr>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">User</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Role</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Status</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Joined</th>
-                            <th className="p-4 text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {filteredUsers.map(user => (
-                            <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                <td className="p-4 flex items-center gap-3">
-                                    <img src={user.avatar} alt="" className="w-8 h-8 rounded-full bg-gray-200" />
-                                    <div>
-                                        <div className="font-medium dark:text-gray-200">{user.name}</div>
-                                        <div className="text-xs text-gray-500">{user.email}</div>
-                                    </div>
-                                </td>
-                                <td className="p-4 capitalize text-gray-600 dark:text-gray-300">{user.role}</td>
-                                <td className="p-4">
-                                    <span className={`px-2 py-1 text-xs rounded-full ${user.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                                        {user.isBlocked ? 'Blocked' : 'Active'}
-                                    </span>
-                                </td>
-                                <td className="p-4 text-sm text-gray-500">
-                                    N/A
-                                </td>
-                                <td className="p-4 text-right">
-                                    <button onClick={() => onUserSelect(user)} className="text-indigo-600 hover:text-indigo-800 text-sm font-medium">View</button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-const StaffManagementPanel: React.FC<{ staffUsers: User[], onUpdate: () => void, platformSettings: PlatformSettings }> = ({ staffUsers, onUpdate, platformSettings }) => {
-    return (
-        <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Staff Management</h2>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
-                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {staffUsers.map(staff => (
-                        <li key={staff.id} className="p-4 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <img src={staff.avatar} alt="" className="w-10 h-10 rounded-full" />
-                                <div>
-                                    <p className="font-medium dark:text-gray-200">{staff.name}</p>
-                                    <p className="text-sm text-gray-500">{staff.email}</p>
-                                </div>
-                            </div>
-                            <span className="text-sm text-gray-500">{staff.staffPermissions?.join(', ') || 'No permissions'}</span>
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </div>
-    );
-};
-
-const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allTransactions: Transaction[], onUpdate: (id: string, type: string, data: any) => void }> = ({ collaborations, allTransactions, onUpdate }) => {
-    return (
-        <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">All Collaborations</h2>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600 sticky top-0">
-                        <tr>
-                            <th className="p-4">Title</th>
-                            <th className="p-4">Type</th>
-                            <th className="p-4">Brand</th>
-                            <th className="p-4">Influencer/Partner</th>
-                            <th className="p-4">Status</th>
-                            <th className="p-4">Payment</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {collaborations.map(collab => (
-                            <tr key={collab.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                <td className="p-4 font-medium dark:text-gray-200">{collab.title}</td>
-                                <td className="p-4 text-sm text-gray-500">{collab.type}</td>
-                                <td className="p-4 text-sm text-gray-600 dark:text-gray-300">{collab.customerName}</td>
-                                <td className="p-4 text-sm text-gray-600 dark:text-gray-300">{collab.providerName}</td>
-                                <td className="p-4"><span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-600 rounded-full">{collab.status}</span></td>
-                                <td className="p-4"><span className={`px-2 py-1 text-xs rounded-full ${collab.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{collab.paymentStatus}</span></td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transaction[], onUpdate: () => void }> = ({ disputes, allTransactions, onUpdate }) => {
-    return (
-        <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Disputes</h2>
-            {disputes.length === 0 ? <p className="text-gray-500">No active disputes.</p> : (
-                <div className="space-y-4">
-                    {disputes.map(d => (
-                        <div key={d.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-red-100 dark:border-red-900">
-                            <div className="flex justify-between">
-                                <h3 className="font-bold text-red-600 dark:text-red-400">Dispute: {d.collaborationTitle}</h3>
-                                <span className="text-sm text-gray-500">{d.status}</span>
-                            </div>
-                            <p className="text-sm mt-2 dark:text-gray-300"><strong>Reason:</strong> {d.reason}</p>
-                            <p className="text-sm text-gray-500 mt-1">Raised by: {d.disputedByName}</p>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
-
-const DiscountSettingsPanel: React.FC<{ settings: PlatformSettings, setSettings: (s: PlatformSettings) => void, setIsDirty: (d: boolean) => void }> = ({ settings }) => {
-    return (
-        <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Discount Settings</h2>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
-                <p className="text-gray-500 dark:text-gray-400">Manage promotional discounts here.</p>
-                <div className="mt-4 text-sm text-gray-400">Settings are currently read-only in this view.</div>
-            </div>
-        </div>
-    );
-};
-
-const UserDetailsModal: React.FC<{ user: User | null, onClose: () => void, onSendReset: (u: User) => void, onToggleBlock: (u: User) => void, allTransactions: Transaction[], allPayouts: PayoutRequest[], allCollabs: CombinedCollabItem[], influencerProfile: Influencer | null, onUpdate: () => void }> = ({ user, onClose, onSendReset, onToggleBlock }) => {
-    if (!user) return null;
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold dark:text-gray-100">{user.name}</h2>
-                    <button onClick={onClose} className="text-gray-500">&times;</button>
-                </div>
-                <div className="space-y-4">
-                    <div className="flex items-center gap-4">
-                        <img src={user.avatar} alt="" className="w-16 h-16 rounded-full" />
-                        <div>
-                            <p className="text-gray-600 dark:text-gray-300">{user.email}</p>
-                            <p className="text-sm text-gray-500">{user.role}</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-4 pt-4 border-t dark:border-gray-700">
-                        <button onClick={() => onSendReset(user)} className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200">Send Password Reset</button>
-                        <button onClick={() => onToggleBlock(user)} className={`px-4 py-2 rounded-lg text-sm font-medium text-white ${user.isBlocked ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
-                            {user.isBlocked ? 'Unblock User' : 'Block User'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTransactions, allPayouts, allCollabs, allRefunds, allDailyPayouts, platformSettings, onUpdate }) => {
     const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
-    const [selectedUser, setSelectedUser] = useState<User | null>(null);
-    const [isUserDetailsModalOpen, setIsUserDetailsModalOpen] = useState(false);
-    const [selectedInfluencerProfile, setSelectedInfluencerProfile] = useState<Influencer | null>(null);
-
-    const [disputes, setDisputes] = useState<Dispute[]>([]);
-    const [isLoadingDisputes, setIsLoadingDisputes] = useState(false);
-    
-    const [paginatedUsers, setPaginatedUsers] = useState<User[]>([]);
-    const [lastVisibleUser, setLastVisibleUser] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-    const [isFetchingUsers, setIsFetchingUsers] = useState(false);
-    const USER_PAGE_LIMIT = 20;
-
-    const staffUsers = useMemo(() => allUsers.filter(u => u.role === 'staff'), [allUsers]);
-    const regularUsers = useMemo(() => allUsers.filter(u => u.role !== 'staff'), [allUsers]);
-
-    const fetchUsers = useCallback(async (loadMore = false) => {
-        setIsFetchingUsers(true);
-        const options: any = { pageLimit: USER_PAGE_LIMIT };
-        if (loadMore && lastVisibleUser) {
-            options.startAfterDoc = lastVisibleUser;
-        }
-        const { users, lastVisible } = await apiService.getUsersPaginated(options);
-        setPaginatedUsers(prev => loadMore ? [...prev, ...users] : users);
-        setLastVisibleUser(lastVisible);
-        setIsFetchingUsers(false);
-    }, [lastVisibleUser]);
-
-    useEffect(() => {
-        if (activeTab === 'user_management') {
-            fetchUsers();
-        }
-        if (activeTab === 'disputes') {
-            setIsLoadingDisputes(true);
-            apiService.getDisputes().then(setDisputes).finally(() => setIsLoadingDisputes(false));
-        }
-    }, [activeTab, fetchUsers]);
-
-    const handleOpenUserDetails = async (userToView: User) => {
-        setSelectedUser(userToView);
-        if (userToView.role === 'influencer') {
-            const profile = await apiService.getInfluencerProfile(userToView.id);
-            setSelectedInfluencerProfile(profile);
-        }
-        setIsUserDetailsModalOpen(true);
-    };
-
-    const handleCloseUserDetails = () => {
-        setIsUserDetailsModalOpen(false);
-        setSelectedUser(null);
-        setSelectedInfluencerProfile(null);
-    };
-
-    const handleSendResetEmail = async (userToSend: User) => {
-        try {
-            await authService.sendPasswordResetEmail(userToSend.email);
-            alert(`Password reset email sent to ${userToSend.email}.`);
-        } catch (error) {
-            console.error(error);
-            alert("Failed to send reset email.");
-        }
-    };
-    
-    const handleToggleBlock = async (userToToggle: User) => {
-        try {
-            await apiService.updateUser(userToToggle.id, { isBlocked: !userToToggle.isBlocked });
-            onUpdate(); 
-        } catch (error) {
-            console.error(error);
-            alert("Failed to update user status.");
-        }
-    };
-
-    const handleCollabUpdate = async (id: string, type: string, data: Partial<AnyCollaboration>) => {
-        const collabTypeMap: { [key: string]: 'direct' | 'campaign' | 'ad_slot' | 'banner_booking' } = {
-            'Direct': 'direct',
-            'Campaign': 'campaign',
-            'Live TV': 'ad_slot',
-            'Banner Ad': 'banner_booking'
-        };
-        const collabType = collabTypeMap[type];
-        if (!collabType) return;
-        
-        try {
-            switch(collabType) {
-                case 'direct': await apiService.updateCollaborationRequest(id, data as Partial<CollaborationRequest>, user.id); break;
-                case 'campaign': await apiService.updateCampaignApplication(id, data as Partial<CampaignApplication>, user.id); break;
-                case 'ad_slot': await apiService.updateAdSlotRequest(id, data as Partial<AdSlotRequest>, user.id); break;
-                case 'banner_booking': await apiService.updateBannerAdBookingRequest(id, data as Partial<BannerAdBookingRequest>, user.id); break;
-            }
-            onUpdate();
-        } catch (error) {
-            console.error("Failed to update collaboration", error);
-        }
-    };
-    
-    const combinedCollaborations = useMemo<CombinedCollabItem[]>(() => {
-        const userMap = new Map(allUsers.map(u => [u.id, u]));
-        return allCollabs.map((collab) => {
-            const isDirect = 'influencerId' in collab;
-            const isCampaign = 'campaignId' in collab;
-            const isLiveTv = 'liveTvId' in collab;
-            const isBanner = 'bannerAdId' in collab;
-    
-            const customerId = collab.brandId;
-            let providerId: string | undefined;
-            if (isDirect || isCampaign) providerId = (collab as CollaborationRequest | CampaignApplication).influencerId;
-            if (isLiveTv) providerId = (collab as AdSlotRequest).liveTvId;
-            if (isBanner) providerId = (collab as BannerAdBookingRequest).agencyId;
-    
-            const customer = userMap.get(customerId);
-            const provider = providerId ? userMap.get(providerId) : undefined;
-
-            return {
-                id: collab.id,
-                type: isDirect ? 'Direct' : isCampaign ? 'Campaign' : isLiveTv ? 'Live TV' : 'Banner Ad',
-                title: ('title' in collab ? collab.title : null) || ('campaignTitle' in collab ? collab.campaignTitle : null) || ('campaignName' in collab ? collab.campaignName : 'N/A'),
-                customerName: (customer as User)?.name || collab.brandName || 'Unknown',
-                customerAvatar: (customer as User)?.avatar || collab.brandAvatar || '',
-                customerPiNumber: (customer as User)?.piNumber,
-                providerName: (provider as User)?.name || ('influencerName' in collab && collab.influencerName) || ('liveTvName' in collab && collab.liveTvName) || ('agencyName' in collab && collab.agencyName) || 'Unknown',
-                providerAvatar: (provider as User)?.avatar || ('influencerAvatar' in collab && collab.influencerAvatar) || ('liveTvAvatar' in collab && collab.liveTvAvatar) || ('agencyAvatar' in collab && collab.agencyAvatar) || '',
-                providerPiNumber: (provider as User)?.piNumber,
-                date: toJsDate(collab.timestamp),
-                status: collab.status as any,
-                paymentStatus: collab.paymentStatus === 'paid' || collab.paymentStatus === 'payout_requested' || collab.paymentStatus === 'payout_complete' ? 'Paid' : 'Unpaid',
-                payoutStatus: collab.paymentStatus === 'payout_requested' ? 'Requested' : collab.paymentStatus === 'payout_complete' ? 'Completed' : 'N/A',
-                originalData: collab
-            };
-        });
-    }, [allCollabs, allUsers]);
-
 
     const tabs: { id: AdminTab; label: string; icon: React.FC<{className?: string}>, permission?: StaffPermission }[] = [
         { id: 'dashboard', label: 'Dashboard', icon: AnalyticsIcon },
         { id: 'user_management', label: 'User Management', icon: UserGroupIcon, permission: 'user_management' },
-        { id: 'staff_management', label: 'Staff Management', icon: UserGroupIcon, permission: 'super_admin' },
-        { id: 'collaborations', label: 'Collaborations', icon: CollabIcon, permission: 'collaborations' },
-        { id: 'kyc', label: 'KYC Verification', icon: KycIcon, permission: 'kyc' },
-        { id: 'creator_verification', label: 'Creator Verification', icon: CheckBadgeIcon, permission: 'kyc' },
-        { id: 'payouts', label: 'Payouts & Refunds', icon: PaymentIcon, permission: 'financial' },
-        { id: 'payment_history', label: 'Payment History', icon: PaymentIcon, permission: 'financial' },
-        { id: 'community', label: 'Community', icon: CommunityIcon, permission: 'community' },
-        { id: 'live_help', label: 'Live Help', icon: ChatBubbleLeftEllipsisIcon, permission: 'support' },
+        { id: 'creator_verification', label: 'Verifications', icon: CheckBadgeIcon, permission: 'kyc' },
+        { id: 'payouts', label: 'Payouts', icon: PaymentIcon, permission: 'financial' },
+        { id: 'payment_history', label: 'History', icon: PaymentIcon, permission: 'financial' },
         { id: 'marketing', label: 'Marketing', icon: EnvelopeIcon, permission: 'marketing' },
-        { id: 'disputes', label: 'Disputes', icon: ExclamationTriangleIcon, permission: 'support' },
-        { id: 'discounts', label: 'Discount Settings', icon: SparklesIcon, permission: 'super_admin' },
-        { id: 'platform_banners', label: 'Platform Banners', icon: BannerAdsIcon, permission: 'marketing' },
-        { id: 'client_brands', label: 'Our Partners', icon: RocketIcon, permission: 'marketing' },
+        { id: 'live_help', label: 'Live Chat', icon: ChatBubbleLeftEllipsisIcon, permission: 'support' },
+        { id: 'support_tickets', label: 'Tickets', icon: ExclamationTriangleIcon, permission: 'support' },
+        { id: 'platform_banners', label: 'Banners', icon: BannerAdsIcon, permission: 'marketing' },
+        { id: 'client_brands', label: 'Partners', icon: RocketIcon, permission: 'marketing' },
+        { id: 'top_influencers', label: 'Top 10', icon: TrophyIcon, permission: 'marketing' },
+        { id: 'community', label: 'Community', icon: CommunityIcon, permission: 'community' },
     ];
-    
-    const hasPermission = (permission?: StaffPermission) => {
-        if (!permission) return true; 
-        return user.staffPermissions?.includes('super_admin') || user.staffPermissions?.includes(permission);
-    };
 
-    const visibleTabs = tabs.filter(tab => hasPermission(tab.permission));
-    
+    const combinedCollaborations: CombinedCollabItem[] = allCollabs.map(c => ({
+        id: c.id,
+        type: 'unknown', // Simplification
+        title: 'title' in c ? c.title : 'campaignTitle' in c ? c.campaignTitle : 'campaignName' in c ? c.campaignName : 'Unknown',
+        customerName: c.brandName,
+        customerAvatar: c.brandAvatar,
+        providerName: 'influencerName' in c ? c.influencerName : 'liveTvName' in c ? c.liveTvName : 'agencyName' in c ? c.agencyName : '',
+        providerAvatar: 'influencerAvatar' in c ? c.influencerAvatar : 'liveTvAvatar' in c ? c.liveTvAvatar : 'agencyAvatar' in c ? c.agencyAvatar : '',
+        status: c.status,
+        paymentStatus: c.paymentStatus || 'pending',
+        payoutStatus: 'pending', // Derived logic simplified
+        originalData: c
+    }));
+
     return (
-        <div className="flex h-full">
-            <nav className="w-64 bg-gray-800 text-white p-4 space-y-2 flex-shrink-0 overflow-y-auto">
-                 {visibleTabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                            activeTab === tab.id
-                                ? 'bg-gray-900'
-                                : 'hover:bg-gray-700'
-                        }`}
-                    >
-                        <tab.icon className="w-5 h-5 mr-3" />
-                        <span>{tab.label}</span>
-                    </button>
-                ))}
-            </nav>
-            <main className="flex-1 bg-gray-100 dark:bg-gray-900 overflow-hidden">
-                {/* Render Panels based on activeTab */}
-                {activeTab === 'dashboard' && <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />}
-                {activeTab === 'user_management' && <UserManagementPanel users={regularUsers} onUserSelect={handleOpenUserDetails} />}
-                {activeTab === 'staff_management' && <StaffManagementPanel staffUsers={staffUsers} onUpdate={onUpdate} platformSettings={platformSettings} />}
-                {activeTab === 'collaborations' && <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} />}
-                {activeTab === 'kyc' && <KycPanel onUpdate={onUpdate} />}
-                {activeTab === 'creator_verification' && <CreatorVerificationPanel onUpdate={onUpdate} />}
-                {activeTab === 'payouts' && <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={onUpdate} />}
-                {activeTab === 'payment_history' && <AdminPaymentHistoryPage transactions={allTransactions} payouts={allPayouts} allUsers={allUsers} collaborations={combinedCollaborations} />}
-                {activeTab === 'community' && <CommunityManagementPanel />}
+        <div className="flex h-full bg-gray-100 dark:bg-gray-900 overflow-hidden">
+            {/* Admin Sidebar */}
+            <div className="w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex-shrink-0 overflow-y-auto">
+                <div className="p-4 border-b dark:border-gray-700">
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">Admin Panel</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Super Admin Access</p>
+                </div>
+                <nav className="p-2 space-y-1">
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                                activeTab === tab.id 
+                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' 
+                                    : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700'
+                            }`}
+                        >
+                            <tab.icon className="mr-3 h-5 w-5" />
+                            {tab.label}
+                        </button>
+                    ))}
+                </nav>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 relative">
+                {activeTab === 'dashboard' && (
+                    <div className="p-8">
+                        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Dashboard Overview</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Total Users</p>
+                                <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{allUsers.length}</p>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Transactions</p>
+                                <p className="text-3xl font-bold text-green-600 dark:text-green-400">₹{allTransactions.reduce((acc, t) => acc + t.amount, 0).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Pending Payouts</p>
+                                <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{allPayouts.filter(p => p.status === 'pending').length}</p>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Open Disputes</p>
+                                <p className="text-3xl font-bold text-red-600 dark:text-red-400">0</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {activeTab === 'user_management' && (
+                    <UserManagementPanel 
+                        users={allUsers} 
+                        allTransactions={allTransactions} 
+                        allPayouts={allPayouts} 
+                        allCollabs={allCollabs} 
+                        onUpdate={onUpdate} 
+                    />
+                )}
+                {activeTab === 'creator_verification' && (
+                    <div className="p-6">
+                        <h3 className="text-xl font-bold mb-4">Verification Requests</h3>
+                        <p>Use the Users tab to view verification details per user.</p>
+                    </div>
+                )}
+                {activeTab === 'payouts' && (
+                    <PayoutsPanel 
+                        payouts={allPayouts} 
+                        refunds={allRefunds} 
+                        dailyPayouts={allDailyPayouts} 
+                        collaborations={combinedCollaborations} 
+                        allTransactions={allTransactions} 
+                        allUsers={allUsers} 
+                        onUpdate={onUpdate} 
+                    />
+                )}
+                {activeTab === 'payment_history' && (
+                    <AdminPaymentHistoryPage 
+                        transactions={allTransactions} 
+                        payouts={allPayouts} 
+                        allUsers={allUsers} 
+                        collaborations={combinedCollaborations} 
+                    />
+                )}
+                {activeTab === 'top_influencers' && <div className="p-6 overflow-y-auto h-full"><TopInfluencersList /></div>}
+                {activeTab === 'community' && <CommunityPage user={user} feedType="global" />}
                 {activeTab === 'live_help' && <LiveHelpPanel adminUser={user} />}
                 {activeTab === 'marketing' && <MarketingPanel allUsers={allUsers} platformSettings={platformSettings} onUpdate={onUpdate} />}
-                {activeTab === 'disputes' && <DisputesPanel disputes={disputes} allTransactions={allTransactions} onUpdate={() => apiService.getDisputes().then(setDisputes)} />}
-                {activeTab === 'discounts' && <DiscountSettingsPanel settings={platformSettings} setSettings={() => {}} setIsDirty={() => {}} />}
+                {activeTab === 'support_tickets' && <SupportAdminPage user={user} />}
                 {activeTab === 'platform_banners' && <PlatformBannerPanel onUpdate={onUpdate} />}
                 {activeTab === 'client_brands' && <PartnersPanel onUpdate={onUpdate} />}
-
-                 {isUserDetailsModalOpen && (
-                    <UserDetailsModal 
-                        user={selectedUser} 
-                        onClose={handleCloseUserDetails}
-                        onSendReset={handleSendResetEmail}
-                        onToggleBlock={handleToggleBlock}
-                        allTransactions={allTransactions}
-                        allPayouts={allPayouts}
-                        allCollabs={combinedCollaborations}
-                        influencerProfile={selectedInfluencerProfile}
-                        onUpdate={onUpdate}
-                    />
-                 )}
-            </main>
+            </div>
         </div>
     );
 };

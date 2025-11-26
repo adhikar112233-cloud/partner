@@ -1,6 +1,6 @@
 
 import { User, UserRole, PlatformSettings, Membership } from '../types';
-import { auth, db, isFirebaseConfigured, RecaptchaVerifier, signInWithPhoneNumber } from './firebase';
+import { auth, db, isFirebaseConfigured, RecaptchaVerifier, signInWithPhoneNumber, firebaseConfig } from './firebase';
 import { apiService } from './apiService';
 import { 
     createUserWithEmailAndPassword, 
@@ -13,10 +13,12 @@ import {
     signInWithPopup,
     sendPasswordResetEmail,
     updatePassword,
-    updateEmail
+    updateEmail,
+    getAuth
 } from 'firebase/auth';
 // Fix: Corrected Firebase imports for 'doc', 'setDoc', 'getDoc', and 'Timestamp' to align with Firebase v9 modular syntax.
 import { doc, setDoc, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { initializeApp, deleteApp } from 'firebase/app';
 
 const DEFAULT_AVATAR_URL = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDRjMCAwIDAtMSAwLTJoMTJ2Mmg0di00YzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==';
 
@@ -95,7 +97,7 @@ export const authService = {
         if (!isValidEmail(email)) {
             throw new Error("Invalid email format provided.");
         }
-        if (!isValidIndianMobile(mobileNumber)) {
+        if (mobileNumber && !isValidIndianMobile(mobileNumber)) {
             throw new Error("Invalid mobile number. Must be 10 digits and start with 6, 7, 8, or 9.");
         }
 
@@ -103,6 +105,20 @@ export const authService = {
         const firebaseUser = userCredential.user;
 
         return await authService.createUserProfile(firebaseUser.uid, email, role, name, companyName, mobileNumber, referralCode);
+    },
+
+    // Create a user from the Admin panel without logging out the current admin user
+    createUserByAdmin: async (email: string, password: string, role: UserRole, name: string, companyName: string, mobileNumber: string): Promise<void> => {
+        // Create a secondary app to avoid logging out the current admin user
+        const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+        const secondaryAuth = getAuth(secondaryApp);
+        try {
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+            await authService.createUserProfile(userCredential.user.uid, email, role, name, companyName, mobileNumber);
+            await signOut(secondaryAuth);
+        } finally {
+            await deleteApp(secondaryApp);
+        }
     },
 
     // New method to handle registration after phone is already verified
@@ -195,6 +211,8 @@ export const authService = {
                 socialMediaLinks: '',
                 location: '',
                 membershipActive: false,
+                totalEarnings: 0, // New field initialized
+                collaborationCount: 0, // New field initialized
             };
             await setDoc(doc(db, 'influencers', uid), influencerProfileData);
         }

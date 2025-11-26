@@ -126,6 +126,9 @@ export interface Influencer {
     socialMediaLinks?: string;
     isBoosted?: boolean;
     membershipActive?: boolean;
+    // Performance Metrics for Top 10
+    totalEarnings?: number;
+    collaborationCount?: number;
 }
 
 export interface DiscountSetting {
@@ -256,7 +259,8 @@ export enum View {
     BOOST_PROFILE = 'boost_profile',
     PARTNERS = 'partners',
     PAYMENT_SUCCESS = 'payment_success',
-    CREATOR_VERIFICATION = 'creator_verification'
+    CREATOR_VERIFICATION = 'creator_verification',
+    TOP_INFLUENCERS = 'top_influencers'
 }
 
 export interface ProfileData {

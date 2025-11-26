@@ -126,10 +126,25 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
 
         setStatus('sending');
         try {
+            // Clear existing verifier if any
             if (recaptchaVerifierForgotRef.current) {
                 recaptchaVerifierForgotRef.current.clear();
+                recaptchaVerifierForgotRef.current = null;
             }
-            recaptchaVerifierForgotRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-forgot', { 'size': 'invisible' });
+
+            const container = document.getElementById('recaptcha-container-forgot');
+            if (!container) throw new Error("Recaptcha container not found");
+
+            recaptchaVerifierForgotRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-forgot', { 
+                'size': 'invisible',
+                'callback': () => {
+                    // ReCaptcha solved
+                },
+                'expired-callback': () => {
+                    setError("Recaptcha expired. Please try again.");
+                    setStatus('idle');
+                }
+            });
             
             const appVerifier = recaptchaVerifierForgotRef.current;
             
@@ -211,7 +226,6 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
     
     const renderError = () => {
         if (status !== 'error' || !error) return null;
-        // ... (Existing error rendering logic can be reused or passed down)
         return <p className="text-red-500 text-sm mt-2">{error}</p>;
     };
     
@@ -232,7 +246,6 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
                     )}
                 </div>
 
-                {/* ... (Existing UI rendering) ... */}
                 {resetMethod === 'email' && (
                      status === 'sent' ? (
                          <div className="text-center py-4">
@@ -400,27 +413,32 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
       // Basic format validation
       if (/^\d{10}$/.test(fullPhoneNumber)) {
         fullPhoneNumber = `+91${fullPhoneNumber}`;
-      } else if (!/^\+\d{11,14}$/.test(fullPhoneNumber)) {
-        setError("Please enter a valid 10-digit mobile number, or a full number with country code (e.g., +919876543210).");
+      } else if (!/^\+\d{10,15}$/.test(fullPhoneNumber)) {
+        setError("Please enter a valid 10-digit mobile number.");
         return;
       }
       
       setIsLoading(true);
       try {
-          // Always ensure we have a fresh verifier instance for a new request
-          if (recaptchaVerifierRef.current) {
-              recaptchaVerifierRef.current.clear();
-          }
-          
-          // 'recaptcha-container-login' must exist in the DOM
-          const container = document.getElementById('recaptcha-container-login');
-          if (!container) {
-              throw new Error("Internal Error: ReCaptcha container not found.");
-          }
+          // Initialize verifier if not already done or needs reset
+          if (!recaptchaVerifierRef.current) {
+              const container = document.getElementById('recaptcha-container-login');
+              if (!container) {
+                  throw new Error("Internal Error: ReCaptcha container not found.");
+              }
 
-          recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-login', { 
-              'size': 'invisible'
-          });
+              recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-login', { 
+                  'size': 'invisible',
+                  'callback': () => {
+                      // reCAPTCHA solved
+                  },
+                  'expired-callback': () => {
+                      // Response expired
+                      setError("Recaptcha expired, please try again.");
+                      setIsLoading(false);
+                  }
+              });
+          }
           
           const appVerifier = recaptchaVerifierRef.current;
           
@@ -431,7 +449,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
       } catch (err: any) {
           console.error("OTP Send Error:", err);
           
-          // Clean up if failed
+          // Clean up if failed so user can try again cleanly
           if (recaptchaVerifierRef.current) {
               try {
                 recaptchaVerifierRef.current.clear();
@@ -446,7 +464,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
           } else if (err.code === 'auth/too-many-requests') {
               setError('Too many requests. Please wait a while before trying again.');
           } else {
-              setError("Failed to send OTP. Please check the number or try again.");
+              setError(err.message || "Failed to send OTP. Please check the number or try again.");
           }
       } finally {
           setIsLoading(false);

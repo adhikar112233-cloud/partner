@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { User, KycDetails, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
 import CameraCapture from './CameraCapture';
-import { LogoIcon, ImageIcon, TrashIcon } from './Icons';
+import { LogoIcon, ImageIcon, TrashIcon, CheckBadgeIcon } from './Icons';
 
 interface KycPageProps {
     user: User;
@@ -25,6 +25,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
     const [success, setSuccess] = useState<string | null>(null);
     const idProofRef = useRef<HTMLInputElement>(null);
     const [isPopupOpen, setIsPopupOpen] = useState(false);
+    const [isVerifyingPan, setIsVerifyingPan] = useState(false);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -60,16 +61,6 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         return new File([u8arr], filename, {type:mime});
     }
 
-    const sanitizeData = (data: KycDetails) => {
-        const cleaned: any = { ...data };
-        Object.keys(cleaned).forEach(key => {
-            if (cleaned[key] === undefined) {
-                cleaned[key] = null;
-            }
-        });
-        return cleaned;
-    };
-
     const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -88,12 +79,12 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         try {
             const selfieFile = (selfieDataUrl && selfieDataUrl !== user.kycDetails?.selfieUrl) ? dataURLtoFile(selfieDataUrl, 'selfie.jpg') : null;
             
-            const cleanedData = sanitizeData(formData);
-
-            await apiService.submitKyc(user.id, cleanedData, idProofFile, selfieFile);
+            // If we have a new file, use it. If not, the API service will keep the old one if we pass the existing kycDetails in formData.
+            // However, apiService.submitKyc merges data.
+            
+            await apiService.submitKyc(user.id, formData, idProofFile, selfieFile);
             
             setSuccess("KYC details submitted successfully! An admin will verify your documents shortly.");
-            setIsLoading(false); // Fix hanging state
             
             setTimeout(() => {
                 onKycSubmitted();
@@ -105,6 +96,30 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
             if (err.code === 'storage/unauthorized') errorMessage = "Storage permission error.";
             setError(errorMessage);
             setIsLoading(false); 
+        }
+    };
+    
+    const handleVerifyPan = async () => {
+        if (!formData.idNumber || formData.idType !== 'PAN') {
+            setError("Please select PAN as ID Type and enter a valid PAN Number.");
+            return;
+        }
+        
+        setIsVerifyingPan(true);
+        setError(null);
+        
+        try {
+            // Use user.name for verification matching
+            await apiService.verifyPan(user.id, formData.idNumber, user.name);
+            setSuccess("PAN Verified Successfully!");
+            setTimeout(() => {
+                onKycSubmitted();
+            }, 2000);
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || "Verification failed. Please check the PAN number.");
+        } finally {
+            setIsVerifyingPan(false);
         }
     };
     
@@ -208,7 +223,25 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Number</label>
-                        <input type="text" name="idNumber" value={formData.idNumber || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="e.g. ABCD1234E" />
+                        <div className="flex gap-2 mt-1">
+                            <input type="text" name="idNumber" value={formData.idNumber || ''} onChange={handleInputChange} required className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="e.g. ABCD1234E" />
+                            {formData.idType === 'PAN' && platformSettings.cashfreeKycClientId && (
+                                <button 
+                                    type="button" 
+                                    onClick={handleVerifyPan} 
+                                    disabled={isVerifyingPan || !formData.idNumber}
+                                    className="px-3 py-2 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                                >
+                                    {isVerifyingPan ? 'Verifying...' : 'Verify'}
+                                </button>
+                            )}
+                        </div>
+                        {user.kycDetails?.isPanVerified && formData.idType === 'PAN' && (
+                            <p className="text-xs text-green-600 mt-1 font-semibold flex items-center">
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                                Verified by Cashfree
+                            </p>
+                        )}
                     </div>
                 </div>
                 

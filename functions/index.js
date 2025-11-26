@@ -471,7 +471,6 @@ app.post('/webhook', async (req, res) => {
         else if (["TRANSFER_SUCCESS", "TRANSFER_FAILED", "TRANSFER_REVERSED"].includes(data.type)) {
              const transfer = data.data;
              const transferId = transfer.transferId;
-             // const referenceId = transfer.referenceId;
              
              let newStatus = 'pending';
              if (data.type === "TRANSFER_SUCCESS") newStatus = 'completed';
@@ -514,7 +513,167 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// --- NEW ENDPOINT: Mock KYC Verification (For Testing) ---
+// --- ENDPOINT 5: Cashfree KYC (PAN Verification) ---
+app.post('/verify-pan', async (req, res) => {
+    try {
+        const { userId, pan, name } = req.body;
+        
+        if (!pan || !name) {
+            return res.status(400).json({ message: "PAN and Name are required." });
+        }
+
+        const settingsDoc = await db.doc('settings/platform').get();
+        const settings = settingsDoc.data() || {};
+        const clientId = settings.cashfreeKycClientId;
+        const clientSecret = settings.cashfreeKycClientSecret;
+
+        if (!clientId || !clientSecret) {
+            return res.status(500).json({ message: "Cashfree Verification keys missing in Admin Settings." });
+        }
+
+        const isTest = clientId.includes("TEST");
+        const baseUrl = isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
+
+        const response = await fetch(`${baseUrl}/pan`, {
+            method: 'POST',
+            headers: {
+                'x-client-id': clientId,
+                'x-client-secret': clientSecret,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ pan, name })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.valid) {
+            const nameMatch = data.name_match_score >= 0.8; 
+            
+            await db.collection('users').doc(userId).update({
+                kycStatus: nameMatch ? 'approved' : 'pending', 
+                'kycDetails.idType': 'PAN',
+                'kycDetails.idNumber': pan,
+                'kycDetails.isPanVerified': true,
+                'kycDetails.panNameMatch': nameMatch,
+                'kycDetails.verifiedBy': 'Cashfree'
+            });
+
+            return res.json({ success: true, message: "PAN Verified Successfully", data: data });
+        } else {
+            console.error("Cashfree PAN Error:", data);
+            return res.status(400).json({ message: data.message || "PAN Verification Failed", data });
+        }
+
+    } catch (error) {
+        console.error("Verification Error:", error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- ENDPOINT 6: Cashfree Bank Account Verification (Penny Drop) ---
+app.post('/verify-bank', async (req, res) => {
+    try {
+        const { userId, account, ifsc, name } = req.body;
+        
+        const settingsDoc = await db.doc('settings/platform').get();
+        const settings = settingsDoc.data() || {};
+        const clientId = settings.cashfreeKycClientId;
+        const clientSecret = settings.cashfreeKycClientSecret;
+
+        if (!clientId || !clientSecret) return res.status(500).json({ message: "Keys missing." });
+
+        const isTest = clientId.includes("TEST");
+        const baseUrl = isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
+
+        const response = await fetch(`${baseUrl}/bank-account/sync`, {
+            method: 'POST',
+            headers: { 'x-client-id': clientId, 'x-client-secret': clientSecret, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bank_account: account, ifsc: ifsc, name: name })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.valid) {
+            return res.json({ success: true, message: "Bank Account Verified", nameMatch: data.name_match_score >= 0.8, registeredName: data.registered_name });
+        } else {
+            return res.status(400).json({ message: data.message || "Verification Failed" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- ENDPOINT 7: Cashfree UPI Verification ---
+app.post('/verify-upi', async (req, res) => {
+    try {
+        const { userId, vpa, name } = req.body;
+        
+        const settingsDoc = await db.doc('settings/platform').get();
+        const settings = settingsDoc.data() || {};
+        const clientId = settings.cashfreeKycClientId;
+        const clientSecret = settings.cashfreeKycClientSecret;
+
+        if (!clientId || !clientSecret) return res.status(500).json({ message: "Keys missing." });
+
+        const isTest = clientId.includes("TEST");
+        const baseUrl = isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
+
+        const response = await fetch(`${baseUrl}/upi`, {
+            method: 'POST',
+            headers: { 'x-client-id': clientId, 'x-client-secret': clientSecret, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vpa: vpa, name: name })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.valid) {
+            return res.json({ success: true, message: "UPI Verified", nameMatch: data.name_match_score >= 0.8, registeredName: data.registered_name });
+        } else {
+            return res.status(400).json({ message: data.message || "Verification Failed" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- ENDPOINT 8: Cashfree GST Verification ---
+app.post('/verify-gst', async (req, res) => {
+    try {
+        const { userId, gstin, businessName } = req.body;
+        
+        const settingsDoc = await db.doc('settings/platform').get();
+        const settings = settingsDoc.data() || {};
+        const clientId = settings.cashfreeKycClientId;
+        const clientSecret = settings.cashfreeKycClientSecret;
+
+        if (!clientId || !clientSecret) return res.status(500).json({ message: "Keys missing." });
+
+        const isTest = clientId.includes("TEST");
+        const baseUrl = isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
+
+        const response = await fetch(`${baseUrl}/gstin`, {
+            method: 'POST',
+            headers: { 'x-client-id': clientId, 'x-client-secret': clientSecret, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ gstin: gstin, business_name: businessName })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.valid) {
+            await db.collection('users').doc(userId).update({
+                'creatorVerificationDetails.isGstVerified': true,
+                'creatorVerificationDetails.gstRegisteredName': data.legal_name
+            });
+            return res.json({ success: true, message: "GST Verified", data });
+        } else {
+            return res.status(400).json({ message: data.message || "Verification Failed" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- ENDPOINT: Mock KYC Verification (For Testing) ---
 app.post('/mock-kyc-verify', async (req, res) => {
     try {
         const { userId, status, details } = req.body;

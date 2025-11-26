@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { User, CreatorVerificationDetails } from '../types';
 import { apiService } from '../services/apiService';
-import { LogoIcon } from './Icons';
+import { LogoIcon, CheckBadgeIcon } from './Icons';
 
 interface CreatorVerificationPageProps {
   user: User;
@@ -12,11 +13,43 @@ interface CreatorVerificationPageProps {
 const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user, onVerificationSubmitted, onBack }) => {
   const [formData, setFormData] = useState<CreatorVerificationDetails>(user.creatorVerificationDetails || {});
   const [isLoading, setIsLoading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const verifyBusinessPan = async () => {
+      if(!formData.businessPan) { setError("Please enter a Business PAN number."); return; }
+      setIsVerifying(true);
+      setError(null);
+      try {
+          // Using existing verifyPan but with Business context (user.companyName or name)
+          await apiService.verifyPan(user.id, formData.businessPan, user.companyName || user.name);
+          setFormData(prev => ({ ...prev, isBusinessPanVerified: true }));
+          alert("Business PAN Verified Successfully!");
+      } catch (err: any) {
+          setError(err.message);
+      } finally {
+          setIsVerifying(false);
+      }
+  };
+
+  const verifyGst = async () => {
+      if(!formData.registrationNo) { setError("Please enter GSTIN."); return; }
+      setIsVerifying(true);
+      setError(null);
+      try {
+          await apiService.verifyGst(user.id, formData.registrationNo, user.companyName || user.name);
+          setFormData(prev => ({ ...prev, isGstVerified: true }));
+          alert("GST Verified Successfully!");
+      } catch (err: any) {
+          setError(err.message);
+      } finally {
+          setIsVerifying(false);
+      }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,17 +104,23 @@ const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user,
   const renderAgencyForm = () => (
     <>
       <div>
-        <label htmlFor="registrationNo" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company Registration No.</label>
+        <label htmlFor="registrationNo" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company Registration No. / GSTIN</label>
         <p className="text-xs text-gray-500 dark:text-gray-400">From any government certificate for your company/agency.</p>
-        <input
-          type="text"
-          id="registrationNo"
-          name="registrationNo"
-          value={formData.registrationNo || ''}
-          onChange={handleInputChange}
-          className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-          required
-        />
+        <div className="flex gap-2 mt-1">
+            <input
+            type="text"
+            id="registrationNo"
+            name="registrationNo"
+            value={formData.registrationNo || ''}
+            onChange={handleInputChange}
+            className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+            required
+            />
+            <button type="button" onClick={verifyGst} disabled={isVerifying || formData.isGstVerified} className="px-3 py-2 bg-green-600 text-white rounded-md text-sm font-medium disabled:opacity-50">
+                {formData.isGstVerified ? 'Verified ✓' : 'Verify GST'}
+            </button>
+        </div>
+        {formData.isGstVerified && <p className="text-xs text-green-600 mt-1">GST Verified</p>}
       </div>
       <div>
         <label htmlFor="msmeNo" className="block text-sm font-medium text-gray-700 dark:text-gray-300">MSME No.</label>
@@ -96,15 +135,21 @@ const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user,
       </div>
        <div>
         <label htmlFor="businessPan" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business PAN Card No.</label>
-        <input
-          type="text"
-          id="businessPan"
-          name="businessPan"
-          value={formData.businessPan || ''}
-          onChange={handleInputChange}
-          className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-          required
-        />
+        <div className="flex gap-2 mt-1">
+            <input
+            type="text"
+            id="businessPan"
+            name="businessPan"
+            value={formData.businessPan || ''}
+            onChange={handleInputChange}
+            className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+            required
+            />
+            <button type="button" onClick={verifyBusinessPan} disabled={isVerifying || formData.isBusinessPanVerified} className="px-3 py-2 bg-green-600 text-white rounded-md text-sm font-medium disabled:opacity-50">
+                {formData.isBusinessPanVerified ? 'Verified ✓' : 'Verify PAN'}
+            </button>
+        </div>
+        {formData.isBusinessPanVerified && <p className="text-xs text-green-600 mt-1">PAN Verified</p>}
       </div>
       <div>
         <label htmlFor="tradeLicenseNo" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Trade License No.</label>

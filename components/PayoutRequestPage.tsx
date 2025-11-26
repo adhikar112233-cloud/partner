@@ -1,7 +1,9 @@
+
 import React, { useState, useMemo } from 'react';
 import { User, AnyCollaboration, PayoutRequest, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
 import CameraCapture from './CameraCapture';
+import { CheckBadgeIcon } from './Icons';
 
 interface PayoutRequestPageProps {
     user: User;
@@ -23,6 +25,9 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     const [selfieDataUrl, setSelfieDataUrl] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isVerified, setIsVerified] = useState(false);
+    const [verifiedName, setVerifiedName] = useState<string | null>(null);
+    const [isVerifying, setIsVerifying] = useState(false);
 
     // FIX: Add useMemo to correctly derive the collaboration title from the union type.
     const collaborationTitle = useMemo(() => {
@@ -70,6 +75,44 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     const handleBankDetailsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setBankDetails(prev => ({ ...prev, [name]: value }));
+        setIsVerified(false); // Reset verification on change
+    };
+
+    const handleUpiChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setUpiId(e.target.value);
+        setIsVerified(false);
+    };
+
+    const handleVerifyAccount = async () => {
+        setError(null);
+        setIsVerifying(true);
+        try {
+            let result;
+            if (payoutMethod === 'bank') {
+                if (!bankDetails.accountNumber || !bankDetails.ifscCode) {
+                    throw new Error("Account Number and IFSC are required.");
+                }
+                result = await apiService.verifyBankAccount(user.id, bankDetails.accountNumber, bankDetails.ifscCode, user.name);
+            } else {
+                if (!upiId) throw new Error("UPI ID is required.");
+                result = await apiService.verifyUpi(user.id, upiId, user.name);
+            }
+
+            if (result.success) {
+                setIsVerified(true);
+                setVerifiedName(result.registeredName || "Verified User");
+                
+                if (!result.nameMatch) {
+                    alert(`Warning: The name on the bank account (${result.registeredName}) does not fully match your profile name (${user.name}). Payout may be rejected by admin.`);
+                }
+            }
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || "Verification failed.");
+            setIsVerified(false);
+        } finally {
+            setIsVerifying(false);
+        }
     };
 
     // --- Form Submission ---
@@ -77,10 +120,11 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
         e.preventDefault();
         setError(null);
 
-        if ((payoutMethod === 'bank' && (!bankDetails.accountHolderName.trim() || !bankDetails.accountNumber.trim() || !bankDetails.ifscCode.trim() || !bankDetails.bankName.trim())) || (payoutMethod === 'upi' && !upiId.trim())) {
-            setError('Please provide your complete payment details.');
+        if (!isVerified) {
+            setError("Please verify your payment account details first.");
             return;
         }
+
         if (platformSettings.payoutSettings.requireSelfieForPayout && !selfieDataUrl) {
             setError('A live selfie with ID proof is required for verification.');
             return;
@@ -103,6 +147,8 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                 collaborationTitle: collaborationTitle,
                 amount: finalPayoutAmount,
                 collabId: collaboration.collabId,
+                isAccountVerified: true,
+                accountVerifiedName: verifiedName,
             };
 
             if (selfieUrl) {
@@ -110,7 +156,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
             }
 
             if (payoutMethod === 'bank') {
-                requestData.bankDetails = `Account Holder: ${bankDetails.accountHolderName}\nAccount Number: ${bankDetails.accountNumber}\nIFSC: ${bankDetails.ifscCode}\nBank: ${bankDetails.bankName}`;
+                requestData.bankDetails = `Account Holder: ${verifiedName || bankDetails.accountHolderName}\nAccount Number: ${bankDetails.accountNumber}\nIFSC: ${bankDetails.ifscCode}\nBank: ${bankDetails.bankName}`;
             } else {
                 requestData.upiId = upiId;
             }
@@ -174,7 +220,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                         <h2 className="text-xl font-bold text-gray-800">Payment Details</h2>
                          <div className="mt-4">
                             <label className="block text-sm font-medium text-gray-700">Payment Method</label>
-                            <select value={payoutMethod} onChange={e => setPayoutMethod(e.target.value as any)} className="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                            <select value={payoutMethod} onChange={e => { setPayoutMethod(e.target.value as any); setIsVerified(false); }} className="mt-1 block w-full p-2 border border-gray-300 rounded-md">
                                 <option value="bank">Bank Account</option>
                                 <option value="upi">UPI ID</option>
                             </select>
@@ -201,9 +247,22 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                          ) : (
                              <div className="mt-4">
                                 <label className="block text-sm font-medium text-gray-700">UPI ID</label>
-                                <input type="text" value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="yourname@upi" required className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                                <input type="text" value={upiId} onChange={handleUpiChange} placeholder="yourname@upi" required className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
                             </div>
                          )}
+                         
+                         <div className="mt-4">
+                             {!isVerified ? (
+                                 <button type="button" onClick={handleVerifyAccount} disabled={isVerifying} className="w-full py-2 px-4 bg-indigo-100 text-indigo-700 rounded-md font-semibold hover:bg-indigo-200 disabled:opacity-50">
+                                     {isVerifying ? 'Verifying...' : 'Verify Account Now'}
+                                 </button>
+                             ) : (
+                                 <div className="p-3 bg-green-50 border border-green-200 rounded-md flex items-center text-green-700">
+                                     <CheckBadgeIcon className="w-5 h-5 mr-2" />
+                                     <span className="text-sm font-medium">Verified: {verifiedName}</span>
+                                 </div>
+                             )}
+                         </div>
                     </div>
 
                     {/* Selfie Verification */}
@@ -221,7 +280,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                     
                     {error && <p className="text-red-600 text-sm text-center p-3 bg-red-50 rounded-md">{error}</p>}
                     
-                    <button type="submit" disabled={isLoading} className="w-full py-4 text-lg font-semibold rounded-lg text-white bg-gradient-to-r from-green-500 to-teal-600 shadow-lg hover:shadow-xl disabled:opacity-50">
+                    <button type="submit" disabled={isLoading || !isVerified} className="w-full py-4 text-lg font-semibold rounded-lg text-white bg-gradient-to-r from-green-500 to-teal-600 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed">
                         {isLoading ? 'Submitting...' : 'Submit Payout Request'}
                     </button>
                 </div>

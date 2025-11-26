@@ -1,4 +1,5 @@
 
+// ... (Previous imports remain unchanged)
 import { db, storage, BACKEND_URL } from './firebase';
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, 
@@ -27,6 +28,7 @@ const getTime = (ts: any): number => {
 
 // Default settings if not found in DB
 const DEFAULT_SETTINGS: PlatformSettings = {
+    // ... (No changes to default settings)
     isCommunityFeedEnabled: true,
     isCreatorMembershipEnabled: true,
     isProMembershipEnabled: true,
@@ -49,6 +51,8 @@ const DEFAULT_SETTINGS: PlatformSettings = {
     paymentGatewayWebhookSecret: '',
     payoutClientId: '',
     payoutClientSecret: '',
+    cashfreeKycClientId: '',
+    cashfreeKycClientSecret: '',
     paymentGatewaySourceCode: '',
     otpApiId: '',
     socialMediaLinks: [],
@@ -70,7 +74,7 @@ const DEFAULT_SETTINGS: PlatformSettings = {
 };
 
 export const apiService = {
-    // --- Initialization ---
+    // ... (Previous methods remain unchanged until verifyPan)
     initializeFirestoreData: async () => {
         // Optional: Create initial collections or settings if empty
     },
@@ -511,6 +515,54 @@ export const apiService = {
         });
     },
 
+    // --- VERIFICATION WRAPPERS ---
+    verifyPan: async (userId: string, pan: string, name: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-pan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, pan, name })
+        });
+        
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.message || "Verification failed");
+        }
+        return data;
+    },
+
+    verifyBankAccount: async (userId: string, account: string, ifsc: string, name: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-bank`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, account, ifsc, name })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Verification failed");
+        return data;
+    },
+
+    verifyUpi: async (userId: string, vpa: string, name: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-upi`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, vpa, name })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Verification failed");
+        return data;
+    },
+
+    verifyGst: async (userId: string, gstin: string, businessName: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-gst`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, gstin, businessName })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Verification failed");
+        return data;
+    },
+
     getKycSubmissions: async (): Promise<User[]> => {
         const q = query(collection(db, 'users'), where('kycStatus', '==', 'pending'));
         const snapshot = await getDocs(q);
@@ -546,8 +598,6 @@ export const apiService = {
     },
 
     submitPayoutRequest: async (data: any) => {
-        // FIX: Sanitize data to ensure no undefined values are passed (Firestore requirement)
-        // Specifically `collabId` which might be missing on older records.
         const payload = { ...data };
         if (payload.collabId === undefined) payload.collabId = null;
 
@@ -599,7 +649,6 @@ export const apiService = {
 
     // --- Refunds ---
     createRefundRequest: async (data: any) => {
-        // FIX: Sanitize data to ensure no undefined values are passed
         const payload = { ...data };
         if (payload.collabId === undefined) payload.collabId = null;
 
@@ -651,7 +700,6 @@ export const apiService = {
     },
 
     submitDailyPayoutRequest: async (data: any) => {
-        // FIX: Sanitize data to ensure no undefined values are passed
         const payload = { ...data };
         if (payload.collabId === undefined) payload.collabId = null;
 
@@ -681,7 +729,6 @@ export const apiService = {
 
     // --- Disputes ---
     createDispute: async (data: any) => {
-        // FIX: Sanitize data to ensure no undefined values are passed
         const payload = { ...data };
         if (payload.collabId === undefined) payload.collabId = null;
 

@@ -126,6 +126,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                     <input type="password" value={settings.payoutClientSecret || ''} onChange={e => handleSettingChange('payoutClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
 
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Cashfree Verification (KYC) Keys</h4></div>
+                <SettingRow label="Verification Client ID">
+                    <input type="text" value={settings.cashfreeKycClientId || ''} onChange={e => handleSettingChange('cashfreeKycClientId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="From Cashfree Verification Dashboard" />
+                </SettingRow>
+                <SettingRow label="Verification Client Secret">
+                    <input type="password" value={settings.cashfreeKycClientSecret || ''} onChange={e => handleSettingChange('cashfreeKycClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Fees & Commissions</h4></div>
                 <SettingRow label="Enable Platform Commission">
                     <input type="checkbox" checked={settings.isPlatformCommissionEnabled} onChange={e => handleSettingChange('isPlatformCommissionEnabled', e.target.checked)} />

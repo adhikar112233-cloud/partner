@@ -36,6 +36,9 @@ export interface KycDetails {
     idProofUrl?: string;
     selfieUrl?: string;
     rejectionReason?: string;
+    isPanVerified?: boolean;
+    panNameMatch?: boolean;
+    verifiedBy?: string;
 }
 
 export interface CreatorVerificationDetails {
@@ -46,6 +49,9 @@ export interface CreatorVerificationDetails {
     businessPan?: string;
     tradeLicenseNo?: string;
     rejectionReason?: string;
+    isBusinessPanVerified?: boolean;
+    isGstVerified?: boolean;
+    gstRegisteredName?: string;
 }
 
 export type StaffPermission = 'super_admin' | 'user_management' | 'financial' | 'collaborations' | 'kyc' | 'community' | 'support' | 'marketing' | 'live_help' | 'analytics';
@@ -126,9 +132,13 @@ export interface PlatformSettings {
     paymentGatewayApiId: string;
     paymentGatewayApiSecret: string;
     paymentGatewayWebhookSecret?: string;
-    // Payout Settings (Added)
+    // Payout Settings
     payoutClientId?: string;
     payoutClientSecret?: string;
+    
+    // Cashfree KYC Settings
+    cashfreeKycClientId?: string;
+    cashfreeKycClientSecret?: string;
     
     paymentGatewaySourceCode: string;
     otpApiId: string;
@@ -298,6 +308,8 @@ export interface PayoutRequest {
     upiId?: string;
     timestamp: any;
     collabId?: string;
+    isAccountVerified?: boolean;
+    accountVerifiedName?: string;
 }
 
 export interface RefundRequest {

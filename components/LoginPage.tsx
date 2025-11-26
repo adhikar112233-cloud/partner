@@ -33,24 +33,53 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
     const [referralCode, setReferralCode] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
 
+    // Resend Timer
+    const [timer, setTimer] = useState(0);
+    useEffect(() => {
+        let interval: any;
+        if (timer > 0) {
+            interval = setInterval(() => setTimer((prev) => prev - 1), 1000);
+        }
+        return () => clearInterval(interval);
+    }, [timer]);
+
     // Refs for Recaptcha
     const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
     const recaptchaVerifierSignupRef = useRef<RecaptchaVerifier | null>(null);
     const confirmationResultRef = useRef<any>(null);
 
+    // Helper state for Login OTP flow
+    const [loginOtpSent, setLoginOtpSent] = useState(false);
+
     // Cleanup Recaptcha on unmount
     useEffect(() => {
         return () => {
-            if (recaptchaVerifierRef.current) {
-                recaptchaVerifierRef.current.clear();
-                recaptchaVerifierRef.current = null;
-            }
-            if (recaptchaVerifierSignupRef.current) {
-                recaptchaVerifierSignupRef.current.clear();
-                recaptchaVerifierSignupRef.current = null;
-            }
+            clearRecaptcha('login');
+            clearRecaptcha('signup');
         };
     }, []);
+
+    const clearRecaptcha = (type: 'login' | 'signup') => {
+        if (type === 'login') {
+            if (recaptchaVerifierRef.current) {
+                try {
+                    recaptchaVerifierRef.current.clear();
+                } catch (e) { console.warn(e) }
+                recaptchaVerifierRef.current = null;
+            }
+            const container = document.getElementById('recaptcha-container');
+            if (container) container.innerHTML = '';
+        } else {
+            if (recaptchaVerifierSignupRef.current) {
+                try {
+                    recaptchaVerifierSignupRef.current.clear();
+                } catch (e) { console.warn(e) }
+                recaptchaVerifierSignupRef.current = null;
+            }
+            const container = document.getElementById('recaptcha-container-signup');
+            if (container) container.innerHTML = '';
+        }
+    };
 
     const resetFormFields = () => {
         setIdentifier('');
@@ -65,20 +94,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         setOtp('');
         setError(null);
         setSignupStep('form');
-        // Clear existing recaptchas when switching modes
-        if (recaptchaVerifierRef.current) {
-            recaptchaVerifierRef.current.clear();
-            recaptchaVerifierRef.current = null;
-        }
-        if (recaptchaVerifierSignupRef.current) {
-            recaptchaVerifierSignupRef.current.clear();
-            recaptchaVerifierSignupRef.current = null;
-        }
-        // Manually clear the containers to be safe
-        const container1 = document.getElementById('recaptcha-container');
-        if(container1) container1.innerHTML = '';
-        const container2 = document.getElementById('recaptcha-container-signup');
-        if(container2) container2.innerHTML = '';
+        setLoginOtpSent(false);
+        clearRecaptcha('login');
+        clearRecaptcha('signup');
     };
 
     // LOGIN: Send OTP
@@ -86,7 +104,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         e.preventDefault();
         setError(null);
         
-        // Basic validation for 10-digit mobile
         const cleanIdentifier = identifier.replace(/\D/g, '').slice(-10);
         if (cleanIdentifier.length !== 10) {
             setError("Please enter a valid 10-digit mobile number.");
@@ -96,22 +113,25 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         setIsLoading(true);
 
         try {
-            // Force cleanup of any existing verifier to prevent "already rendered" error
-            if (recaptchaVerifierRef.current) {
-                recaptchaVerifierRef.current.clear();
-                recaptchaVerifierRef.current = null;
-            }
+            clearRecaptcha('login');
+            
+            // Short delay to ensure DOM is ready
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             const container = document.getElementById('recaptcha-container');
-            if (container) container.innerHTML = '';
+            if (!container) {
+                throw new Error("Recaptcha container not found. Please refresh the page.");
+            }
 
             const appVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
                 'size': 'invisible',
                 'callback': (response: any) => {
-                    // reCAPTCHA solved, allow signInWithPhoneNumber.
+                    // reCAPTCHA solved
                 },
                 'expired-callback': () => {
                     setError('Recaptcha expired. Please try again.');
                     setIsLoading(false);
+                    clearRecaptcha('login');
                 }
             });
             recaptchaVerifierRef.current = appVerifier;
@@ -119,59 +139,37 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             const phoneNumber = `+91${cleanIdentifier}`;
             const confirmationResult = await authService.sendLoginOtp(phoneNumber, appVerifier);
             confirmationResultRef.current = confirmationResult;
-            // OTP Sent successfully, UI will change due to confirmationResultRef being set? 
-            // No, we need state to track if OTP sent.
-            // But wait, 'loginMethod' is 'otp'. We can add a 'otpSent' state or just check confirmationResultRef
-            // For simplicity, let's assume if confirmationResultRef is set, we show OTP input.
-            // But `useRef` doesn't trigger re-render. Let's use a state or reuse `otp` state logic?
-            // Actually, let's just reuse `otp` input visibility logic.
-            // Let's add `isOtpSent` state.
-            // For this refactor, I will just add a state `loginStep` similar to signupStep
+            setLoginOtpSent(true);
+            setTimer(60); // Start 60s timer
         } catch (err: any) {
             console.error("OTP Error:", err);
             if (err.code === 'auth/invalid-phone-number') {
                 setError("The phone number is invalid.");
             } else if (err.code === 'auth/too-many-requests') {
                 setError("Too many requests. Please try again later.");
-            } else if (err.code === 'auth/internal-error') {
-                setError("Internal Error: Please check if Phone Auth is enabled in Firebase Console and the domain is authorized.");
+            } else if (err.code === 'auth/internal-error' || err.message?.includes('internal-error')) {
+                setError("Firebase Configuration Error (auth/internal-error). Ensure 'Phone' sign-in is enabled in Firebase Console and your domain is authorized.");
             } else if (err.code === 'auth/captcha-check-failed') {
-                setError("Captcha Check Failed. If you are on localhost, make sure it is in the authorized domains list in Firebase Console.");
+                setError("Captcha Check Failed. Ensure your domain is added to Authorized Domains in Firebase Console.");
             } else {
-                setError(err.message || "Failed to send OTP.");
+                setError(err.message || "Failed to send OTP. Please try again.");
             }
-            // Clean up on error
-            if (recaptchaVerifierRef.current) {
-                recaptchaVerifierRef.current.clear();
-                recaptchaVerifierRef.current = null;
-            }
-            const container = document.getElementById('recaptcha-container');
-            if (container) container.innerHTML = '';
+            clearRecaptcha('login');
         } finally {
             setIsLoading(false);
         }
     };
-
-    // Helper state for Login OTP flow
-    const [loginOtpSent, setLoginOtpSent] = useState(false);
-
-    const onLoginSendOtpClick = async (e: React.FormEvent) => {
-        await handleSendOtp(e);
-        if (!error && confirmationResultRef.current) { // This check might be too early if set in async. 
-             // Better rely on successful await completion above.
-             setLoginOtpSent(true);
-        }
-    }
 
     const handleVerifyOtp = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
         setIsLoading(true);
         try {
+            if (!confirmationResultRef.current) throw new Error("Session expired. Please resend OTP.");
             await authService.verifyLoginOtp(confirmationResultRef.current, otp);
             // Success handled by auth listener in App.tsx
         } catch (err: any) {
-            setError(err.message || "Invalid OTP.");
+            setError(err.message || "Invalid OTP. Please check the code and try again.");
         } finally {
             setIsLoading(false);
         }
@@ -200,6 +198,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             setError("Passwords do not match.");
             return;
         }
+        if (!email || !name || !role) {
+            setError("Please fill all fields.");
+            return;
+        }
         const cleanMobile = mobileNumber.replace(/\D/g, '').slice(-10);
         if (cleanMobile.length !== 10) {
             setError("Please enter a valid 10-digit mobile number.");
@@ -208,13 +210,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
 
         setIsLoading(true);
         try {
-             // Force cleanup
-            if (recaptchaVerifierSignupRef.current) {
-                recaptchaVerifierSignupRef.current.clear();
-                recaptchaVerifierSignupRef.current = null;
-            }
+            clearRecaptcha('signup');
+            
+            // Short delay
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             const container = document.getElementById('recaptcha-container-signup');
-            if (container) container.innerHTML = '';
+            if (!container) {
+                throw new Error("Recaptcha container not found.");
+            }
 
             const appVerifier = new RecaptchaVerifier(auth, 'recaptcha-container-signup', {
                 'size': 'invisible',
@@ -224,6 +228,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 'expired-callback': () => {
                     setError('Recaptcha expired. Please try again.');
                     setIsLoading(false);
+                    clearRecaptcha('signup');
                 }
             });
             recaptchaVerifierSignupRef.current = appVerifier;
@@ -232,22 +237,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             const confirmationResult = await authService.sendLoginOtp(phoneNumber, appVerifier);
             confirmationResultRef.current = confirmationResult;
             setSignupStep('otp');
+            setTimer(60);
         } catch (err: any) {
             console.error("Signup OTP Error:", err);
-            if (err.code === 'auth/internal-error') {
-                setError("Internal Error: Please ensure 'Phone' sign-in provider is enabled in Firebase Console and 'localhost' (or your domain) is in Authorized Domains.");
+            if (err.code === 'auth/internal-error' || err.message?.includes('internal-error')) {
+                setError("Configuration Error (auth/internal-error). Please verify Firebase Phone Auth is enabled and domain is authorized.");
             } else if (err.code === 'auth/captcha-check-failed') {
                 setError("Captcha failed. Please check Authorized Domains in Firebase Console.");
+            } else if (err.message.includes("reCAPTCHA has already been rendered")) {
+                setError("System busy. Please refresh and try again.");
             } else {
                 setError(err.message || "Failed to send OTP.");
             }
-             // Clean up
-            if (recaptchaVerifierSignupRef.current) {
-                recaptchaVerifierSignupRef.current.clear();
-                recaptchaVerifierSignupRef.current = null;
-            }
-            const container = document.getElementById('recaptcha-container-signup');
-            if (container) container.innerHTML = '';
+            clearRecaptcha('signup');
         } finally {
             setIsLoading(false);
         }
@@ -259,19 +261,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         setError(null);
         setIsLoading(true);
         try {
-            // 1. Verify OTP to prove ownership of phone number
+            if (!confirmationResultRef.current) throw new Error("Session expired.");
+            
+            // 1. Verify OTP
             await authService.verifyLoginOtp(confirmationResultRef.current, otp);
             
-            // 2. If successful, the user is signed in with phone auth temporarily.
-            // We need to link or create the actual account with email/password.
-            // However, our current `authService.register` creates a NEW user with email/password.
-            // So we should sign out the temporary phone user first.
+            // 2. Logout temporary session
             await authService.logout();
 
-            // 3. Create the actual account
+            // 3. Create real account
             await authService.register(email, password, role, name, companyName, mobileNumber, referralCode);
             
-            // Success! App.tsx will redirect.
         } catch (err: any) {
             setError(err.message || "Verification or Registration failed.");
         } finally {
@@ -290,20 +290,22 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
 
     const renderError = () => {
         if (!error) return null;
-        const isHostnameError = error.includes("Hostname match not found") || error.includes("auth/unauthorized-domain");
+        const isHostnameError = error.includes("Hostname match") || error.includes("unauthorized-domain") || error.includes("internal-error") || error.includes("Captcha Check Failed");
         
         return (
             <div className={`mb-4 p-4 rounded-lg border-l-4 ${isHostnameError ? 'bg-yellow-50 border-yellow-500 text-yellow-700' : 'bg-red-50 border-red-500 text-red-700'} dark:bg-opacity-10`}>
                 <div className="flex items-start">
                     <ExclamationTriangleIcon className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
                     <div>
-                        <p className="font-bold text-sm">{isHostnameError ? "Action Required: Authorize Domain" : "Authentication Error"}</p>
+                        <p className="font-bold text-sm">{isHostnameError ? "Setup Required" : "Error"}</p>
                         <p className="text-sm mt-1">{error}</p>
                         {isHostnameError && (
                             <div className="mt-2 text-xs bg-white bg-opacity-50 p-2 rounded">
-                                1. Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="underline font-bold">Firebase Console</a><br/>
-                                2. Authentication {'>'} Settings {'>'} Authorized Domains<br/>
-                                3. Add: <strong>{window.location.hostname}</strong>
+                                <strong>To Fix:</strong><br/>
+                                1. Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="underline font-bold">Firebase Console</a>.<br/>
+                                2. Go to <strong>Authentication</strong> &gt; <strong>Settings</strong> &gt; <strong>Authorized domains</strong>.<br/>
+                                3. Click "Add domain" and paste this:<br/>
+                                <code className="bg-black text-white px-1 rounded select-all">{window.location.hostname}</code>
                             </div>
                         )}
                     </div>
@@ -332,7 +334,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                     <div className="mt-8 space-y-6">
                         {loginMethod === 'otp' ? (
                             !loginOtpSent ? (
-                                <form onSubmit={onLoginSendOtpClick} className="space-y-6">
+                                <form onSubmit={handleSendOtp} className="space-y-6">
                                     <div>
                                         <label htmlFor="identifier" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mobile Number</label>
                                         <input
@@ -345,18 +347,21 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                             onChange={(e) => setIdentifier(e.target.value)}
                                         />
                                     </div>
-                                    <div id="recaptcha-container"></div>
+                                    
                                     <button type="submit" disabled={isLoading} className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
                                         {isLoading ? 'Sending OTP...' : 'Send OTP'}
                                     </button>
                                     <div className="text-center">
-                                        <button type="button" onClick={() => setLoginMethod('password')} className="text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
+                                        <button type="button" onClick={() => { setLoginMethod('password'); clearRecaptcha('login'); }} className="text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
                                             Login with Password
                                         </button>
                                     </div>
                                 </form>
                             ) : (
                                 <form onSubmit={handleVerifyOtp} className="space-y-6">
+                                    <div className="text-center mb-2">
+                                        <p className="text-sm text-gray-500">OTP sent to +91 {identifier.slice(-4).padStart(10, '*')}</p>
+                                    </div>
                                     <div>
                                         <label htmlFor="otp" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Enter OTP</label>
                                         <input
@@ -372,9 +377,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                     <button type="submit" disabled={isLoading} className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50">
                                         {isLoading ? 'Verifying...' : 'Verify & Login'}
                                     </button>
-                                    <div className="text-center">
-                                        <button type="button" onClick={() => { setLoginOtpSent(false); setOtp(''); }} className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400">
-                                            Back
+                                    <div className="flex justify-between items-center text-sm mt-4">
+                                        <button type="button" onClick={() => { setLoginOtpSent(false); setOtp(''); clearRecaptcha('login'); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">
+                                            Change Number
+                                        </button>
+                                        <button 
+                                            type="button" 
+                                            onClick={handleSendOtp} 
+                                            disabled={timer > 0 || isLoading}
+                                            className={`font-medium ${timer > 0 ? 'text-gray-400 cursor-not-allowed' : 'text-indigo-600 hover:text-indigo-500'}`}
+                                        >
+                                            {timer > 0 ? `Resend in ${timer}s` : 'Resend OTP'}
                                         </button>
                                     </div>
                                 </form>
@@ -409,7 +422,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                     {isLoading ? 'Logging in...' : 'Login'}
                                 </button>
                                 <div className="text-center">
-                                    <button type="button" onClick={() => setLoginMethod('otp')} className="text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
+                                    <button type="button" onClick={() => { setLoginMethod('otp'); clearRecaptcha('login'); }} className="text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
                                         Login via Mobile OTP
                                     </button>
                                 </div>
@@ -518,14 +531,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                     />
                                 </div>
                                 
-                                <div id="recaptcha-container-signup"></div>
-
                                 <button
                                     type="submit"
                                     disabled={isLoading}
                                     className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                                 >
-                                    {isLoading ? 'Sending OTP...' : 'Verify Mobile & Sign Up'}
+                                    {isLoading ? 'Sending OTP...' : 'Verify Mobile & Create Account'}
                                 </button>
                             </form>
                         ) : (
@@ -547,11 +558,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                     />
                                 </div>
                                 <button type="submit" disabled={isLoading} className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50">
-                                    {isLoading ? 'Creating Account...' : 'Verify & Create Account'}
+                                    {isLoading ? 'Creating Account...' : 'Verify & Complete Signup'}
                                 </button>
-                                <div className="text-center">
-                                    <button type="button" onClick={() => { setSignupStep('form'); setOtp(''); }} className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400">
+                                <div className="flex justify-between items-center text-sm mt-4">
+                                    <button type="button" onClick={() => { setSignupStep('form'); setOtp(''); clearRecaptcha('signup'); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">
                                         Back to Form
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        onClick={handleSignupSendOtp} 
+                                        disabled={timer > 0 || isLoading}
+                                        className={`font-medium ${timer > 0 ? 'text-gray-400 cursor-not-allowed' : 'text-indigo-600 hover:text-indigo-500'}`}
+                                    >
+                                        {timer > 0 ? `Resend in ${timer}s` : 'Resend OTP'}
                                     </button>
                                 </div>
                             </form>
@@ -624,6 +643,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                     </button>
                 </div>
             </div>
+
+            {/* RECAPTCHA CONTAINERS MOVED OUTSIDE CONDITIONAL RENDERING */}
+            <div id="recaptcha-container"></div>
+            <div id="recaptcha-container-signup"></div>
 
             {showStaffLogin && (
                 <StaffLoginModal 

@@ -38,6 +38,9 @@ export interface KycDetails {
     rejectionReason?: string;
     isPanVerified?: boolean;
     panNameMatch?: boolean;
+    isAadhaarVerified?: boolean;
+    isLivenessVerified?: boolean;
+    verifiedName?: string;
     verifiedBy?: string;
 }
 

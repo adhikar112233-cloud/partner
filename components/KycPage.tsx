@@ -12,20 +12,27 @@ interface KycPageProps {
     platformSettings: PlatformSettings;
 }
 
-const indianStates = ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
-
 const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = false, platformSettings }) => {
-    const [mode, setMode] = useState<'options' | 'manual' | 'digilocker'>('options');
+    const [mode, setMode] = useState<'options' | 'manual' | 'aadhaar_otp'>('options');
     const [formData, setFormData] = useState<KycDetails>(user.kycDetails || {});
+    
+    // Files
     const [idProofFile, setIdProofFile] = useState<File | null>(null);
     const [idProofPreview, setIdProofPreview] = useState<string | null>(user.kycDetails?.idProofUrl || null);
     const [selfieDataUrl, setSelfieDataUrl] = useState<string | null>(user.kycDetails?.selfieUrl || null);
+    
+    // Aadhaar OTP State
+    const [aadhaarNumber, setAadhaarNumber] = useState('');
+    const [aadhaarOtp, setAadhaarOtp] = useState('');
+    const [aadhaarRefId, setAadhaarRefId] = useState('');
+    const [otpSent, setOtpSent] = useState(false);
+
+    // General State
     const [isLoading, setIsLoading] = useState(false);
+    const [isLivenessVerified, setIsLivenessVerified] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const idProofRef = useRef<HTMLInputElement>(null);
-    const [isPopupOpen, setIsPopupOpen] = useState(false);
-    const [isVerifyingPan, setIsVerifyingPan] = useState(false);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -38,316 +45,140 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
             setIdProofPreview(URL.createObjectURL(file));
         }
     };
-    
-    const removeIdProof = () => {
-        setIdProofFile(null);
-        setIdProofPreview(null);
-        if(idProofRef.current) idProofRef.current.value = '';
+
+    const handleLivenessCheck = async () => {
+        if (!selfieDataUrl) {
+            setError("Take a selfie first.");
+            return;
+        }
+        setIsLoading(true);
+        try {
+            const result = await apiService.verifyLiveness(user.id, selfieDataUrl);
+            if (result.success) {
+                setIsLivenessVerified(true);
+                alert("Liveness Verified! You are a real person.");
+            }
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
     };
-    
-    const dataURLtoFile = (dataurl: string, filename: string): File => {
-        const arr = dataurl.split(',');
-        const mimeMatch = arr[0].match(/:(.*?);/);
-        if (!mimeMatch) {
-            throw new Error('Invalid data URL format');
-        }
-        const mime = mimeMatch[1];
-        const bstr = atob(arr[1]);
-        let n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        while(n--){
-            u8arr[n] = bstr.charCodeAt(n);
-        }
-        return new File([u8arr], filename, {type:mime});
-    }
+
+    const sendAadhaarOtp = async () => {
+        if(aadhaarNumber.length !== 12) { setError("Invalid Aadhaar Number"); return; }
+        setIsLoading(true);
+        try {
+            const res = await apiService.verifyAadhaarOtp(aadhaarNumber);
+            setAadhaarRefId(res.ref_id);
+            setOtpSent(true);
+            setError(null);
+        } catch(e: any) { setError(e.message); }
+        finally { setIsLoading(false); }
+    };
+
+    const verifyAadhaarOtp = async () => {
+        setIsLoading(true);
+        try {
+            await apiService.verifyAadhaarSubmit(user.id, aadhaarOtp, aadhaarRefId);
+            setSuccess("Aadhaar Verified Successfully!");
+            setTimeout(onKycSubmitted, 2000);
+        } catch(e: any) { setError(e.message); }
+        finally { setIsLoading(false); }
+    };
 
     const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError(null);
-        setSuccess(null);
-
-        if (platformSettings.isKycIdProofRequired && !idProofFile && !user.kycDetails?.idProofUrl) {
-            setError("ID proof is required.");
-            return;
+        if (platformSettings.isKycSelfieRequired && !isLivenessVerified) {
+             setError("Please verify liveness on your selfie."); 
+             return;
         }
-        if (platformSettings.isKycSelfieRequired && !selfieDataUrl && !user.kycDetails?.selfieUrl) {
-            setError("A live selfie is required.");
-            return;
-        }
-
         setIsLoading(true);
         try {
-            const selfieFile = (selfieDataUrl && selfieDataUrl !== user.kycDetails?.selfieUrl) ? dataURLtoFile(selfieDataUrl, 'selfie.jpg') : null;
-            
-            // If we have a new file, use it. If not, the API service will keep the old one if we pass the existing kycDetails in formData.
-            // However, apiService.submitKyc merges data.
-            
-            await apiService.submitKyc(user.id, formData, idProofFile, selfieFile);
-            
-            setSuccess("KYC details submitted successfully! An admin will verify your documents shortly.");
-            
-            setTimeout(() => {
-                onKycSubmitted();
-            }, 3000);
-
-        } catch (err: any) {
-            console.error(err);
-            let errorMessage = "Failed to submit KYC. Please try again.";
-            if (err.code === 'storage/unauthorized') errorMessage = "Storage permission error.";
-            setError(errorMessage);
-            setIsLoading(false); 
-        }
-    };
-    
-    const handleVerifyPan = async () => {
-        if (!formData.idNumber || formData.idType !== 'PAN') {
-            setError("Please select PAN as ID Type and enter a valid PAN Number.");
-            return;
-        }
-        
-        setIsVerifyingPan(true);
-        setError(null);
-        
-        try {
-            // Use user.name for verification matching
-            await apiService.verifyPan(user.id, formData.idNumber, user.name);
-            setSuccess("PAN Verified Successfully!");
-            setTimeout(() => {
-                onKycSubmitted();
-            }, 2000);
-        } catch (err: any) {
-            console.error(err);
-            setError(err.message || "Verification failed. Please check the PAN number.");
-        } finally {
-            setIsVerifyingPan(false);
-        }
-    };
-    
-    const handleDigilockerSubmit = () => {
-        // Open the internal Mock Page
-        const mockUrl = window.location.origin + `/mock-digilocker?userId=${user.id}`;
-        const popup = window.open(mockUrl, 'digilockerMock', 'width=500,height=700');
-        setIsPopupOpen(true);
-
-        const checkPopup = setInterval(() => {
-            if (!popup || popup.closed) {
-                clearInterval(checkPopup);
-                setIsPopupOpen(false);
-                
-                setIsLoading(true);
-                setTimeout(() => {
-                    onKycSubmitted(); 
-                    setIsLoading(false);
-                }, 1500);
-            }
-        }, 1000);
+            await apiService.submitKyc(user.id, { ...formData, selfieUrl: selfieDataUrl }, idProofFile, null); 
+            setSuccess("Submitted!");
+            setTimeout(onKycSubmitted, 2000);
+        } catch(e) { setError("Failed"); setIsLoading(false); }
     };
 
-    const renderOptions = () => (
-         <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">KYC Verification</h2>
-            <p className="mt-2 text-gray-600 dark:text-gray-300">Verify your identity to unlock all features.</p>
-            {isResubmit && user.kycDetails?.rejectionReason && (
-                 <div className="mt-4 p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg text-left dark:bg-red-900/20 dark:text-red-300 dark:border-red-700 shadow-sm">
-                    <p className="font-bold flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                        Previous Submission Rejected
-                    </p>
-                    <p className="text-sm mt-1">Reason: {user.kycDetails.rejectionReason}</p>
-                 </div>
-            )}
-            <div className="mt-8 space-y-4 max-w-md mx-auto">
-                <button onClick={() => setMode('manual')} className="w-full py-4 px-6 text-lg font-semibold rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
-                    Upload Documents (Manual Verification)
-                </button>
-                
-                {platformSettings.isDigilockerKycEnabled && (
-                    <>
-                        <div className="relative flex py-2 items-center">
-                            <div className="flex-grow border-t border-gray-300 dark:border-gray-600"></div>
-                            <span className="flex-shrink-0 mx-4 text-gray-400 text-sm">OR</span>
-                            <div className="flex-grow border-t border-gray-300 dark:border-gray-600"></div>
-                        </div>
-                        <button onClick={handleDigilockerSubmit} disabled={isLoading || isPopupOpen} className="w-full py-3 px-4 text-base font-medium rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 shadow-sm transition-all">
-                            {isLoading ? 'Checking Status...' : isPopupOpen ? 'Continue in Popup...' : 'Instant KYC with DigiLocker'}
+    return (
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 flex justify-center items-center">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 w-full max-w-3xl">
+                <div className="flex justify-center mb-6"><LogoIcon className="h-12 w-auto" /></div>
+                <h2 className="text-2xl font-bold text-center dark:text-white mb-6">KYC Verification</h2>
+
+                {mode === 'options' && (
+                    <div className="space-y-4">
+                        <button onClick={() => setMode('aadhaar_otp')} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700">
+                            Instant Aadhaar Verification (Recommended)
                         </button>
-                    </>
+                        <button onClick={() => setMode('manual')} className="w-full py-4 bg-gray-200 text-gray-800 rounded-xl font-bold hover:bg-gray-300 dark:bg-gray-700 dark:text-white">
+                            Manual Upload (Passport/Voter ID)
+                        </button>
+                    </div>
                 )}
-            </div>
-        </div>
-    );
-    
-    const renderManualForm = () => (
-        <form onSubmit={handleManualSubmit} className="space-y-6">
-            <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Manual Verification</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">An admin will review your details and documents.</p>
-            </div>
-            
-            <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-3">Personal Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Full Name</label>
-                        <input type="text" value={user.name} disabled className="mt-1 w-full p-2 bg-gray-200 border border-gray-300 rounded-md text-gray-600 cursor-not-allowed dark:bg-gray-600 dark:border-gray-500 dark:text-gray-300" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Date of Birth</label>
-                        <input type="date" name="dob" value={formData.dob || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Gender</label>
-                        <select name="gender" value={formData.gender || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="">Select Gender</option>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
 
-            <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-3">Identity Proof</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Type</label>
-                        <select name="idType" value={formData.idType || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="">Select ID Type</option>
-                            <option value="Aadhaar">Aadhaar Card</option>
-                            <option value="PAN">PAN Card</option>
-                            <option value="Voter ID">Voter ID</option>
-                            <option value="Passport">Passport</option>
-                            <option value="Driving License">Driving License</option>
-                        </select>
+                {mode === 'aadhaar_otp' && (
+                    <div className="space-y-6">
+                        {!otpSent ? (
+                            <>
+                                <input type="text" value={aadhaarNumber} onChange={e=>setAadhaarNumber(e.target.value)} placeholder="Enter 12-digit Aadhaar" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white" />
+                                <button onClick={sendAadhaarOtp} disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold">{isLoading ? 'Sending...' : 'Send OTP'}</button>
+                            </>
+                        ) : (
+                            <>
+                                <input type="text" value={aadhaarOtp} onChange={e=>setAadhaarOtp(e.target.value)} placeholder="Enter OTP" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white" />
+                                <button onClick={verifyAadhaarOtp} disabled={isLoading} className="w-full py-3 bg-green-600 text-white rounded-lg font-bold">{isLoading ? 'Verifying...' : 'Verify & Submit'}</button>
+                            </>
+                        )}
+                        {error && <p className="text-red-500 text-center">{error}</p>}
+                        {success && <p className="text-green-500 text-center">{success}</p>}
+                        <button onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center">Back</button>
                     </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Number</label>
-                        <div className="flex gap-2 mt-1">
-                            <input type="text" name="idNumber" value={formData.idNumber || ''} onChange={handleInputChange} required className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="e.g. ABCD1234E" />
-                            {formData.idType === 'PAN' && platformSettings.cashfreeKycClientId && (
-                                <button 
-                                    type="button" 
-                                    onClick={handleVerifyPan} 
-                                    disabled={isVerifyingPan || !formData.idNumber}
-                                    className="px-3 py-2 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                                >
-                                    {isVerifyingPan ? 'Verifying...' : 'Verify'}
+                )}
+
+                {mode === 'manual' && (
+                    <form onSubmit={handleManualSubmit} className="space-y-6">
+                        <div className="space-y-4">
+                            <select name="idType" value={formData.idType} onChange={handleInputChange} className="w-full p-3 border rounded dark:bg-gray-700 dark:text-white">
+                                <option value="">Select ID Type</option>
+                                <option value="pan">PAN Card</option>
+                                <option value="passport">Passport</option>
+                                <option value="voter_id">Voter ID</option>
+                            </select>
+                            <input name="idNumber" placeholder="ID Number" value={formData.idNumber} onChange={handleInputChange} className="w-full p-3 border rounded dark:bg-gray-700 dark:text-white" />
+                            
+                            <div className="border-2 border-dashed p-4 rounded-lg text-center cursor-pointer" onClick={() => idProofRef.current?.click()}>
+                                {idProofPreview ? <img src={idProofPreview} className="h-32 mx-auto" /> : <p>Upload ID Proof Front</p>}
+                                <input type="file" hidden ref={idProofRef} onChange={handleFileChange} />
+                            </div>
+                        </div>
+                        
+                        {/* Liveness Selfie Section */}
+                        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-xl">
+                            <h3 className="font-semibold mb-2 dark:text-white">Liveness Check</h3>
+                            <CameraCapture 
+                                capturedImage={selfieDataUrl} 
+                                onCapture={setSelfieDataUrl} 
+                                onRetake={() => { setSelfieDataUrl(null); setIsLivenessVerified(false); }}
+                                selfieInstruction="Take a clear selfie." 
+                            />
+                            {selfieDataUrl && !isLivenessVerified && (
+                                <button type="button" onClick={handleLivenessCheck} disabled={isLoading} className="mt-2 w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-bold">
+                                    {isLoading ? 'Checking...' : 'Verify Liveness'}
                                 </button>
                             )}
+                            {isLivenessVerified && <p className="text-green-600 font-bold text-center mt-2">✓ Liveness Verified</p>}
                         </div>
-                        {user.kycDetails?.isPanVerified && formData.idType === 'PAN' && (
-                            <p className="text-xs text-green-600 mt-1 font-semibold flex items-center">
-                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                                Verified by Cashfree
-                            </p>
-                        )}
-                    </div>
-                </div>
-                
-                {platformSettings.isKycIdProofRequired && (
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Upload Document Image</label>
-                        {!idProofPreview ? (
-                            <div 
-                                onClick={() => idProofRef.current?.click()}
-                                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-                            >
-                                <ImageIcon className="w-8 h-8 text-gray-400 mb-2" />
-                                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Click to upload ID Proof</p>
-                                <p className="text-xs text-gray-400 mt-1">JPG, PNG or PDF (Max 5MB)</p>
-                                <input type="file" ref={idProofRef} onChange={handleFileChange} accept="image/png, image/jpeg, application/pdf" className="hidden"/>
-                            </div>
-                        ) : (
-                            <div className="relative w-full h-48 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600 group">
-                                <img src={idProofPreview} alt="ID Preview" className="w-full h-full object-contain" />
-                                <div className="absolute inset-0 bg-black bg-opacity-40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <button type="button" onClick={removeIdProof} className="p-2 bg-white rounded-full text-red-600 shadow-lg hover:bg-red-50 transition-colors">
-                                        <TrashIcon className="w-5 h-5" />
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+
+                        {error && <p className="text-red-500 text-center">{error}</p>}
+                        <button type="submit" disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold">Submit Documents</button>
+                        <button type="button" onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center">Back</button>
+                    </form>
                 )}
             </div>
-
-            <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-3">Address Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Full Address</label>
-                        <input type="text" name="address" value={formData.address || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="House No, Street" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Village / Town</label>
-                        <input type="text" name="villageTown" value={formData.villageTown || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Road / Area</label>
-                        <input type="text" name="roadNameArea" value={formData.roadNameArea || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">City</label>
-                        <input type="text" name="city" value={formData.city || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">District</label>
-                        <input type="text" name="district" value={formData.district || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">State</label>
-                        <select name="state" value={formData.state || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="">Select State</option>
-                            {indianStates.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">PIN Code</label>
-                        <input type="text" name="pincode" value={formData.pincode || ''} onChange={handleInputChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                </div>
-            </div>
-            
-            {platformSettings.isKycSelfieRequired && (
-                <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                    <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-3">Liveness Check</h3>
-                    <CameraCapture
-                        capturedImage={selfieDataUrl}
-                        onCapture={setSelfieDataUrl}
-                        onRetake={() => setSelfieDataUrl(null)}
-                        selfieInstruction="Please position your face in the frame and click capture."
-                    />
-                </div>
-            )}
-            
-            <div className="h-6 text-center">
-                {error && <p className="text-red-500 text-sm font-medium">{error}</p>}
-                {success && <p className="text-green-500 text-sm font-medium">{success}</p>}
-            </div>
-
-             <div className="flex items-center justify-between pt-4">
-                <button type="button" onClick={() => setMode('options')} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Back to options</button>
-                <button type="submit" disabled={isLoading || !!success} className="py-3 px-8 font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 shadow-md transition-transform active:scale-95">
-                    {isLoading ? 'Submitting...' : 'Submit KYC'}
-                </button>
-             </div>
-        </form>
-    );
-
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col justify-center items-center p-4">
-        <div className="max-w-3xl w-full">
-            <div className="flex justify-center mb-8">
-                <LogoIcon showTagline className="h-16 w-auto" />
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-100 dark:border-gray-700">
-                 {mode === 'options' && renderOptions()}
-                 {mode === 'manual' && renderManualForm()}
-            </div>
         </div>
-    </div>
-  );
+    );
 };
 
 export default KycPage;

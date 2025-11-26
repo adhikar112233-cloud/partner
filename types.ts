@@ -19,7 +19,6 @@ export interface Membership {
 }
 
 export type KycStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
-export type CreatorVerificationStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
 
 export interface KycDetails {
     dob?: string;
@@ -34,27 +33,36 @@ export interface KycDetails {
     district?: string;
     state?: string;
     idProofUrl?: string;
+    panCardUrl?: string; // Added for Manual KYC
     selfieUrl?: string;
     rejectionReason?: string;
     isPanVerified?: boolean;
     panNameMatch?: boolean;
     isAadhaarVerified?: boolean;
     isLivenessVerified?: boolean;
+    isDlVerified?: boolean;
     verifiedName?: string;
     verifiedBy?: string;
 }
 
+export type CreatorVerificationStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
+
 export interface CreatorVerificationDetails {
-    socialMediaLinks?: string;
-    idNumber?: string;
-    registrationNo?: string;
-    msmeNo?: string;
-    businessPan?: string;
-    tradeLicenseNo?: string;
+    // Common
     rejectionReason?: string;
-    isBusinessPanVerified?: boolean;
-    isGstVerified?: boolean;
-    gstRegisteredName?: string;
+    
+    // Influencer
+    socialMediaLinks?: string;
+    acknowledgementUrl?: string; // Optional creator proof
+    
+    // Business (Agency & Live TV)
+    registrationDocType?: 'msme' | 'gst' | 'trade_license';
+    registrationDocUrl?: string;
+    officePhotoUrl?: string;
+    businessPanUrl?: string;
+    
+    // Live TV Specific
+    channelStampUrl?: string;
 }
 
 export type StaffPermission = 'super_admin' | 'user_management' | 'financial' | 'collaborations' | 'kyc' | 'community' | 'support' | 'marketing' | 'live_help' | 'analytics';
@@ -72,8 +80,6 @@ export interface User {
     isBlocked?: boolean;
     kycStatus: KycStatus;
     kycDetails?: KycDetails;
-    creatorVerificationStatus?: CreatorVerificationStatus;
-    creatorVerificationDetails?: CreatorVerificationDetails;
     membership?: Membership;
     msmeRegistrationNumber?: string;
     staffPermissions?: StaffPermission[];
@@ -81,6 +87,10 @@ export interface User {
     referredBy?: string;
     coins?: number;
     fcmToken?: string | null;
+    
+    // New Creator Verification
+    creatorVerificationStatus?: CreatorVerificationStatus;
+    creatorVerificationDetails?: CreatorVerificationDetails;
 }
 
 export interface Influencer {
@@ -210,9 +220,9 @@ export enum View {
     PAYOUT_REQUEST = 'payout_request',
     REFUND_REQUEST = 'refund_request',
     BOOST_PROFILE = 'boost_profile',
-    CREATOR_VERIFICATION = 'creator_verification',
     PARTNERS = 'partners',
-    PAYMENT_SUCCESS = 'payment_success'
+    PAYMENT_SUCCESS = 'payment_success',
+    CREATOR_VERIFICATION = 'creator_verification'
 }
 
 export interface ProfileData {

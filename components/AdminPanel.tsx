@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
-import { PlatformSettings, User, PayoutRequest, Post, Influencer, SocialMediaLink, Transaction, KycStatus, KycDetails, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, CollabRequestStatus, CampaignApplicationStatus, AdBookingStatus, PlatformBanner, UserRole, StaffPermission, Message, RefundRequest, DailyPayoutRequest, Dispute, DiscountSetting, Membership, CombinedCollabItem, CreatorVerificationStatus, CreatorVerificationDetails, Partner } from '../types';
+import { PlatformSettings, User, PayoutRequest, Post, Influencer, SocialMediaLink, Transaction, KycStatus, KycDetails, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, CollabRequestStatus, CampaignApplicationStatus, AdBookingStatus, PlatformBanner, UserRole, StaffPermission, Message, RefundRequest, DailyPayoutRequest, Dispute, DiscountSetting, Membership, CombinedCollabItem, Partner, CreatorVerificationDetails } from '../types';
 import { Timestamp, doc, updateDoc, QueryDocumentSnapshot, DocumentData, setDoc } from 'firebase/firestore';
 import PostCard from './PostCard';
 import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
-import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, ChatBubbleLeftEllipsisIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, LockClosedIcon, LockOpenIcon, KeyIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, EnvelopeIcon, ProfileIcon, ShareIcon as SocialsIcon, TrashIcon, PencilIcon } from './Icons';
+import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, ChatBubbleLeftEllipsisIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, LockClosedIcon, LockOpenIcon, KeyIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, EnvelopeIcon, ProfileIcon, ShareIcon as SocialsIcon, TrashIcon, PencilIcon, CheckBadgeIcon } from './Icons';
 import LiveHelpPanel from './LiveHelpPanel';
 import { db, firebaseConfig } from '../services/firebase';
 import PayoutsPanel from './PayoutsPanel';
@@ -60,6 +60,184 @@ const toJsDate = (ts: any): Date | undefined => {
 
 type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands';
 
+
+// --- Creator Verification Components ---
+
+const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+    const details = user.creatorVerificationDetails;
+
+    const handleAction = async (status: 'approved' | 'rejected') => {
+        let reason: string | undefined;
+        if (status === 'rejected') {
+            reason = prompt("Please provide a reason for rejection:");
+            if (!reason) return;
+        }
+
+        if (!window.confirm(`Are you sure you want to ${status} this verification request?`)) return;
+
+        setIsProcessing(true);
+        try {
+            await apiService.updateCreatorVerificationStatus(user.id, status, reason);
+            onActionComplete();
+            onClose();
+        } catch (error) {
+            console.error(`Failed to ${status}`, error);
+            alert(`Could not ${status}. Please try again.`);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    if (!details) return null;
+
+    const PreviewImage = ({ label, url }: { label: string, url?: string }) => (
+        url ? (
+            <div className="border rounded-lg p-2 bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">{label}</p>
+                <img 
+                    src={url} 
+                    alt={label} 
+                    className="h-32 object-contain rounded cursor-zoom-in hover:opacity-90" 
+                    onClick={() => setZoomedImage(url)}
+                />
+            </div>
+        ) : null
+    );
+
+    return (
+        <>
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                    <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Review Verification</h2>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.name} ({user.role})</p>
+                        </div>
+                        <button onClick={onClose} className="text-gray-500 text-2xl">&times;</button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-6">
+                        {user.role === 'influencer' ? (
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className="font-bold text-gray-700 dark:text-gray-200 mb-2">Social Media Links</h3>
+                                    <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded border dark:border-gray-700 whitespace-pre-wrap text-sm font-mono dark:text-gray-300">
+                                        {details.socialMediaLinks}
+                                    </div>
+                                </div>
+                                <PreviewImage label="Creator Proof / Acknowledgement" url={details.acknowledgementUrl} />
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="col-span-2">
+                                        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Doc Type: <span className="font-bold uppercase">{details.registrationDocType || 'MSME'}</span></p>
+                                    </div>
+                                    <PreviewImage label="Registration Document (MSME/GST/Trade License)" url={details.registrationDocUrl} />
+                                    <PreviewImage label="Office Photo" url={details.officePhotoUrl} />
+                                    <PreviewImage label="Business PAN" url={details.businessPanUrl} />
+                                    <PreviewImage label="Channel Stamp" url={details.channelStampUrl} />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-end gap-3 rounded-b-2xl">
+                        <button onClick={() => handleAction('rejected')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Reject</button>
+                        <button onClick={() => handleAction('approved')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Approve</button>
+                    </div>
+                </div>
+            </div>
+            {zoomedImage && (
+                <div className="fixed inset-0 z-[60] bg-black bg-opacity-95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
+                    <img src={zoomedImage} className="max-w-full max-h-[90vh] rounded" />
+                    <button className="absolute top-6 right-6 text-white text-4xl">&times;</button>
+                </div>
+            )}
+        </>
+    );
+};
+
+const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
+    const [pendingUsers, setPendingUsers] = useState<User[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+    const fetchPending = useCallback(() => {
+        setIsLoading(true);
+        apiService.getPendingCreatorVerifications()
+            .then(setPendingUsers)
+            .finally(() => setIsLoading(false));
+    }, []);
+
+    useEffect(() => {
+        fetchPending();
+    }, [fetchPending]);
+
+    if (isLoading) return <p className="p-8 text-center dark:text-gray-300">Loading...</p>;
+    
+    if (pendingUsers.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
+                <CheckBadgeIcon className="w-12 h-12 mb-2 opacity-50" />
+                <p>No pending creator verification requests.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="p-6 h-full flex flex-col">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Creator Verification Queue</h2>
+            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+                <table className="w-full text-left">
+                    <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
+                        <tr>
+                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">User</th>
+                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Role</th>
+                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Submitted</th>
+                            <th className="p-4 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {pendingUsers.map(user => (
+                            <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <td className="p-4">
+                                    <div className="font-medium dark:text-gray-200">{user.name}</div>
+                                    <div className="text-xs text-gray-500">{user.email}</div>
+                                </td>
+                                <td className="p-4 capitalize text-gray-600 dark:text-gray-300">{user.role}</td>
+                                <td className="p-4 text-sm text-gray-500">Pending Review</td>
+                                <td className="p-4 text-right">
+                                    <button 
+                                        onClick={() => setSelectedUser(user)}
+                                        className="text-indigo-600 hover:text-indigo-800 text-sm font-medium px-3 py-1 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
+                                    >
+                                        Review
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {selectedUser && (
+                <CreatorVerificationModal 
+                    user={selectedUser} 
+                    onClose={() => setSelectedUser(null)}
+                    onActionComplete={() => {
+                        fetchPending();
+                        onUpdate();
+                    }}
+                />
+            )}
+        </div>
+    );
+};
+
+
+// --- Existing Components (KycDetailModal, KycPanel, etc.) remain unchanged ---
 
 const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
     const [isProcessing, setIsProcessing] = useState(false);
@@ -283,168 +461,6 @@ const PayoutStatusBadge: React.FC<{ status: PayoutRequest['status'] | Transactio
 
     const { text, classes } = statusInfo;
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
-};
-
-const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
-    const [isProcessing, setIsProcessing] = useState(false);
-    const { creatorVerificationDetails: details } = user;
-    const [confirmStatus, setConfirmStatus] = useState<'approved' | 'rejected' | null>(null);
-    const [rejectionReason, setRejectionReason] = useState('');
-
-    const handleConfirm = async () => {
-        if (!confirmStatus) return;
-        
-        if (confirmStatus === 'rejected' && !rejectionReason.trim()) {
-            alert("Please provide a reason for rejection.");
-            return;
-        }
-
-        setIsProcessing(true);
-        try {
-            await apiService.updateCreatorVerificationStatus(user.id, confirmStatus, rejectionReason);
-            onActionComplete();
-            onClose();
-        } catch (error) {
-            console.error(`Failed to ${confirmStatus} verification`, error);
-            alert(`Could not ${confirmStatus} verification. Please try again.`);
-        } finally {
-            setIsProcessing(false);
-            setConfirmStatus(null);
-        }
-    };
-
-    if (!details) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col relative">
-                <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Creator Verification for {user.name}</h2>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-2xl">&times;</button>
-                </div>
-                <div className="flex-1 p-6 overflow-y-auto">
-                    <h3 className="font-semibold text-lg mb-4 dark:text-gray-200">Submitted Details ({user.role})</h3>
-                    <dl className="text-sm space-y-3 dark:text-gray-300">
-                        {user.role === 'influencer' && (
-                            <>
-                                <div className="grid grid-cols-3 gap-2"><dt className="text-gray-500 dark:text-gray-400">Social Links:</dt><dd className="col-span-2 whitespace-pre-wrap">{details.socialMediaLinks}</dd></div>
-                                <div className="grid grid-cols-3 gap-2"><dt className="text-gray-500 dark:text-gray-400">ID Number:</dt><dd className="col-span-2 font-mono">{details.idNumber}</dd></div>
-                            </>
-                        )}
-                        {(user.role === 'livetv' || user.role === 'banneragency') && (
-                            <>
-                                <div className="grid grid-cols-3 gap-2"><dt className="text-gray-500 dark:text-gray-400">Registration No.:</dt><dd className="col-span-2">{details.registrationNo}</dd></div>
-                                <div className="grid grid-cols-3 gap-2"><dt className="text-gray-500 dark:text-gray-400">MSME No.:</dt><dd className="col-span-2">{details.msmeNo}</dd></div>
-                                <div className="grid grid-cols-3 gap-2"><dt className="text-gray-500 dark:text-gray-400">Business PAN:</dt><dd className="col-span-2 font-mono">{details.businessPan}</dd></div>
-                                <div className="grid grid-cols-3 gap-2"><dt className="text-gray-500 dark:text-gray-400">Trade License:</dt><dd className="col-span-2">{details.tradeLicenseNo}</dd></div>
-                            </>
-                        )}
-                    </dl>
-                </div>
-                <div className="p-4 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-end gap-3">
-                    <button onClick={() => setConfirmStatus('rejected')} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
-                    <button onClick={() => setConfirmStatus('approved')} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
-                </div>
-
-                {confirmStatus && (
-                    <div className="absolute inset-0 bg-white dark:bg-gray-800 rounded-2xl z-10 flex flex-col p-6 animate-fade-in-down">
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">
-                            Confirm {confirmStatus === 'approved' ? 'Approval' : 'Rejection'}
-                        </h3>
-                        
-                        <div className="flex-1">
-                            {confirmStatus === 'approved' ? (
-                                <p className="text-gray-600 dark:text-gray-300">
-                                    Are you sure you want to approve this verification request? The user will receive a verified badge.
-                                </p>
-                            ) : (
-                                <div>
-                                    <p className="text-gray-600 dark:text-gray-300 mb-2">
-                                        Please provide a reason for rejection:
-                                    </p>
-                                    <textarea
-                                        value={rejectionReason}
-                                        onChange={(e) => setRejectionReason(e.target.value)}
-                                        className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                                        rows={4}
-                                        placeholder="e.g., Invalid ID proof, blurred documents..."
-                                    />
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button 
-                                onClick={() => { setConfirmStatus(null); setRejectionReason(''); }} 
-                                disabled={isProcessing}
-                                className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={handleConfirm} 
-                                disabled={isProcessing}
-                                className={`px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 ${
-                                    confirmStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
-                                }`}
-                            >
-                                {isProcessing ? 'Processing...' : `Confirm ${confirmStatus === 'approved' ? 'Approve' : 'Reject'}`}
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
-
-const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
-    const [submissions, setSubmissions] = useState<User[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [viewingUser, setViewingUser] = useState<User | null>(null);
-
-    const fetchSubmissions = useCallback(() => {
-        setIsLoading(true);
-        apiService.getPendingCreatorVerifications()
-            .then(setSubmissions)
-            .finally(() => setIsLoading(false));
-    }, []);
-
-    useEffect(() => {
-        fetchSubmissions();
-    }, [fetchSubmissions]);
-
-    if (isLoading) return <p className="p-4 text-gray-500 dark:text-gray-400">Loading verification submissions...</p>;
-    if (submissions.length === 0) return <p className="p-4 text-gray-500 dark:text-gray-400">No pending submissions.</p>;
-
-    return (
-        <div>
-            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                {submissions.map(user => (
-                    <li key={user.id} className="p-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                        <div className="flex items-center space-x-3">
-                            <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full" />
-                            <div>
-                                <p className="font-semibold dark:text-gray-200">{user.name}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{user.email} ({user.role})</p>
-                            </div>
-                        </div>
-                        <button onClick={() => setViewingUser(user)} className="text-sm text-indigo-600 dark:text-indigo-400 font-semibold">Review</button>
-                    </li>
-                ))}
-            </ul>
-            {viewingUser && (
-                <CreatorVerificationModal
-                    user={viewingUser}
-                    onClose={() => setViewingUser(null)}
-                    onActionComplete={() => {
-                        fetchSubmissions();
-                        onUpdate();
-                    }}
-                />
-            )}
-        </div>
-    );
 };
 
 const CommunityManagementPanel: React.FC = () => {
@@ -902,7 +918,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
         { id: 'staff_management', label: 'Staff Management', icon: UserGroupIcon, permission: 'super_admin' },
         { id: 'collaborations', label: 'Collaborations', icon: CollabIcon, permission: 'collaborations' },
         { id: 'kyc', label: 'KYC Verification', icon: KycIcon, permission: 'kyc' },
-        { id: 'creator_verification', label: 'Creator Verification', icon: KycIcon, permission: 'kyc' },
+        { id: 'creator_verification', label: 'Creator Verification', icon: CheckBadgeIcon, permission: 'kyc' },
         { id: 'payouts', label: 'Payouts & Refunds', icon: PaymentIcon, permission: 'financial' },
         { id: 'payment_history', label: 'Payment History', icon: PaymentIcon, permission: 'financial' },
         { id: 'community', label: 'Community', icon: CommunityIcon, permission: 'community' },

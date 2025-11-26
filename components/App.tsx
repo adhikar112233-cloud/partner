@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
-import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus } from '../types';
+import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus, UserRole } from '../types';
 import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
@@ -226,21 +226,31 @@ const MembershipInactiveBanner: React.FC<{ onUpgrade: () => void }> = ({ onUpgra
 
 const CreatorVerificationBanner: React.FC<{
     status: CreatorVerificationStatus;
+    role: UserRole;
     onVerify: () => void;
     reason?: string;
-}> = ({ status, onVerify, reason }) => {
+}> = ({ status, role, onVerify, reason }) => {
     const isRejected = status === 'rejected';
     const bgColor = isRejected ? 'bg-red-600' : 'bg-yellow-500';
     const textColor = 'text-white';
     const buttonBg = 'bg-white';
     const buttonTextColor = isRejected ? 'text-red-600' : 'text-yellow-600';
 
+    let message = "You are not verified. Please verify for improved brand/customer trust.";
+    if (role === 'banneragency') message = "You are not verified (Your Business). Please verify for improved brand/customer trust.";
+    if (role === 'livetv') message = "You are not verified (Your Channel). Please verify for improved brand/customer trust.";
+    if (role === 'influencer') message = "You are not verified (Creator). Please verify for improved brand/customer trust.";
+
+    if (isRejected) {
+        message = `Verification Rejected. Reason: ${reason || 'Please review and resubmit your details.'}`;
+    }
+
     return (
         <div className={`${bgColor} ${textColor} text-sm font-medium p-3`}>
             <div className="container mx-auto flex justify-between items-center gap-4">
                 <div>
-                    <p className="font-bold">{isRejected ? 'Verification Rejected' : 'Creator Verification Required'}</p>
-                    <p>{isRejected ? `Reason: ${reason || 'Please review and resubmit your details.'}` : "You're unverified. Brands have low trust in unverified creators. Please verify your identity."}</p>
+                    <p className="font-bold">{isRejected ? 'Verification Rejected' : 'Verification Required'}</p>
+                    <p>{message}</p>
                 </div>
                 <button
                     onClick={onVerify}
@@ -663,7 +673,6 @@ const App: React.FC = () => {
                />;
       case View.PAYMENT_SUCCESS:
         return <PaymentSuccessPage user={user} onComplete={async () => {
-            // FIX: Update to await refreshUser to ensure the state is updated before view change.
             await refreshUser();
             window.history.replaceState({}, document.title, window.location.pathname);
             refreshAllData();
@@ -676,7 +685,7 @@ const App: React.FC = () => {
             <div className="mb-6 relative mt-2">
               <input
                 type="text"
-                placeholder="Describe the influencer you're looking for (e.g., 'fitness coach with over 100k followers')"
+                placeholder="Search by name, niche, location, or keywords in bio..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAiSearch()}
@@ -685,7 +694,7 @@ const App: React.FC = () => {
               <button
                 onClick={handleAiSearch}
                 disabled={isAiSearching}
-                className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg disabled:opacity-50"
+                className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 disabled:opacity-50"
               >
                 <SparklesIcon className={`w-5 h-5 mr-2 ${isAiSearching ? 'animate-spin' : ''}`} />
                 {isAiSearching ? 'Searching...' : 'AI Search'}
@@ -802,10 +811,12 @@ const App: React.FC = () => {
         {showCreatorVerificationBanner && (
             <CreatorVerificationBanner
                 status={user.creatorVerificationStatus!}
+                role={user.role}
                 onVerify={() => setActiveView(View.CREATOR_VERIFICATION)}
                 reason={user.creatorVerificationDetails?.rejectionReason}
             />
         )}
+        
         <Header 
             user={user} 
             setActiveView={setActiveView}

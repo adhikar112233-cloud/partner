@@ -13,6 +13,7 @@
 
 
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
@@ -513,24 +514,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
                 )}
             </dd>
           </div>
-          
-          {(user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') && (
-             <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6 bg-gray-50 dark:bg-gray-700/50">
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Creator Verification</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center justify-between">
-                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        user.creatorVerificationStatus === 'approved' ? 'bg-green-100 text-green-800' : 
-                        user.creatorVerificationStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
-                        'bg-gray-100 text-gray-800'
-                    }`}>
-                        {user.creatorVerificationStatus === 'not_submitted' ? 'Not Verified' : user.creatorVerificationStatus?.replace('_', ' ')}
-                    </span>
-                    {user.creatorVerificationStatus !== 'approved' && user.creatorVerificationStatus !== 'pending' && (
-                        <button onClick={() => setActiveView(View.CREATOR_VERIFICATION)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 text-sm font-medium">Get Verified Badge</button>
-                    )}
-                </dd>
-              </div>
-          )}
 
           {(user.role === 'livetv' || user.role === 'banneragency') && (
              <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">

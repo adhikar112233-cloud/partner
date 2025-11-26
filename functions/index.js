@@ -88,7 +88,7 @@ app.post('/verify-aadhaar-otp', async (req, res) => {
         });
 
         const data = await response.json();
-        if (response.ok && data.status === 'SUCCESS') {
+        if (response.ok && (data.status === 'SUCCESS' || data.status === 'PENDING')) {
             return res.json({ success: true, ref_id: data.ref_id, message: "OTP Sent" });
         }
         return res.status(400).json({ message: data.message || "Failed to send Aadhaar OTP" });
@@ -122,6 +122,37 @@ app.post('/verify-aadhaar-verify', async (req, res) => {
             return res.json({ success: true, message: "Aadhaar Verified", data });
         }
         return res.status(400).json({ message: data.message || "Invalid OTP" });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- ENDPOINT: Verify Driving License ---
+app.post('/verify-dl', async (req, res) => {
+    try {
+        const { userId, dlNumber, dob } = req.body;
+        const config = await getCashfreeConfig('verification');
+        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
+
+        const response = await fetch(`${baseUrl}/driving-license`, {
+            method: 'POST',
+            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dl_number: dlNumber, dob: dob })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.valid) {
+            await db.collection('users').doc(userId).update({
+                'kycDetails.isDlVerified': true,
+                'kycDetails.verifiedName': data.name || "Verified User",
+                'kycDetails.verifiedBy': 'Cashfree DL',
+                'kycStatus': 'approved' 
+            });
+            return res.json({ success: true, message: "Driving License Verified", data });
+        } else {
+            return res.status(400).json({ message: data.message || "DL Verification Failed" });
+        }
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -217,20 +248,6 @@ app.post('/verify-gst', async (req, res) => {
         return res.status(400).json({ message: data.message || "Verification Failed" });
     } catch (error) {
         res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Mock KYC (Fallback) ---
-app.post('/mock-kyc-verify', async (req, res) => {
-    try {
-        const { userId, status, details } = req.body;
-        await db.collection('users').doc(userId).update({
-            kycStatus: status || 'approved',
-            kycDetails: details || {}
-        });
-        res.json({ success: true, message: "Mock KYC Processed" });
-    } catch (error) {
-        res.status(500).json({ message: "Error" });
     }
 });
 

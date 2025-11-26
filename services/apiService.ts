@@ -1,4 +1,12 @@
 
+
+
+
+
+
+
+
+
 import { db, storage, auth, BACKEND_URL } from './firebase';
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, 
@@ -12,8 +20,8 @@ import {
     Post, Comment, SupportTicket, TicketReply, LiveHelpSession, 
     LiveHelpMessage, AppNotification, Transaction, PayoutRequest, 
     RefundRequest, DailyPayoutRequest, Partner, BannerAd, LiveTvChannel, 
-    Boost, QuickReply, KycDetails, CreatorVerificationDetails,
-    UserRole
+    Boost, QuickReply, KycDetails,
+    UserRole, PlatformBanner, CreatorVerificationDetails
 } from '../types';
 
 const USERS_COLLECTION = 'users';
@@ -83,6 +91,17 @@ export const apiService = {
         return data;
     },
 
+    verifyDrivingLicense: async (userId: string, dlNumber: string, dob: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-dl`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, dlNumber, dob })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Verification failed");
+        return data;
+    },
+
     verifyBankAccount: async (userId: string, account: string, ifsc: string, name: string) => {
         const response = await fetch(`${BACKEND_URL}/verify-bank`, {
             method: 'POST',
@@ -114,6 +133,51 @@ export const apiService = {
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || "Verification failed");
         return data;
+    },
+
+    // --- Creator/Business Verification ---
+    submitCreatorVerification: async (userId: string, details: CreatorVerificationDetails, files: { [key: string]: File | null }) => {
+        const uploadPromises = Object.entries(files).map(async ([key, file]) => {
+            if (file) {
+                const fileRef = ref(storage, `creator_verification/${userId}/${key}_${Date.now()}`);
+                await uploadBytes(fileRef, file);
+                const url = await getDownloadURL(fileRef);
+                return { key, url };
+            }
+            return null;
+        });
+
+        const uploadedFiles = await Promise.all(uploadPromises);
+        
+        const finalDetails = { ...details };
+        uploadedFiles.forEach(f => {
+            if(f) {
+                // Map file keys to state keys
+                if(f.key === 'registration') finalDetails.registrationDocUrl = f.url;
+                if(f.key === 'office') finalDetails.officePhotoUrl = f.url;
+                if(f.key === 'pan') finalDetails.businessPanUrl = f.url;
+                if(f.key === 'stamp') finalDetails.channelStampUrl = f.url;
+                if(f.key === 'acknowledgement') finalDetails.acknowledgementUrl = f.url;
+            }
+        });
+
+        await updateDoc(doc(db, USERS_COLLECTION, userId), {
+            creatorVerificationStatus: 'pending',
+            creatorVerificationDetails: finalDetails
+        });
+    },
+
+    getPendingCreatorVerifications: async () => {
+        const q = query(collection(db, USERS_COLLECTION), where('creatorVerificationStatus', '==', 'pending'));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as User[];
+    },
+
+    updateCreatorVerificationStatus: async (userId: string, status: 'approved' | 'rejected', reason?: string) => {
+        await updateDoc(doc(db, USERS_COLLECTION, userId), {
+            creatorVerificationStatus: status,
+            'creatorVerificationDetails.rejectionReason': reason || null
+        });
     },
 
     // --- Platform & Config ---
@@ -689,18 +753,26 @@ export const apiService = {
     applyReferralCode: async (userId: string, code: string) => {
         await updateDoc(doc(db, USERS_COLLECTION, userId), { referredBy: code, coins: increment(20) });
     },
-    submitKyc: async (userId: string, details: any, file1?: File | null, file2?: File | null) => {
+    submitKyc: async (userId: string, details: any, file1?: File | null, file2?: File | null, panFile?: File | null) => {
         let idProofUrl = details.idProofUrl;
         let selfieUrl = details.selfieUrl;
+        let panCardUrl = details.panCardUrl;
+
         if(file1) {
             const ref1 = ref(storage, `kyc/${userId}/id_proof`);
             await uploadBytes(ref1, file1);
             idProofUrl = await getDownloadURL(ref1);
         }
-        // Note: selfie is handled via liveness check, but manual fallback might upload it
+        
+        if (panFile) {
+            const refPan = ref(storage, `kyc/${userId}/pan_card`);
+            await uploadBytes(refPan, panFile);
+            panCardUrl = await getDownloadURL(refPan);
+        }
+
         await updateDoc(doc(db, USERS_COLLECTION, userId), { 
             kycStatus: 'pending', 
-            kycDetails: { ...details, idProofUrl, selfieUrl } 
+            kycDetails: { ...details, idProofUrl, selfieUrl, panCardUrl } 
         });
     },
     getKycSubmissions: async () => {
@@ -712,23 +784,6 @@ export const apiService = {
         await updateDoc(doc(db, USERS_COLLECTION, userId), { 
             kycStatus: status, 
             'kycDetails.rejectionReason': reason || null 
-        });
-    },
-    submitCreatorVerification: async (userId: string, details: any) => {
-        await updateDoc(doc(db, USERS_COLLECTION, userId), { 
-            creatorVerificationStatus: 'pending', 
-            creatorVerificationDetails: details 
-        });
-    },
-    getPendingCreatorVerifications: async () => {
-        const q = query(collection(db, USERS_COLLECTION), where('creatorVerificationStatus', '==', 'pending'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as User[];
-    },
-    updateCreatorVerificationStatus: async (userId: string, status: string, reason?: string) => {
-        await updateDoc(doc(db, USERS_COLLECTION, userId), { 
-            creatorVerificationStatus: status, 
-            'creatorVerificationDetails.rejectionReason': reason || null 
         });
     },
 };

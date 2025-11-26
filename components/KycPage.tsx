@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { User, KycDetails, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
 import CameraCapture from './CameraCapture';
-import { LogoIcon, ImageIcon, TrashIcon, CheckBadgeIcon } from './Icons';
+import { LogoIcon, ImageIcon, CheckBadgeIcon } from './Icons';
 
 interface KycPageProps {
     user: User;
@@ -13,12 +13,14 @@ interface KycPageProps {
 }
 
 const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = false, platformSettings }) => {
-    const [mode, setMode] = useState<'options' | 'manual' | 'aadhaar_otp' | 'pan_verify'>('options');
+    const [mode, setMode] = useState<'options' | 'manual' | 'aadhaar_otp' | 'pan_verify' | 'dl_verify'>('options');
     const [formData, setFormData] = useState<KycDetails>(user.kycDetails || {});
     
-    // Files
+    // Manual Files
     const [idProofFile, setIdProofFile] = useState<File | null>(null);
     const [idProofPreview, setIdProofPreview] = useState<string | null>(user.kycDetails?.idProofUrl || null);
+    const [panFile, setPanFile] = useState<File | null>(null);
+    const [panPreview, setPanPreview] = useState<string | null>(user.kycDetails?.panCardUrl || null);
     const [selfieDataUrl, setSelfieDataUrl] = useState<string | null>(user.kycDetails?.selfieUrl || null);
     
     // Aadhaar OTP State
@@ -30,22 +32,32 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
     // PAN State
     const [panNumber, setPanNumber] = useState('');
 
+    // Driving License State
+    const [dlNumber, setDlNumber] = useState('');
+    const [dob, setDob] = useState('');
+
     // General State
     const [isLoading, setIsLoading] = useState(false);
     const [isLivenessVerified, setIsLivenessVerified] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const idProofRef = useRef<HTMLInputElement>(null);
+    const panFileRef = useRef<HTMLInputElement>(null);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'id' | 'pan') => {
         if (e.target.files?.[0]) {
             const file = e.target.files[0];
-            setIdProofFile(file);
-            setIdProofPreview(URL.createObjectURL(file));
+            if (type === 'id') {
+                setIdProofFile(file);
+                setIdProofPreview(URL.createObjectURL(file));
+            } else {
+                setPanFile(file);
+                setPanPreview(URL.createObjectURL(file));
+            }
         }
     };
 
@@ -68,6 +80,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         }
     };
 
+    // --- INSTANT: Aadhaar ---
     const sendAadhaarOtp = async () => {
         if(aadhaarNumber.length !== 12) { setError("Invalid Aadhaar Number"); return; }
         setIsLoading(true);
@@ -91,6 +104,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         finally { setIsLoading(false); }
     };
 
+    // --- INSTANT: PAN ---
     const verifyPan = async () => {
         if(panNumber.length !== 10) { setError("Invalid PAN Number"); return; }
         setIsLoading(true);
@@ -107,18 +121,51 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         }
     };
 
+    // --- INSTANT: Driving License ---
+    const verifyDl = async () => {
+        if(!dlNumber || !dob) { setError("Please enter DL Number and Date of Birth."); return; }
+        setIsLoading(true);
+        setError(null);
+        try {
+            await apiService.verifyDrivingLicense(user.id, dlNumber, dob);
+            setSuccess("Driving License Verified Successfully!");
+            setTimeout(onKycSubmitted, 2000);
+        } catch (e: any) {
+            setError(e.message || "DL Verification Failed");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // --- MANUAL SUBMISSION ---
     const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        if (!idProofFile && !idProofPreview) { setError("ID Proof is required."); return; }
+        if (!panFile && !panPreview) { setError("PAN Card photo is required."); return; }
+        if (!selfieDataUrl) { setError("Selfie is required."); return; }
+        
         if (platformSettings.isKycSelfieRequired && !isLivenessVerified) {
              setError("Please verify liveness on your selfie."); 
              return;
         }
+
         setIsLoading(true);
         try {
-            await apiService.submitKyc(user.id, { ...formData, selfieUrl: selfieDataUrl }, idProofFile, null); 
+            await apiService.submitKyc(
+                user.id, 
+                { ...formData, selfieUrl: selfieDataUrl }, 
+                idProofFile, 
+                null, 
+                panFile // Pass PAN file
+            ); 
             setSuccess("Submitted! Waiting for admin approval.");
             setTimeout(onKycSubmitted, 2000);
-        } catch(e) { setError("Failed to submit documents."); setIsLoading(false); }
+        } catch(e) { 
+            console.error(e);
+            setError("Failed to submit documents."); 
+            setIsLoading(false); 
+        }
     };
 
     return (
@@ -131,15 +178,14 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                 {mode === 'options' && (
                     <div className="space-y-6">
                         <div className="space-y-3">
-                            <p className="text-sm font-bold text-gray-400 uppercase tracking-wide">Instant Verification (Recommended)</p>
+                            <p className="text-sm font-bold text-gray-400 uppercase tracking-wide">Instant Verification (Fastest)</p>
+                            
                             <button onClick={() => setMode('aadhaar_otp')} className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group">
                                 <div className="flex items-center space-x-4">
-                                    <div className="p-2 bg-indigo-600 text-white rounded-lg">
-                                        <CheckBadgeIcon className="w-6 h-6" />
-                                    </div>
+                                    <div className="p-2 bg-indigo-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
                                     <div className="text-left">
-                                        <p className="font-bold text-gray-800">Aadhaar Card (OTP)</p>
-                                        <p className="text-xs text-gray-500">Verifies ID & Address Instantly</p>
+                                        <p className="font-bold text-gray-800">Aadhaar Card</p>
+                                        <p className="text-xs text-gray-500">Verify via OTP</p>
                                     </div>
                                 </div>
                                 <span className="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
@@ -147,15 +193,24 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
 
                             <button onClick={() => setMode('pan_verify')} className="w-full flex items-center justify-between p-4 bg-teal-50 border border-teal-100 rounded-xl hover:bg-teal-100 transition-colors group">
                                 <div className="flex items-center space-x-4">
-                                    <div className="p-2 bg-teal-600 text-white rounded-lg">
-                                        <CheckBadgeIcon className="w-6 h-6" />
-                                    </div>
+                                    <div className="p-2 bg-teal-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
                                     <div className="text-left">
                                         <p className="font-bold text-gray-800">PAN Card</p>
-                                        <p className="text-xs text-gray-500">Verifies ID Name Match Instantly</p>
+                                        <p className="text-xs text-gray-500">Verify Instantly</p>
                                     </div>
                                 </div>
                                 <span className="text-teal-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                            </button>
+
+                            <button onClick={() => setMode('dl_verify')} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group">
+                                <div className="flex items-center space-x-4">
+                                    <div className="p-2 bg-blue-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
+                                    <div className="text-left">
+                                        <p className="font-bold text-gray-800">Driving License</p>
+                                        <p className="text-xs text-gray-500">Verify Instantly</p>
+                                    </div>
+                                </div>
+                                <span className="text-blue-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
                             </button>
                         </div>
 
@@ -177,6 +232,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                     </div>
                 )}
 
+                {/* Instant: Aadhaar */}
                 {mode === 'aadhaar_otp' && (
                     <div className="space-y-6">
                         <div className="text-center">
@@ -195,11 +251,11 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                             </>
                         )}
                         {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
-                        {success && <p className="text-green-600 text-center font-bold bg-green-50 p-2 rounded">{success}</p>}
                         <button onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Cancel</button>
                     </div>
                 )}
 
+                {/* Instant: PAN */}
                 {mode === 'pan_verify' && (
                     <div className="space-y-6">
                         <div className="text-center">
@@ -211,42 +267,78 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                         <button onClick={verifyPan} disabled={isLoading} className="w-full py-3 bg-teal-600 text-white rounded-lg font-bold hover:bg-teal-700 disabled:opacity-50">{isLoading ? 'Verifying...' : 'Verify Now'}</button>
                         
                         {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
-                        {success && <p className="text-green-600 text-center font-bold bg-green-50 p-2 rounded">{success}</p>}
                         <button onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Cancel</button>
                     </div>
                 )}
 
+                {/* Instant: DL */}
+                {mode === 'dl_verify' && (
+                    <div className="space-y-6">
+                        <div className="text-center">
+                            <h3 className="text-xl font-bold text-blue-600">Driving License Verification</h3>
+                            <p className="text-sm text-gray-500">Enter details as per your license.</p>
+                        </div>
+                        
+                        <input type="text" value={dlNumber} onChange={e=>setDlNumber(e.target.value)} placeholder="DL Number" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white font-mono" />
+                        <input type="date" value={dob} onChange={e=>setDob(e.target.value)} placeholder="Date of Birth" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white" />
+                        
+                        <button onClick={verifyDl} disabled={isLoading} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50">{isLoading ? 'Verifying...' : 'Verify Now'}</button>
+                        
+                        {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
+                        <button onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Cancel</button>
+                    </div>
+                )}
+
+                {/* Manual Upload */}
                 {mode === 'manual' && (
-                    <form onSubmit={handleManualSubmit} className="space-y-6">
+                    <form onSubmit={handleManualSubmit} className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+                        <h3 className="text-lg font-bold text-gray-700 dark:text-gray-200 border-b pb-2">1. ID Proof</h3>
                         <div className="space-y-4">
-                            <select name="idType" value={formData.idType} onChange={handleInputChange} className="w-full p-3 border rounded dark:bg-gray-700 dark:text-white">
+                            <select name="idType" value={formData.idType} onChange={handleInputChange} className="w-full p-3 border rounded dark:bg-gray-700 dark:text-white" required>
                                 <option value="">Select ID Type</option>
-                                <option value="passport">Passport</option>
+                                <option value="aadhaar">Aadhaar Card</option>
                                 <option value="voter_id">Voter ID</option>
+                                <option value="passport">Passport</option>
                                 <option value="driving_license">Driving License</option>
                             </select>
-                            <input name="idNumber" placeholder="ID Document Number" value={formData.idNumber} onChange={handleInputChange} className="w-full p-3 border rounded dark:bg-gray-700 dark:text-white" required />
+                            <input name="idNumber" placeholder="Enter ID Document Number" value={formData.idNumber} onChange={handleInputChange} className="w-full p-3 border rounded dark:bg-gray-700 dark:text-white" required />
                             
-                            <div className="border-2 border-dashed p-6 rounded-lg text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" onClick={() => idProofRef.current?.click()}>
+                            <div className="border-2 border-dashed p-4 rounded-lg text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" onClick={() => idProofRef.current?.click()}>
                                 {idProofPreview ? (
                                     <div className="relative">
-                                        <img src={idProofPreview} className="h-40 mx-auto rounded object-contain" />
-                                        <p className="text-xs text-gray-500 mt-2">Click to change</p>
+                                        <img src={idProofPreview} className="h-32 mx-auto rounded object-contain" />
+                                        <p className="text-xs text-gray-500 mt-2">Change ID Photo</p>
                                     </div>
                                 ) : (
                                     <>
-                                        <ImageIcon className="h-10 w-10 text-gray-400 mx-auto mb-2" />
-                                        <p className="text-gray-600 dark:text-gray-300">Upload ID Proof Front</p>
-                                        <p className="text-xs text-gray-400">JPG or PNG</p>
+                                        <ImageIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-gray-600 dark:text-gray-300 text-sm">Upload ID Proof Photo</p>
                                     </>
                                 )}
-                                <input type="file" hidden ref={idProofRef} onChange={handleFileChange} accept="image/*" required={!idProofPreview} />
+                                <input type="file" hidden ref={idProofRef} onChange={(e) => handleFileChange(e, 'id')} accept="image/*" />
+                            </div>
+                        </div>
+
+                        <h3 className="text-lg font-bold text-gray-700 dark:text-gray-200 border-b pb-2">2. PAN Card</h3>
+                        <div className="space-y-4">
+                             <div className="border-2 border-dashed p-4 rounded-lg text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" onClick={() => panFileRef.current?.click()}>
+                                {panPreview ? (
+                                    <div className="relative">
+                                        <img src={panPreview} className="h-32 mx-auto rounded object-contain" />
+                                        <p className="text-xs text-gray-500 mt-2">Change PAN Photo</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <ImageIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-gray-600 dark:text-gray-300 text-sm">Upload PAN Card Photo</p>
+                                    </>
+                                )}
+                                <input type="file" hidden ref={panFileRef} onChange={(e) => handleFileChange(e, 'pan')} accept="image/*" />
                             </div>
                         </div>
                         
-                        {/* Liveness Selfie Section */}
+                        <h3 className="text-lg font-bold text-gray-700 dark:text-gray-200 border-b pb-2">3. Live Selfie</h3>
                         <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-xl border border-gray-200 dark:border-gray-600">
-                            <h3 className="font-semibold mb-2 dark:text-white">Liveness Check (Required)</h3>
                             <CameraCapture 
                                 capturedImage={selfieDataUrl} 
                                 onCapture={setSelfieDataUrl} 
@@ -262,8 +354,10 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                         </div>
 
                         {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
-                        <button type="submit" disabled={isLoading || (platformSettings.isKycSelfieRequired && !isLivenessVerified)} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">Submit Documents</button>
-                        <button type="button" onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Back</button>
+                        <div className="flex flex-col gap-2">
+                            <button type="submit" disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">Submit Documents</button>
+                            <button type="button" onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Back</button>
+                        </div>
                     </form>
                 )}
             </div>

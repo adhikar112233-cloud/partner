@@ -25,9 +25,6 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     const [selfieDataUrl, setSelfieDataUrl] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [isVerified, setIsVerified] = useState(false);
-    const [verifiedName, setVerifiedName] = useState<string | null>(null);
-    const [isVerifying, setIsVerifying] = useState(false);
 
     // Memoize title computation to avoid re-renders
     const collaborationTitle = useMemo(() => {
@@ -75,44 +72,10 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     const handleBankDetailsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setBankDetails(prev => ({ ...prev, [name]: value }));
-        setIsVerified(false); // Reset verification on change
     };
 
     const handleUpiChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setUpiId(e.target.value);
-        setIsVerified(false);
-    };
-
-    const handleVerifyAccount = async () => {
-        setError(null);
-        setIsVerifying(true);
-        try {
-            let result;
-            if (payoutMethod === 'bank') {
-                if (!bankDetails.accountNumber || !bankDetails.ifscCode) {
-                    throw new Error("Account Number and IFSC are required.");
-                }
-                result = await apiService.verifyBankAccount(user.id, bankDetails.accountNumber, bankDetails.ifscCode, user.name);
-            } else {
-                if (!upiId) throw new Error("UPI ID is required.");
-                result = await apiService.verifyUpi(user.id, upiId, user.name);
-            }
-
-            if (result.success) {
-                setIsVerified(true);
-                setVerifiedName(result.registeredName || "Verified User");
-                
-                if (!result.nameMatch) {
-                    alert(`Warning: The name on the bank account (${result.registeredName}) does not fully match your profile name (${user.name}). Payout may be rejected by admin.`);
-                }
-            }
-        } catch (err: any) {
-            console.error(err);
-            setError(err.message || "Verification failed.");
-            setIsVerified(false);
-        } finally {
-            setIsVerifying(false);
-        }
     };
 
     // --- Form Submission ---
@@ -120,9 +83,16 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
         e.preventDefault();
         setError(null);
 
-        if (!isVerified) {
-            setError("Please verify your payment account details first.");
-            return;
+        if (payoutMethod === 'bank') {
+            if (!bankDetails.accountHolderName || !bankDetails.accountNumber || !bankDetails.ifscCode || !bankDetails.bankName) {
+                setError("Please fill in all bank details.");
+                return;
+            }
+        } else {
+            if (!upiId) {
+                setError("Please enter your UPI ID.");
+                return;
+            }
         }
 
         if (platformSettings.payoutSettings.requireSelfieForPayout && !selfieDataUrl) {
@@ -147,8 +117,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                 collaborationTitle: collaborationTitle,
                 amount: finalPayoutAmount,
                 collabId: collaboration.collabId,
-                isAccountVerified: true,
-                accountVerifiedName: verifiedName,
+                // Removed verification checks here as requested
             };
 
             if (selfieUrl) {
@@ -156,7 +125,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
             }
 
             if (payoutMethod === 'bank') {
-                requestData.bankDetails = `Account Holder: ${verifiedName || bankDetails.accountHolderName}\nAccount Number: ${bankDetails.accountNumber}\nIFSC: ${bankDetails.ifscCode}\nBank: ${bankDetails.bankName}`;
+                requestData.bankDetails = `Account Holder: ${bankDetails.accountHolderName}\nAccount Number: ${bankDetails.accountNumber}\nIFSC: ${bankDetails.ifscCode}\nBank: ${bankDetails.bankName}`;
             } else {
                 requestData.upiId = upiId;
             }
@@ -175,8 +144,8 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     return (
         <div className="max-w-6xl mx-auto">
             <div className="flex items-center justify-between mb-6">
-                 <h1 className="text-3xl font-bold text-gray-800">Request Payout</h1>
-                 <button onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-900">
+                 <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Request Payout</h1>
+                 <button onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
                     &larr; Back to Dashboard
                  </button>
             </div>
@@ -185,30 +154,30 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                 {/* Left Column */}
                 <div className="space-y-6">
                     {/* Collab Details */}
-                    <div className="bg-white p-6 rounded-2xl shadow-lg">
-                        <h2 className="text-xl font-bold text-gray-800">Collaboration Details</h2>
-                        <div className="mt-4 space-y-2 text-sm">
-                            <div className="flex justify-between"><span className="text-gray-500">Title:</span> <span className="font-semibold text-right">{collaborationTitle}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">ID:</span> <span className="font-mono text-xs">{collaboration.id}</span></div>
-                            {collaboration.collabId && <div className="flex justify-between"><span className="text-gray-500">Collab ID:</span> <span className="font-mono text-xs">{collaboration.collabId}</span></div>}
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">Collaboration Details</h2>
+                        <div className="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Title:</span> <span className="font-semibold text-right">{collaborationTitle}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">ID:</span> <span className="font-mono text-xs">{collaboration.id}</span></div>
+                            {collaboration.collabId && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Collab ID:</span> <span className="font-mono text-xs">{collaboration.collabId}</span></div>}
                         </div>
                     </div>
                     {/* Payout Calculation */}
-                     <div className="bg-white p-6 rounded-2xl shadow-lg">
-                        <h2 className="text-xl font-bold text-gray-800">Final Payout Calculation</h2>
-                        <div className="mt-4 space-y-2 text-sm border-t pt-4">
+                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">Final Payout Calculation</h2>
+                        <div className="mt-4 space-y-2 text-sm border-t dark:border-gray-700 pt-4 dark:text-gray-300">
                             <div className="flex justify-between"><span>Final Agreed Price:</span> <span className="font-semibold">₹{finalAmount.toFixed(2)}</span></div>
                             {platformSettings.isPlatformCommissionEnabled && commission > 0 && (
-                                <div className="flex justify-between text-red-600"><span>(-) Platform Commission ({platformSettings.platformCommissionRate}%):</span> <span>- ₹{commission.toFixed(2)}</span></div>
+                                <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Platform Commission ({platformSettings.platformCommissionRate}%):</span> <span>- ₹{commission.toFixed(2)}</span></div>
                             )}
                             {platformSettings.isPaymentProcessingChargeEnabled && processingCharge > 0 && (
-                                <div className="flex justify-between text-red-600"><span>(-) Payment Processing Charge ({platformSettings.paymentProcessingChargeRate}%):</span> <span>- ₹{processingCharge.toFixed(2)}</span></div>
+                                <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Payment Processing Charge ({platformSettings.paymentProcessingChargeRate}%):</span> <span>- ₹{processingCharge.toFixed(2)}</span></div>
                             )}
                             {platformSettings.isGstEnabled && gstOnFees > 0 && (
-                                 <div className="flex justify-between text-red-600"><span>(-) GST on Fees ({platformSettings.gstRate}%):</span> <span>- ₹{gstOnFees.toFixed(2)}</span></div>
+                                 <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) GST on Fees ({platformSettings.gstRate}%):</span> <span>- ₹{gstOnFees.toFixed(2)}</span></div>
                             )}
-                            {dailyPayoutsReceived > 0 && <div className="flex justify-between text-red-600"><span>(-) Daily Payouts Received:</span> <span>- ₹{dailyPayoutsReceived.toFixed(2)}</span></div>}
-                            <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2"><span>Final Payout Amount:</span> <span>₹{finalPayoutAmount.toFixed(2)}</span></div>
+                            {dailyPayoutsReceived > 0 && <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Daily Payouts Received:</span> <span>- ₹{dailyPayoutsReceived.toFixed(2)}</span></div>}
+                            <div className="flex justify-between font-bold text-lg border-t dark:border-gray-700 pt-2 mt-2 text-gray-900 dark:text-white"><span>Final Payout Amount:</span> <span>₹{finalPayoutAmount.toFixed(2)}</span></div>
                         </div>
                     </div>
                 </div>
@@ -216,11 +185,11 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                 {/* Right Column */}
                 <div className="space-y-6">
                     {/* Payment Details */}
-                    <div className="bg-white p-6 rounded-2xl shadow-lg">
-                        <h2 className="text-xl font-bold text-gray-800">Payment Details</h2>
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">Payment Details</h2>
                          <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700">Payment Method</label>
-                            <select value={payoutMethod} onChange={e => { setPayoutMethod(e.target.value as any); setIsVerified(false); }} className="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Payment Method</label>
+                            <select value={payoutMethod} onChange={e => setPayoutMethod(e.target.value as any)} className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                                 <option value="bank">Bank Account</option>
                                 <option value="upi">UPI ID</option>
                             </select>
@@ -228,47 +197,34 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                          {payoutMethod === 'bank' ? (
                             <div className="mt-4 space-y-4">
                                 <div>
-                                    <label htmlFor="accountHolderName" className="block text-sm font-medium text-gray-700">Account Holder Name</label>
-                                    <input type="text" id="accountHolderName" name="accountHolderName" value={bankDetails.accountHolderName} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                                    <label htmlFor="accountHolderName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Account Holder Name</label>
+                                    <input type="text" id="accountHolderName" name="accountHolderName" value={bankDetails.accountHolderName} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
                                 </div>
                                 <div>
-                                    <label htmlFor="accountNumber" className="block text-sm font-medium text-gray-700">Account Number</label>
-                                    <input type="text" id="accountNumber" name="accountNumber" value={bankDetails.accountNumber} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                                    <label htmlFor="accountNumber" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Account Number</label>
+                                    <input type="text" id="accountNumber" name="accountNumber" value={bankDetails.accountNumber} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
                                 </div>
                                 <div>
-                                    <label htmlFor="ifscCode" className="block text-sm font-medium text-gray-700">IFSC Code</label>
-                                    <input type="text" id="ifscCode" name="ifscCode" value={bankDetails.ifscCode} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                                    <label htmlFor="ifscCode" className="block text-sm font-medium text-gray-700 dark:text-gray-300">IFSC Code</label>
+                                    <input type="text" id="ifscCode" name="ifscCode" value={bankDetails.ifscCode} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
                                 </div>
                                 <div>
-                                    <label htmlFor="bankName" className="block text-sm font-medium text-gray-700">Bank Name & Branch</label>
-                                    <input type="text" id="bankName" name="bankName" value={bankDetails.bankName} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                                    <label htmlFor="bankName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Bank Name & Branch</label>
+                                    <input type="text" id="bankName" name="bankName" value={bankDetails.bankName} onChange={handleBankDetailsChange} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
                                 </div>
                             </div>
                          ) : (
                              <div className="mt-4">
-                                <label className="block text-sm font-medium text-gray-700">UPI ID</label>
-                                <input type="text" value={upiId} onChange={handleUpiChange} placeholder="yourname@upi" required className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">UPI ID</label>
+                                <input type="text" value={upiId} onChange={handleUpiChange} placeholder="yourname@upi" required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
                             </div>
                          )}
-                         
-                         <div className="mt-4">
-                             {!isVerified ? (
-                                 <button type="button" onClick={handleVerifyAccount} disabled={isVerifying} className="w-full py-2 px-4 bg-indigo-100 text-indigo-700 rounded-md font-semibold hover:bg-indigo-200 disabled:opacity-50">
-                                     {isVerifying ? 'Verifying...' : 'Verify Account Now'}
-                                 </button>
-                             ) : (
-                                 <div className="p-3 bg-green-50 border border-green-200 rounded-md flex items-center text-green-700">
-                                     <CheckBadgeIcon className="w-5 h-5 mr-2" />
-                                     <span className="text-sm font-medium">Verified: {verifiedName}</span>
-                                 </div>
-                             )}
-                         </div>
                     </div>
 
                     {/* Selfie Verification */}
                     {platformSettings.payoutSettings.requireSelfieForPayout && (
-                        <div className="bg-white p-6 rounded-2xl shadow-lg">
-                            <h2 className="text-xl font-bold text-gray-800">Identity Verification</h2>
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">Identity Verification</h2>
                             <CameraCapture
                                 capturedImage={selfieDataUrl}
                                 onCapture={setSelfieDataUrl}
@@ -278,9 +234,9 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                         </div>
                     )}
                     
-                    {error && <p className="text-red-600 text-sm text-center p-3 bg-red-50 rounded-md">{error}</p>}
+                    {error && <p className="text-red-600 text-sm text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-md">{error}</p>}
                     
-                    <button type="submit" disabled={isLoading || !isVerified} className="w-full py-4 text-lg font-semibold rounded-lg text-white bg-gradient-to-r from-green-500 to-teal-600 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button type="submit" disabled={isLoading} className="w-full py-4 text-lg font-semibold rounded-lg text-white bg-gradient-to-r from-green-500 to-teal-600 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed">
                         {isLoading ? 'Submitting...' : 'Submit Payout Request'}
                     </button>
                 </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LogoIcon, GoogleIcon, ExclamationTriangleIcon, EnvelopeIcon, ChatBubbleLeftEllipsisIcon } from './Icons';
+import { LogoIcon, GoogleIcon, ExclamationTriangleIcon } from './Icons';
 import { UserRole, PlatformSettings } from '../types';
 import { authService } from '../services/authService';
 import StaffLoginModal from './StaffLoginModal';
@@ -14,7 +14,6 @@ interface LoginPageProps {
 
 type AuthMode = 'login' | 'signup';
 type LoginMethod = 'email' | 'otp';
-type SignupStep = 'form' | 'method_selection' | 'otp_verification';
 
 const isValidEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -330,8 +329,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('otp');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showStaffLogin, setShowStaffLogin] = useState(false);
-  const [signupStep, setSignupStep] = useState<SignupStep>('form');
   
+  // Signup specific state
+  const [signupStep, setSignupStep] = useState<'form' | 'otp'>('form');
+  const [signupOtp, setSignupOtp] = useState('');
+  const [signupConfirmationResult, setSignupConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const recaptchaVerifierSignupRef = useRef<RecaptchaVerifier | null>(null);
+
   // Form fields
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -353,7 +357,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   
   // ReCaptcha ref
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
-  const signupRecaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -368,9 +371,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             try { recaptchaVerifierRef.current.clear(); } catch(e) {}
             recaptchaVerifierRef.current = null;
         }
-        if (signupRecaptchaRef.current) {
-            try { signupRecaptchaRef.current.clear(); } catch(e) {}
-            signupRecaptchaRef.current = null;
+        if (recaptchaVerifierSignupRef.current) {
+            try { recaptchaVerifierSignupRef.current.clear(); } catch(e) {}
+            recaptchaVerifierSignupRef.current = null;
         }
     };
   }, []);
@@ -404,16 +407,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
     setError(null);
     setEmailError(null);
     setSignupMobileError(null);
+    
+    // Signup specific reset
     setSignupStep('form');
+    setSignupOtp('');
+    setSignupConfirmationResult(null);
     
     // Clean up Recaptcha when switching modes
     if (recaptchaVerifierRef.current) {
         try { recaptchaVerifierRef.current.clear(); } catch(e) { console.warn(e); }
         recaptchaVerifierRef.current = null;
     }
-    if (signupRecaptchaRef.current) {
-        try { signupRecaptchaRef.current.clear(); } catch(e) { console.warn(e); }
-        signupRecaptchaRef.current = null;
+    if (recaptchaVerifierSignupRef.current) {
+        try { recaptchaVerifierSignupRef.current.clear(); } catch(e) { console.warn(e); }
+        recaptchaVerifierSignupRef.current = null;
     }
   };
   
@@ -462,33 +469,28 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
 
   const handleSignupSendOtp = async () => {
       setError(null);
+      setIsLoading(true);
+      
       let fullPhoneNumber = signupMobile.trim();
-
       if (/^\d{10}$/.test(fullPhoneNumber)) {
         fullPhoneNumber = `+91${fullPhoneNumber}`;
       } else if (!/^\+\d{10,15}$/.test(fullPhoneNumber)) {
-        setError("Invalid mobile number format.");
+        setError("Please enter a valid 10-digit mobile number.");
+        setIsLoading(false);
         return;
       }
 
-      setIsLoading(true);
       try {
-          // 1. Aggressively clear old instances
-          if (signupRecaptchaRef.current) {
-              try { signupRecaptchaRef.current.clear(); } catch(e) {}
-              signupRecaptchaRef.current = null;
+          // Cleanup previous instances
+          if (recaptchaVerifierSignupRef.current) {
+              try { recaptchaVerifierSignupRef.current.clear(); } catch (e) {}
+              recaptchaVerifierSignupRef.current = null;
           }
           
-          const containerId = 'recaptcha-container-signup';
-          const container = document.getElementById(containerId);
-          if (container) { 
-              container.innerHTML = ''; 
-          } else {
-              throw new Error(`DOM Element ${containerId} not found.`);
-          }
+          const container = document.getElementById('recaptcha-container-signup');
+          if (container) { container.innerHTML = ''; }
 
-          // 2. Create new verifier
-          const newVerifier = new RecaptchaVerifier(auth, containerId, { 
+          const newVerifier = new RecaptchaVerifier(auth, 'recaptcha-container-signup', { 
               'size': 'invisible',
               'callback': () => {},
               'expired-callback': () => {
@@ -496,61 +498,43 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                   setIsLoading(false);
               }
           });
-          signupRecaptchaRef.current = newVerifier;
-
-          // 3. Send OTP
+          
+          recaptchaVerifierSignupRef.current = newVerifier;
           const confirmation = await authService.sendLoginOtp(fullPhoneNumber, newVerifier);
-          setConfirmationResult(confirmation);
-          setSignupStep('otp_verification');
-          setError(null);
-      } catch(err: any) {
+          setSignupConfirmationResult(confirmation);
+          setSignupStep('otp');
+          
+      } catch (err: any) {
           console.error("Signup OTP Error:", err);
-          if (err.code === 'auth/internal-error') {
-              setError('auth/internal-error'); // Use specific code to trigger the detailed message
-          } else {
-              handleAuthError(err);
-          }
+          handleAuthError(err);
       } finally {
           setIsLoading(false);
       }
   };
 
   const handleSignupVerifyOtpAndRegister = async () => {
-      if (!confirmationResult || !otp) {
+      if (!signupConfirmationResult || !signupOtp) {
           setError("Please enter the OTP.");
           return;
       }
+      
       setIsLoading(true);
-      try {
-          // 1. Verify OTP (creates temp session)
-          await confirmationResult.confirm(otp);
-          
-          // 2. Create actual account
-          await authService.register(email, password, role, name, companyName, signupMobile, referralCode);
-          alert("Registration successful! Welcome to BIGYAPON.");
-          // Note: authService.register auto-signs in the user with the new email creds.
-          
-      } catch (err: any) {
-          console.error("Registration Error:", err);
-          if(err.code === 'auth/invalid-verification-code') {
-              setError("Invalid OTP. Please try again.");
-          } else if (err.code === 'auth/email-already-in-use') {
-              setError("Email is already registered.");
-          } else {
-              handleAuthError(err);
-          }
-      } finally {
-          setIsLoading(false);
-      }
-  };
+      setError(null);
 
-  const handleDirectRegister = async () => {
-      setIsLoading(true);
       try {
+          // 1. Verify OTP - This logs the user in as the Phone Auth user
+          await signupConfirmationResult.confirm(signupOtp);
+          
+          // 2. Sign out immediately (we just wanted verification)
+          await auth.signOut();
+
+          // 3. Proceed to create the actual Email/Password account
           await authService.register(email, password, role, name, companyName, signupMobile, referralCode);
-          alert("Registration successful! Welcome to BIGYAPON.");
+          
+          // Success handled by onAuthChange
       } catch (err: any) {
-          handleAuthError(err);
+          console.error("Signup Verify Error:", err);
+          setError("Invalid OTP or Registration Failed. " + (err.message || ""));
       } finally {
           setIsLoading(false);
       }
@@ -569,6 +553,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         setError(err.message);
       } else if (err.code === 'auth/too-many-requests') {
           setError('Too many requests. Please wait a while.');
+      } else if (err.code === 'auth/email-already-in-use') {
+          setError("Email is already registered.");
       } else {
         setError(err.message || 'Authentication failed. Please check your credentials.');
       }
@@ -605,8 +591,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
               setError("Password must be between 8 and 20 characters.");
               return;
           }
-          // Proceed to verification method selection
-          setSignupStep('method_selection');
+          
+          // Initiate Signup OTP Flow
+          handleSignupSendOtp();
       }
   };
 
@@ -683,6 +670,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   return (
     <>
         <div id="recaptcha-container-login"></div>
+        <div id="recaptcha-container-signup"></div>
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center px-4 py-8 sm:justify-center">
             <div className="w-full max-w-md">
                 <div className="flex justify-center w-full mb-8">
@@ -698,7 +686,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                         </p>
                     </div>
                     
-                    {/* Role Selection (Only relevant for Signup or Google Login context, technically) */}
+                    {/* Role Selection */}
                     <div className="mb-6">
                         <label htmlFor="role-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                            I am a...
@@ -773,7 +761,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                         )}
                         
                         {/* SIGNUP FORM */}
-                        {authMode === 'signup' && (
+                        {authMode === 'signup' && signupStep === 'form' && (
                                 <div className="space-y-4 animate-fade-in-down">
                                  <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
@@ -833,6 +821,34 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                 )}
                                 </div>
                             )}
+                            
+                        {authMode === 'signup' && signupStep === 'otp' && (
+                            <div className="space-y-4 animate-fade-in-down">
+                                <div className="text-center p-3 bg-indigo-50 dark:bg-gray-700 rounded-lg border border-indigo-100 dark:border-gray-600">
+                                    <p className="text-sm text-indigo-800 dark:text-indigo-300">OTP sent to <span className="font-bold">{signupMobile}</span></p>
+                                </div>
+                                <div>
+                                    <label htmlFor="signup-otp" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Enter OTP</label>
+                                    <input
+                                        type="text"
+                                        id="signup-otp"
+                                        value={signupOtp}
+                                        onChange={(e) => setSignupOtp(e.target.value)}
+                                        maxLength={6}
+                                        placeholder="6-digit code"
+                                        required
+                                        className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 text-center tracking-widest font-mono text-lg"
+                                    />
+                                </div>
+                                <button 
+                                    type="button" 
+                                    onClick={() => { setSignupStep('form'); setError(null); }}
+                                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 underline w-full text-center"
+                                >
+                                    Back to details
+                                </button>
+                            </div>
+                        )}
 
                         {authMode === 'login' && (
                             <div className="text-center text-sm text-gray-600 mt-4 dark:text-gray-400">
@@ -845,19 +861,32 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                         {renderError()}
                         
                         {/* Action Button */}
-                        {authMode === 'login' && loginMethod === 'otp' && !isOtpSent ? (
-                            <button
-                                type="button"
-                                onClick={handleSendLoginOtp}
-                                disabled={isLoading}
-                                className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isLoading ? 'Sending OTP...' : 'Send OTP'}
-                            </button>
+                        {authMode === 'login' ? (
+                            loginMethod === 'otp' && !isOtpSent ? (
+                                <button
+                                    type="button"
+                                    onClick={handleSendLoginOtp}
+                                    disabled={isLoading}
+                                    className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isLoading ? 'Sending OTP...' : 'Send OTP'}
+                                </button>
+                            ) : (
+                                <button type="submit" disabled={isLoading} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {isLoading ? 'Processing...' : 'Login'}
+                                </button>
+                            )
                         ) : (
-                            <button type="submit" disabled={isLoading || (authMode === 'signup' && (!!emailError || !!signupMobileError))} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
-                                {isLoading ? 'Processing...' : (authMode === 'login' ? `Login` : 'Sign Up')}
-                            </button>
+                            // Signup Buttons
+                            signupStep === 'form' ? (
+                                <button type="submit" disabled={isLoading || !!emailError || !!signupMobileError} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {isLoading ? 'Processing...' : 'Send Verification OTP'}
+                                </button>
+                            ) : (
+                                <button type="button" onClick={handleSignupVerifyOtpAndRegister} disabled={isLoading} className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-green-500 to-teal-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {isLoading ? 'Creating Account...' : 'Verify & Create Account'}
+                                </button>
+                            )
                         )}
 
 
@@ -926,93 +955,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 </div>
             </div>
         </div>
-
-        {/* Signup Verification Modal */}
-        {signupStep !== 'form' && (
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md relative">
-                    <button 
-                        onClick={() => { setSignupStep('form'); setConfirmationResult(null); setError(null); setIsLoading(false); }} 
-                        className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-100"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                    
-                    <h3 className="text-xl font-bold text-center text-gray-800 dark:text-white mb-2">Verify Your Identity</h3>
-                    <p className="text-center text-gray-500 dark:text-gray-400 mb-6 text-sm">
-                        Please verify your account to proceed with registration.
-                    </p>
-
-                    {signupStep === 'method_selection' && (
-                        <div className="space-y-4">
-                            <div id="recaptcha-container-signup"></div>
-                            <button 
-                                onClick={handleSignupSendOtp} 
-                                disabled={isLoading}
-                                className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group dark:bg-indigo-900/20 dark:border-indigo-800 dark:hover:bg-indigo-900/40"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-indigo-600 text-white rounded-lg"><ChatBubbleLeftEllipsisIcon className="w-5 h-5" /></div>
-                                    <div className="text-left">
-                                        <p className="font-bold text-gray-800 dark:text-white text-sm">Verify via Mobile OTP</p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Receive code on {signupMobile}</p>
-                                    </div>
-                                </div>
-                                <span className="text-indigo-600 font-bold text-sm group-hover:translate-x-1 transition-transform dark:text-indigo-400">&rarr;</span>
-                            </button>
-
-                            <button 
-                                onClick={handleDirectRegister} 
-                                disabled={isLoading}
-                                className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors group dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-600"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-gray-200 text-gray-600 rounded-lg dark:bg-gray-600 dark:text-gray-300"><EnvelopeIcon className="w-5 h-5" /></div>
-                                    <div className="text-left">
-                                        <p className="font-bold text-gray-800 dark:text-white text-sm">Verify via Email Link</p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Send link to {email}</p>
-                                    </div>
-                                </div>
-                                <span className="text-gray-400 font-bold text-sm group-hover:translate-x-1 transition-transform">&rarr;</span>
-                            </button>
-                        </div>
-                    )}
-
-                    {signupStep === 'otp_verification' && (
-                        <div className="space-y-4 animate-fade-in-down">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Enter 6-digit OTP</label>
-                                <input
-                                    type="text"
-                                    value={otp}
-                                    onChange={(e) => setOtp(e.target.value)}
-                                    maxLength={6}
-                                    placeholder="XXXXXX"
-                                    className="block w-full text-center tracking-widest text-xl p-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                />
-                            </div>
-                            
-                            <button 
-                                onClick={handleSignupVerifyOtpAndRegister} 
-                                disabled={isLoading}
-                                className="w-full py-3 px-4 text-sm font-bold rounded-lg text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 shadow-lg"
-                            >
-                                {isLoading ? 'Verifying...' : 'Verify & Create Account'}
-                            </button>
-                            
-                            <button 
-                                onClick={() => setSignupStep('method_selection')}
-                                className="w-full text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400"
-                            >
-                                Change Method
-                            </button>
-                        </div>
-                    )}
-                    
-                    {error && <div className="mt-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg text-center border border-red-100">{error}</div>}
-                </div>
-            </div>
-        )}
 
         {showForgotPassword && <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} platformSettings={platformSettings} />}
         {showStaffLogin && <StaffLoginModal onClose={() => setShowStaffLogin(false)} platformSettings={platformSettings} />}

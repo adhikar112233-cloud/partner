@@ -355,7 +355,8 @@ export interface RefundRequest {
     collabType: 'direct' | 'campaign' | 'ad_slot' | 'banner_booking';
     collabTitle: string;
     description: string;
-    bankDetails: string;
+    bankDetails?: string;
+    upiId?: string;
     panNumber: string;
     timestamp: any;
     collabId?: string;

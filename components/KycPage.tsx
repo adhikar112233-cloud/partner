@@ -60,6 +60,16 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         return new File([u8arr], filename, {type:mime});
     }
 
+    const sanitizeData = (data: KycDetails) => {
+        const cleaned: any = { ...data };
+        Object.keys(cleaned).forEach(key => {
+            if (cleaned[key] === undefined) {
+                cleaned[key] = null;
+            }
+        });
+        return cleaned;
+    };
+
     const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -78,12 +88,12 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         try {
             const selfieFile = (selfieDataUrl && selfieDataUrl !== user.kycDetails?.selfieUrl) ? dataURLtoFile(selfieDataUrl, 'selfie.jpg') : null;
             
-            // If we have a new file, use it. If not, the API service will keep the old one if we pass the existing kycDetails in formData.
-            // However, apiService.submitKyc merges data.
-            
-            await apiService.submitKyc(user.id, formData, idProofFile, selfieFile);
+            const cleanedData = sanitizeData(formData);
+
+            await apiService.submitKyc(user.id, cleanedData, idProofFile, selfieFile);
             
             setSuccess("KYC details submitted successfully! An admin will verify your documents shortly.");
+            setIsLoading(false); // Fix hanging state
             
             setTimeout(() => {
                 onKycSubmitted();

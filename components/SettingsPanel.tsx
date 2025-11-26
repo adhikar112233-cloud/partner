@@ -155,9 +155,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 <SettingRow label="Require Live Selfie for KYC">
                     <input type="checkbox" checked={settings.isKycSelfieRequired} onChange={e => handleSettingChange('isKycSelfieRequired', e.target.checked)} />
                 </SettingRow>
-                <SettingRow label="Enable DigiLocker KYC">
-                    <input type="checkbox" checked={settings.isDigilockerKycEnabled} onChange={e => handleSettingChange('isDigilockerKycEnabled', e.target.checked)} />
-                </SettingRow>
                 <SettingRow label="Require Selfie for Payouts">
                     <input type="checkbox" checked={settings.payoutSettings.requireSelfieForPayout} onChange={e => handleNestedChange('payoutSettings', 'requireSelfieForPayout', e.target.checked)} />
                 </SettingRow>

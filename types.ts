@@ -125,8 +125,6 @@ export interface PlatformSettings {
     isCampaignBoostingEnabled: boolean;
     isKycIdProofRequired: boolean;
     isKycSelfieRequired: boolean;
-    isDigilockerKycEnabled: boolean;
-    digilockerClientId?: string;
     isForgotPasswordOtpEnabled: boolean;
     isOtpLoginEnabled: boolean;
     

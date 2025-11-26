@@ -1,10 +1,25 @@
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import { Timestamp } from 'firebase/firestore';
-import { GiftIcon, CoinIcon, DocumentIcon } from './Icons';
+import { GiftIcon, CoinIcon } from './Icons';
 
 interface ProfilePageProps {
   user: User;
@@ -26,6 +41,25 @@ const indianCities = [
     'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Ahmedabad', 'Chennai', 'Kolkata', 'Surat', 'Pune', 'Jaipur', 'Lucknow', 'Kanpur', 'Nagpur', 'Indore', 'Thane', 'Bhopal', 'Visakhapatnam', 'Pimpri-Chinchwad', 'Patna', 'Vadodara', 'Ghaziabad', 'Ludhiana', 'Agra', 'Nashik', 'Faridabad', 'Meerut', 'Rajkot', 'Varanasi', 'Srinagar', 'Aurangabad', 'Dhanbad', 'Amritsar', 'Navi Mumbai', 'Allahabad', 'Ranchi', 'Howrah', 'Coimbatore', 'Jabalpur', 'Gwalior', 'Vijayawada', 'Jodhpur', 'Madurai', 'Raipur', 'Kota', 'Guwahati', 'Chandigarh'
 ];
 
+const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void }> = ({ enabled, onChange }) => (
+    <button
+        type="button"
+        className={`${
+            enabled ? 'bg-indigo-600' : 'bg-gray-200'
+        } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
+        role="switch"
+        aria-checked={enabled}
+        onClick={() => onChange(!enabled)}
+    >
+        <span
+            aria-hidden="true"
+            className={`${
+                enabled ? 'translate-x-5' : 'translate-x-0'
+            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+        />
+    </button>
+);
+
 const toJsDate = (ts: any): Date | undefined => {
     if (!ts) return undefined;
     if (ts instanceof Date) return ts;
@@ -34,49 +68,6 @@ const toJsDate = (ts: any): Date | undefined => {
     if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
     if (ts.seconds !== undefined && ts.nanoseconds !== undefined) return new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
     return undefined;
-};
-
-// Agreement Modal Component
-const AgreementModal: React.FC<{ 
-    user: User; 
-    platformSettings: PlatformSettings; 
-    onClose: () => void 
-}> = ({ user, platformSettings, onClose }) => {
-    // Determine the correct agreement text based on role
-    let rawText = "";
-    if (user.role === 'brand') rawText = platformSettings.agreements?.brand || "";
-    else if (user.role === 'influencer') rawText = platformSettings.agreements?.influencer || "";
-    else if (user.role === 'livetv') rawText = platformSettings.agreements?.livetv || "";
-    else if (user.role === 'banneragency') rawText = platformSettings.agreements?.banneragency || "";
-    else rawText = "No agreement available for this user role.";
-
-    // Replace placeholder with user's name
-    const displayName = user.companyName || user.name || "User";
-    const formattedText = rawText.replace(/{{NAME}}/g, displayName);
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fade-in-down">
-                <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                        <DocumentIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-                        User Agreement
-                    </h2>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white text-2xl leading-none">&times;</button>
-                </div>
-                <div className="flex-1 p-6 overflow-y-auto text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-                    {formattedText || (
-                        <p className="text-center italic text-gray-500">The agreement content has not been set by the administrator yet.</p>
-                    )}
-                </div>
-                <div className="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 rounded-b-2xl flex justify-end">
-                    <button onClick={onClose} className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-md">
-                        Close
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
 };
 
 // Referral Section Component
@@ -238,7 +229,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showDailyPayoutModal, setShowDailyPayoutModal] = useState(false);
-  const [showAgreementModal, setShowAgreementModal] = useState(false);
 
   useEffect(() => {
     // Fetch influencer-specific profile data if user is an influencer
@@ -399,12 +389,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
          <button onClick={onGoToDashboard} className="absolute top-4 left-4 text-white opacity-80 hover:opacity-100">
             &larr; Dashboard
          </button>
-         <button 
-            onClick={() => setShowAgreementModal(true)}
-            className="absolute top-4 right-4 text-white bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-         >
-            View Agreement
-         </button>
         <div className="flex flex-col sm:flex-row items-center">
           <div className="relative group">
             <img 
@@ -543,14 +527,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
         </dl>
       </div>
       {showDailyPayoutModal && <DailyPayoutRequestModal user={user} onClose={() => setShowDailyPayoutModal(false)} platformSettings={platformSettings} />}
-      
-      {showAgreementModal && (
-          <AgreementModal 
-              user={user} 
-              platformSettings={platformSettings} 
-              onClose={() => setShowAgreementModal(false)} 
-          />
-      )}
     </div>
   );
 };

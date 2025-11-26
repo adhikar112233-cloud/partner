@@ -126,9 +126,6 @@ export interface Influencer {
     socialMediaLinks?: string;
     isBoosted?: boolean;
     membershipActive?: boolean;
-    // Performance Metrics for Top 10
-    totalEarnings?: number;
-    collaborationCount?: number;
 }
 
 export interface DiscountSetting {
@@ -221,14 +218,6 @@ export interface PlatformSettings {
         creatorMembership: DiscountSetting;
         brandCampaignBoost: DiscountSetting;
     };
-
-    // Agreements
-    agreements: {
-        brand: string;
-        influencer: string;
-        livetv: string;
-        banneragency: string;
-    };
 }
 
 export enum View {
@@ -259,8 +248,7 @@ export enum View {
     BOOST_PROFILE = 'boost_profile',
     PARTNERS = 'partners',
     PAYMENT_SUCCESS = 'payment_success',
-    CREATOR_VERIFICATION = 'creator_verification',
-    TOP_INFLUENCERS = 'top_influencers'
+    CREATOR_VERIFICATION = 'creator_verification'
 }
 
 export interface ProfileData {

@@ -102,47 +102,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                         <label htmlFor="googleLogin" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Google Login</label>
                     </div>
                 </SettingRow>
-                <SettingRow label="OTP API ID" helpText="API Identifier for 3rd party SMS/OTP service (if configured).">
-                    <input type="text" value={settings.otpApiId || ''} onChange={e => handleSettingChange('otpApiId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
-                </SettingRow>
-
-                {/* User Agreements */}
-                <div className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20"><h4 className="font-semibold text-blue-800 dark:text-blue-200">User Agreements & Terms</h4></div>
-                <div className="px-6 py-2 text-sm text-gray-500 dark:text-gray-400 italic bg-blue-50/50 dark:bg-blue-900/10">
-                    Note: Use <strong>{`{{NAME}}`}</strong> as a placeholder in the text below. It will be automatically replaced with the user's actual name or company name when they view it.
-                </div>
-                <SettingRow label="Influencer Agreement" helpText="Terms shown to Influencers in their profile.">
-                    <textarea 
-                        value={settings.agreements?.influencer || ''} 
-                        onChange={e => handleNestedChange('agreements', 'influencer', e.target.value)} 
-                        className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" 
-                        rows={6} 
-                    />
-                </SettingRow>
-                <SettingRow label="Brand/Customer Agreement" helpText="Terms shown to Brands in their profile.">
-                    <textarea 
-                        value={settings.agreements?.brand || ''} 
-                        onChange={e => handleNestedChange('agreements', 'brand', e.target.value)} 
-                        className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" 
-                        rows={6} 
-                    />
-                </SettingRow>
-                <SettingRow label="Live TV Agreement" helpText="Terms shown to Live TV Channels.">
-                    <textarea 
-                        value={settings.agreements?.livetv || ''} 
-                        onChange={e => handleNestedChange('agreements', 'livetv', e.target.value)} 
-                        className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" 
-                        rows={6} 
-                    />
-                </SettingRow>
-                <SettingRow label="Banner Agency Agreement" helpText="Terms shown to Banner Ad Agencies.">
-                    <textarea 
-                        value={settings.agreements?.banneragency || ''} 
-                        onChange={e => handleNestedChange('agreements', 'banneragency', e.target.value)} 
-                        className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" 
-                        rows={6} 
-                    />
-                </SettingRow>
 
                 {/* Integration */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Backend Integration</h4></div>
@@ -166,12 +125,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 </SettingRow>
                 <SettingRow label="Secret Key" helpText="From Cashfree PG Dashboard.">
                     <input type="password" value={settings.paymentGatewayApiSecret || ''} onChange={e => handleSettingChange('paymentGatewayApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
-                </SettingRow>
-                <SettingRow label="Webhook Secret" helpText="For verifying payment callbacks/webhooks (if used).">
-                    <input type="password" value={settings.paymentGatewayWebhookSecret || ''} onChange={e => handleSettingChange('paymentGatewayWebhookSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
-                </SettingRow>
-                <SettingRow label="Gateway Source Code" helpText="Internal identifier or source code for the gateway integration.">
-                    <input type="text" value={settings.paymentGatewaySourceCode || ''} onChange={e => handleSettingChange('paymentGatewaySourceCode', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
                 </SettingRow>
 
                 {/* Verification Keys */}

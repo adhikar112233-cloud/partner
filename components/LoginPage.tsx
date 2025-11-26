@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LogoIcon, GoogleIcon, ExclamationTriangleIcon } from './Icons';
+import { LogoIcon, GoogleIcon, ExclamationTriangleIcon, EnvelopeIcon, ChatBubbleLeftEllipsisIcon } from './Icons';
 import { UserRole, PlatformSettings } from '../types';
 import { authService } from '../services/authService';
 import StaffLoginModal from './StaffLoginModal';
@@ -14,6 +14,7 @@ interface LoginPageProps {
 
 type AuthMode = 'login' | 'signup';
 type LoginMethod = 'email' | 'otp';
+type SignupStep = 'form' | 'method_selection' | 'otp_verification';
 
 const isValidEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -75,7 +76,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
         // Cleanup ReCaptcha on unmount
         return () => {
             if (recaptchaVerifierForgotRef.current) {
-                recaptchaVerifierForgotRef.current.clear();
+                try { recaptchaVerifierForgotRef.current.clear(); } catch(e) {}
                 recaptchaVerifierForgotRef.current = null;
             }
         };
@@ -128,12 +129,12 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
         try {
             // Clear existing verifier if any
             if (recaptchaVerifierForgotRef.current) {
-                recaptchaVerifierForgotRef.current.clear();
+                try { recaptchaVerifierForgotRef.current.clear(); } catch(e) {}
                 recaptchaVerifierForgotRef.current = null;
             }
 
             const container = document.getElementById('recaptcha-container-forgot');
-            if (!container) throw new Error("Recaptcha container not found");
+            if (container) container.innerHTML = '';
 
             recaptchaVerifierForgotRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-forgot', { 
                 'size': 'invisible',
@@ -155,9 +156,10 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
         } catch (err: any) {
             console.error("OTP Error", err);
             if (recaptchaVerifierForgotRef.current) {
-                recaptchaVerifierForgotRef.current.clear();
+                try { recaptchaVerifierForgotRef.current.clear(); } catch(e) {}
                 recaptchaVerifierForgotRef.current = null;
             }
+            
             if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
                 setError('auth/unauthorized-domain');
             } else if (err.code === 'auth/auth-domain-config-required') {
@@ -328,6 +330,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('otp');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showStaffLogin, setShowStaffLogin] = useState(false);
+  const [signupStep, setSignupStep] = useState<SignupStep>('form');
   
   // Form fields
   const [email, setEmail] = useState('');
@@ -350,6 +353,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   
   // ReCaptcha ref
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+  const signupRecaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -361,8 +365,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
     // Cleanup ReCaptcha on mount/unmount
     return () => {
         if (recaptchaVerifierRef.current) {
-            recaptchaVerifierRef.current.clear();
+            try { recaptchaVerifierRef.current.clear(); } catch(e) {}
             recaptchaVerifierRef.current = null;
+        }
+        if (signupRecaptchaRef.current) {
+            try { signupRecaptchaRef.current.clear(); } catch(e) {}
+            signupRecaptchaRef.current = null;
         }
     };
   }, []);
@@ -396,21 +404,23 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
     setError(null);
     setEmailError(null);
     setSignupMobileError(null);
+    setSignupStep('form');
     
     // Clean up Recaptcha when switching modes
     if (recaptchaVerifierRef.current) {
-        try {
-            recaptchaVerifierRef.current.clear();
-        } catch(e) { console.warn(e); }
+        try { recaptchaVerifierRef.current.clear(); } catch(e) { console.warn(e); }
         recaptchaVerifierRef.current = null;
+    }
+    if (signupRecaptchaRef.current) {
+        try { signupRecaptchaRef.current.clear(); } catch(e) { console.warn(e); }
+        signupRecaptchaRef.current = null;
     }
   };
   
-  const handleSendOtp = async () => {
+  const handleSendLoginOtp = async () => {
       setError(null);
       let fullPhoneNumber = phoneNumber.trim();
 
-      // Basic format validation
       if (/^\d{10}$/.test(fullPhoneNumber)) {
         fullPhoneNumber = `+91${fullPhoneNumber}`;
       } else if (!/^\+\d{10,15}$/.test(fullPhoneNumber)) {
@@ -420,64 +430,157 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
       
       setIsLoading(true);
       try {
-          // Initialize verifier if not already done or needs reset
-          if (!recaptchaVerifierRef.current) {
-              const container = document.getElementById('recaptcha-container-login');
-              if (!container) {
-                  throw new Error("Internal Error: ReCaptcha container not found.");
-              }
-
-              recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container-login', { 
-                  'size': 'invisible',
-                  'callback': () => {
-                      // reCAPTCHA solved
-                  },
-                  'expired-callback': () => {
-                      // Response expired
-                      setError("Recaptcha expired, please try again.");
-                      setIsLoading(false);
-                  }
-              });
+          if (recaptchaVerifierRef.current) {
+              try { recaptchaVerifierRef.current.clear(); } catch (e) {}
+              recaptchaVerifierRef.current = null;
           }
           
-          const appVerifier = recaptchaVerifierRef.current;
+          const container = document.getElementById('recaptcha-container-login');
+          if (container) { container.innerHTML = ''; }
+
+          const newVerifier = new RecaptchaVerifier(auth, 'recaptcha-container-login', { 
+              'size': 'invisible',
+              'callback': () => {},
+              'expired-callback': () => {
+                  setError("Recaptcha expired, please try again.");
+                  setIsLoading(false);
+              }
+          });
           
-          const confirmation = await authService.sendLoginOtp(fullPhoneNumber, appVerifier);
+          recaptchaVerifierRef.current = newVerifier;
+          const confirmation = await authService.sendLoginOtp(fullPhoneNumber, newVerifier);
           setConfirmationResult(confirmation);
           setIsOtpSent(true);
           setError(null);
       } catch (err: any) {
           console.error("OTP Send Error:", err);
+          handleAuthError(err);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  const handleSignupSendOtp = async () => {
+      setError(null);
+      let fullPhoneNumber = signupMobile.trim();
+
+      if (/^\d{10}$/.test(fullPhoneNumber)) {
+        fullPhoneNumber = `+91${fullPhoneNumber}`;
+      } else if (!/^\+\d{10,15}$/.test(fullPhoneNumber)) {
+        setError("Invalid mobile number format.");
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+          // 1. Aggressively clear old instances
+          if (signupRecaptchaRef.current) {
+              try { signupRecaptchaRef.current.clear(); } catch(e) {}
+              signupRecaptchaRef.current = null;
+          }
           
-          // Clean up if failed so user can try again cleanly
-          if (recaptchaVerifierRef.current) {
-              try {
-                recaptchaVerifierRef.current.clear();
-              } catch(e){}
-              recaptchaVerifierRef.current = null;
+          const containerId = 'recaptcha-container-signup';
+          const container = document.getElementById(containerId);
+          if (container) { 
+              container.innerHTML = ''; 
+          } else {
+              throw new Error(`DOM Element ${containerId} not found.`);
           }
 
-          if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
-              setError('auth/unauthorized-domain');
-          } else if (err.code === 'auth/internal-error') {
-              setError('auth/internal-error');
-          } else if (err.code === 'auth/too-many-requests') {
-              setError('Too many requests. Please wait a while before trying again.');
+          // 2. Create new verifier
+          const newVerifier = new RecaptchaVerifier(auth, containerId, { 
+              'size': 'invisible',
+              'callback': () => {},
+              'expired-callback': () => {
+                  setError("Recaptcha expired, please try again.");
+                  setIsLoading(false);
+              }
+          });
+          signupRecaptchaRef.current = newVerifier;
+
+          // 3. Send OTP
+          const confirmation = await authService.sendLoginOtp(fullPhoneNumber, newVerifier);
+          setConfirmationResult(confirmation);
+          setSignupStep('otp_verification');
+          setError(null);
+      } catch(err: any) {
+          console.error("Signup OTP Error:", err);
+          if (err.code === 'auth/internal-error') {
+              setError('auth/internal-error'); // Use specific code to trigger the detailed message
           } else {
-              setError(err.message || "Failed to send OTP. Please check the number or try again.");
+              handleAuthError(err);
           }
       } finally {
           setIsLoading(false);
       }
   };
 
+  const handleSignupVerifyOtpAndRegister = async () => {
+      if (!confirmationResult || !otp) {
+          setError("Please enter the OTP.");
+          return;
+      }
+      setIsLoading(true);
+      try {
+          // 1. Verify OTP (creates temp session)
+          await confirmationResult.confirm(otp);
+          
+          // 2. Create actual account
+          await authService.register(email, password, role, name, companyName, signupMobile, referralCode);
+          alert("Registration successful! Welcome to BIGYAPON.");
+          // Note: authService.register auto-signs in the user with the new email creds.
+          
+      } catch (err: any) {
+          console.error("Registration Error:", err);
+          if(err.code === 'auth/invalid-verification-code') {
+              setError("Invalid OTP. Please try again.");
+          } else if (err.code === 'auth/email-already-in-use') {
+              setError("Email is already registered.");
+          } else {
+              handleAuthError(err);
+          }
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  const handleDirectRegister = async () => {
+      setIsLoading(true);
+      try {
+          await authService.register(email, password, role, name, companyName, signupMobile, referralCode);
+          alert("Registration successful! Welcome to BIGYAPON.");
+      } catch (err: any) {
+          handleAuthError(err);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  const handleAuthError = (err: any) => {
+      if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
+        setError('auth/unauthorized-domain');
+      } else if (err.code === 'auth/auth-domain-config-required') {
+        setError('auth/auth-domain-config-required');
+      } else if (err.code === 'auth/internal-error') {
+          setError('auth/internal-error');
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-verification-code') {
+          setError('Invalid credentials or OTP. Please check and try again.');
+      } else if (err.message && err.message.includes('blocked')) {
+        setError(err.message);
+      } else if (err.code === 'auth/too-many-requests') {
+          setError('Too many requests. Please wait a while.');
+      } else {
+        setError(err.message || 'Authentication failed. Please check your credentials.');
+      }
+  };
+
   const handleAuthSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setError(null);
-      setIsLoading(true);
 
-      try {
-        if (authMode === 'login') {
+      if (authMode === 'login') {
+          setIsLoading(true);
+          try {
             if (loginMethod === 'email') {
                 await authService.login(email, password);
             } else { // OTP login
@@ -488,40 +591,22 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 }
                 await authService.verifyLoginOtp(confirmationResult, otp);
             }
-        } else { // Signup
-            if (password !== confirmPassword) {
-                setError("Passwords do not match.");
-                setIsLoading(false);
-                return;
-            }
-            if (password.length < 8 || password.length > 20) {
-                setError("Password must be between 8 and 20 characters.");
-                setIsLoading(false);
-                return;
-            }
-
-            await authService.register(email, password, role, name, companyName, signupMobile, referralCode);
-            alert("Registration successful! Please log in.");
-            setAuthMode('login');
-            resetFormFields();
-        }
-      } catch (err: any) {
-          console.error("Auth error:", err);
-          if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
-            setError('auth/unauthorized-domain');
-          } else if (err.code === 'auth/auth-domain-config-required') {
-            setError('auth/auth-domain-config-required');
-          } else if (err.code === 'auth/internal-error') {
-              setError('auth/internal-error');
-          } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-verification-code') {
-              setError('Invalid credentials or OTP. Please check and try again.');
-          } else if (err.message && err.message.includes('blocked')) {
-            setError(err.message);
-          } else {
-            setError(err.message || 'Authentication failed. Please check your credentials.');
+          } catch(err: any) {
+              handleAuthError(err);
+          } finally {
+              setIsLoading(false);
           }
-      } finally {
-          setIsLoading(false);
+      } else { // Signup
+          if (password !== confirmPassword) {
+              setError("Passwords do not match.");
+              return;
+          }
+          if (password.length < 8 || password.length > 20) {
+              setError("Password must be between 8 and 20 characters.");
+              return;
+          }
+          // Proceed to verification method selection
+          setSignupStep('method_selection');
       }
   };
 
@@ -532,17 +617,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         await authService.signInWithGoogle(role);
     } catch (err: any) {
         if (err.code !== 'auth/popup-closed-by-user') {
-             if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
-                 setError('auth/unauthorized-domain');
-             } else if (err.code === 'auth/auth-domain-config-required') {
-                setError('auth/auth-domain-config-required');
-             } else if (err.code === 'auth/internal-error') {
-                setError('auth/internal-error');
-             } else if (err.message && err.message.includes('blocked')) {
-                setError('This account has been blocked by an administrator.');
-             } else {
-                setError(err.message || 'Google Sign-In failed. Please try again.');
-             }
+             handleAuthError(err);
         }
     } finally {
         setIsLoading(false);
@@ -559,7 +634,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         title = "Action Required: Authorize Domain";
         content = (
             <>
-                <p>Firebase authentication (Google, OTP, Password Reset) requires this app's domain to be on an allowlist for security. This is a one-time setup for this preview URL.</p>
+                <p>Firebase authentication requires this app's domain to be on an allowlist. This is a one-time setup.</p>
                 <ol className="list-decimal list-inside space-y-2 mt-3 text-sm">
                     <li>
                         <strong>Go to Auth Settings:</strong>
@@ -567,56 +642,34 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                             href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings/domains`} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="ml-2 font-medium text-indigo-600 dark:text-indigo-400 underline hover:text-indigo-800 dark:hover:text-indigo-300"
+                            className="ml-2 font-medium text-indigo-600 dark:text-indigo-400 underline hover:text-indigo-800"
                         >
-                            Click to open "Authorized domains"
+                            Open "Authorized domains"
                         </a>
                     </li>
-                    <li>
-                        <strong>Add Domain:</strong> On the Firebase page, click <strong>"Add domain"</strong>.
-                    </li>
-                    <li>
-                        <strong>Copy & Paste:</strong> Copy the domain below and paste it into the Firebase dialog.
-                    </li>
+                    <li>Click <strong>"Add domain"</strong>.</li>
+                    <li>Copy & Paste the domain below.</li>
                 </ol>
                 <CopyableInput value={window.location.hostname} />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">After adding the domain, you can try signing in again. If it fails, a full page refresh might be needed.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Then try again. If it fails, refresh the page.</p>
             </>
         );
     } else if (error === 'auth/internal-error') {
-        title = "Authentication Provider Not Enabled";
+        title = "Authentication Provider Issue";
         content = (
             <>
-                <p>This error commonly occurs when the <strong>Phone Number sign-in provider</strong> is not enabled in your Firebase project.</p>
-                <ol className="list-decimal list-inside space-y-2 mt-3 text-sm">
-                    <li>
-                        <strong>Open Firebase Sign-in Methods:</strong>
-                        <a 
-                            href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="ml-2 font-medium text-indigo-600 dark:text-indigo-400 underline hover:text-indigo-800 dark:hover:text-indigo-300"
-                        >
-                            Click here to open settings
-                        </a>
-                    </li>
-                    <li>
-                        On that page, find the <strong>"Phone"</strong> provider in the list and click the pencil icon to enable it.
-                    </li>
-                     <li><strong>Check Other Providers:</strong> While you're there, ensure 'Email/Password' and 'Google' are also enabled for all login methods to function correctly.</li>
-                </ol>
-                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">After enabling the provider, you must <strong>refresh this page</strong>.</p>
+                <p>The request failed. This typically means:</p>
+                <ul className="list-disc list-inside space-y-1 mt-2 text-sm">
+                    <li>The domain <strong>{window.location.hostname}</strong> is not whitelisted in Firebase Authentication Settings.</li>
+                    <li>The <strong>Phone Provider</strong> is not enabled in Firebase Console.</li>
+                    <li>Your Firebase project may have exceeded its SMS quota (Spark plan limit is 10/day). Upgrade to Blaze or add a test phone number.</li>
+                </ul>
             </>
-        );
-    } else if (error === 'auth/auth-domain-config-required') {
-        title = "Auth Domain Missing";
-        content = (
-            <p>The Firebase 'authDomain' is missing from your configuration. This can happen if the app's hostname cannot be determined. Please ensure your Firebase config in <code>services/firebase.ts</code> includes a valid 'authDomain'.</p>
         );
     }
 
     return (
-        <div className="mt-4 text-left bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border-l-4 border-red-500 dark:border-red-600">
+        <div className="mt-4 text-left bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border-l-4 border-red-500 dark:border-red-600 animate-fade-in-down">
             <h3 className="font-bold text-red-800 dark:text-red-200 mb-2 flex items-center gap-2">
                 <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
                 {title}
@@ -635,7 +688,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 <div className="flex justify-center w-full mb-8">
                     <LogoIcon showTagline={true} className="h-14 sm:h-16 w-auto" />
                 </div>
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 transition-all duration-300">
                     <div className="mb-6 text-center">
                         <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
                             {authMode === 'login' ? 'Welcome Back!' : 'Create Your Account'}
@@ -645,9 +698,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                         </p>
                     </div>
                     
+                    {/* Role Selection (Only relevant for Signup or Google Login context, technically) */}
                     <div className="mb-6">
                         <label htmlFor="role-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                           Select Your Role
+                           I am a...
                         </label>
                         <select
                             id="role-select"
@@ -662,8 +716,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                     </div>
 
                     <form onSubmit={handleAuthSubmit}>
+                        {/* LOGIN FORM */}
                         {authMode === 'login' && loginMethod === 'email' && (
-                            <div className="space-y-4">
+                            <div className="space-y-4 animate-fade-in-down">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
                                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" required className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
@@ -679,7 +734,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                         )}
                         
                         {authMode === 'login' && loginMethod === 'otp' && platformSettings.isOtpLoginEnabled && (
-                            <div className="space-y-4">
+                            <div className="space-y-4 animate-fade-in-down">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mobile Number</label>
                                     <div className="relative mt-1">
@@ -695,7 +750,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                                     </div>
                                 </div>
                                 {isOtpSent && (
-                                    <div>
+                                    <div className="animate-fade-in-down">
                                         <label htmlFor="otp" className="block text-sm font-medium text-gray-700 dark:text-gray-300">OTP Code</label>
                                         <input
                                             type="text"
@@ -717,8 +772,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                             </div>
                         )}
                         
+                        {/* SIGNUP FORM */}
                         {authMode === 'signup' && (
-                                <div className="space-y-4">
+                                <div className="space-y-4 animate-fade-in-down">
                                  <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
                                     <input type="text" value={name} onChange={e => setName(e.target.value)} required className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
@@ -788,10 +844,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
 
                         {renderError()}
                         
+                        {/* Action Button */}
                         {authMode === 'login' && loginMethod === 'otp' && !isOtpSent ? (
                             <button
                                 type="button"
-                                onClick={handleSendOtp}
+                                onClick={handleSendLoginOtp}
                                 disabled={isLoading}
                                 className="mt-8 w-full py-3 px-4 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-teal-400 to-indigo-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -869,6 +926,94 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                 </div>
             </div>
         </div>
+
+        {/* Signup Verification Modal */}
+        {signupStep !== 'form' && (
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md relative">
+                    <button 
+                        onClick={() => { setSignupStep('form'); setConfirmationResult(null); setError(null); setIsLoading(false); }} 
+                        className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-100"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                    
+                    <h3 className="text-xl font-bold text-center text-gray-800 dark:text-white mb-2">Verify Your Identity</h3>
+                    <p className="text-center text-gray-500 dark:text-gray-400 mb-6 text-sm">
+                        Please verify your account to proceed with registration.
+                    </p>
+
+                    {signupStep === 'method_selection' && (
+                        <div className="space-y-4">
+                            <div id="recaptcha-container-signup"></div>
+                            <button 
+                                onClick={handleSignupSendOtp} 
+                                disabled={isLoading}
+                                className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group dark:bg-indigo-900/20 dark:border-indigo-800 dark:hover:bg-indigo-900/40"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-indigo-600 text-white rounded-lg"><ChatBubbleLeftEllipsisIcon className="w-5 h-5" /></div>
+                                    <div className="text-left">
+                                        <p className="font-bold text-gray-800 dark:text-white text-sm">Verify via Mobile OTP</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Receive code on {signupMobile}</p>
+                                    </div>
+                                </div>
+                                <span className="text-indigo-600 font-bold text-sm group-hover:translate-x-1 transition-transform dark:text-indigo-400">&rarr;</span>
+                            </button>
+
+                            <button 
+                                onClick={handleDirectRegister} 
+                                disabled={isLoading}
+                                className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors group dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-600"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-gray-200 text-gray-600 rounded-lg dark:bg-gray-600 dark:text-gray-300"><EnvelopeIcon className="w-5 h-5" /></div>
+                                    <div className="text-left">
+                                        <p className="font-bold text-gray-800 dark:text-white text-sm">Verify via Email Link</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Send link to {email}</p>
+                                    </div>
+                                </div>
+                                <span className="text-gray-400 font-bold text-sm group-hover:translate-x-1 transition-transform">&rarr;</span>
+                            </button>
+                        </div>
+                    )}
+
+                    {signupStep === 'otp_verification' && (
+                        <div className="space-y-4 animate-fade-in-down">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Enter 6-digit OTP</label>
+                                <input
+                                    type="text"
+                                    value={otp}
+                                    onChange={(e) => setOtp(e.target.value)}
+                                    maxLength={6}
+                                    placeholder="XXXXXX"
+                                    className="block w-full text-center tracking-widest text-xl p-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                            </div>
+                            
+                            <button 
+                                onClick={handleSignupVerifyOtpAndRegister} 
+                                disabled={isLoading}
+                                className="w-full py-3 px-4 text-sm font-bold rounded-lg text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 shadow-lg"
+                            >
+                                {isLoading ? 'Verifying...' : 'Verify & Create Account'}
+                            </button>
+                            
+                            <button 
+                                onClick={() => setSignupStep('method_selection')}
+                                className="w-full text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                            >
+                                Change Method
+                            </button>
+                        </div>
+                    )}
+                    
+                    {error && <div className="mt-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg text-center border border-red-100">{error}</div>}
+                </div>
+            </div>
+        )}
+
         {showForgotPassword && <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} platformSettings={platformSettings} />}
         {showStaffLogin && <StaffLoginModal onClose={() => setShowStaffLogin(false)} platformSettings={platformSettings} />}
     </>

@@ -98,9 +98,10 @@ interface PostCardProps {
     onUpdate: (postId: string, data: Partial<Post>) => Promise<void> | void;
     onToggleLike: (postId: string, currentLikes: string[]) => void;
     onCommentChange: (postId: string, change: 'increment' | 'decrement') => void;
+    onToggleFollow?: (targetId: string) => void; // New prop
 }
 
-const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpdate, onToggleLike, onCommentChange }) => {
+const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpdate, onToggleLike, onCommentChange, onToggleFollow }) => {
     const [showComments, setShowComments] = useState(false);
     const [showOptions, setShowOptions] = useState(false);
     
@@ -119,6 +120,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpda
     const isOwner = post.userId === currentUser.id;
     const isAdmin = currentUser.role === 'staff';
     const isLiked = post.likes.includes(currentUser.id);
+    const isFollowing = currentUser.following?.includes(post.userId);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -156,6 +158,22 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpda
         setError(null);
         setShowOptions(false);
     }
+
+    const handleFollowClick = async (e: React.MouseEvent) => {
+        e.preventDefault();
+        if (onToggleFollow) {
+            onToggleFollow(post.userId);
+            try {
+                if (isFollowing) {
+                    await apiService.unfollowUser(currentUser.id, post.userId);
+                } else {
+                    await apiService.followUser(currentUser.id, post.userId);
+                }
+            } catch (err) {
+                console.error("Follow toggle failed:", err);
+            }
+        }
+    };
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -221,7 +239,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpda
 
     return (
         <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 ${post.isBlocked ? 'opacity-60 bg-gray-100' : ''}`}>
-            <div className="flex items-center justify-between relative">
+            <div className="flex items-center justify-between relative mb-2">
                 <div className="flex items-center space-x-3">
                     <img src={post.userAvatar} alt={post.userName} className="w-10 h-10 rounded-full object-cover" />
                     <div>
@@ -233,26 +251,38 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpda
                         </div>
                     </div>
                 </div>
-                {(isOwner || isAdmin) && !isEditing && (
-                    <div className="relative z-10" ref={optionsRef} onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => setShowOptions(!showOptions)} className="text-gray-500 font-bold p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">...</button>
-                        {showOptions && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-[110] border dark:bg-gray-800 dark:border-gray-700 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                                {isOwner && (
-                                    <button onClick={handleEditClick} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">Edit Post</button>
-                                )}
-                                {isAdmin && (
-                                    <>
-                                        <button onClick={handleBlock} className="block w-full text-left px-4 py-2 text-sm text-yellow-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-yellow-500">
-                                            {post.isBlocked ? 'Unblock' : 'Block'} Post
-                                        </button>
-                                        <button onClick={handleDelete} className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-red-400">Delete Post</button>
-                                    </>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
+
+                <div className="flex items-center gap-2">
+                    {!isOwner && (
+                        <button 
+                            onClick={handleFollowClick}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-full transition-colors ${isFollowing ? 'text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-300' : 'text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm'}`}
+                        >
+                            {isFollowing ? 'Following' : 'Follow'}
+                        </button>
+                    )}
+
+                    {(isOwner || isAdmin) && !isEditing && (
+                        <div className="relative z-10" ref={optionsRef} onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => setShowOptions(!showOptions)} className="text-gray-500 font-bold p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">...</button>
+                            {showOptions && (
+                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-[110] border dark:bg-gray-800 dark:border-gray-700 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                                    {isOwner && (
+                                        <button onClick={handleEditClick} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">Edit Post</button>
+                                    )}
+                                    {isAdmin && (
+                                        <>
+                                            <button onClick={handleBlock} className="block w-full text-left px-4 py-2 text-sm text-yellow-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-yellow-500">
+                                                {post.isBlocked ? 'Unblock' : 'Block'} Post
+                                            </button>
+                                            <button onClick={handleDelete} className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-red-400">Delete Post</button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
             
             {isEditing ? (

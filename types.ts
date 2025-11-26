@@ -99,6 +99,10 @@ export interface User {
     coins?: number;
     fcmToken?: string | null;
     
+    // Community Follow System
+    followers?: string[]; // Array of User IDs
+    following?: string[]; // Array of User IDs
+    
     // Saved Payment Details
     savedBankDetails?: BankDetails;
     savedUpiId?: string;
@@ -589,6 +593,7 @@ export interface LiveHelpMessage {
     senderName: string;
     text: string;
     timestamp: any;
+    updatedAt?: any;
 }
 
 export interface QuickReply {

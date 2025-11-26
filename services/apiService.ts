@@ -3,7 +3,7 @@ import { db, storage, auth, BACKEND_URL } from './firebase';
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, 
     query, where, orderBy, limit, startAfter, 
-    serverTimestamp, Timestamp, onSnapshot, arrayUnion, arrayRemove, increment 
+    serverTimestamp, Timestamp, onSnapshot, arrayUnion, arrayRemove, increment, documentId
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
@@ -231,6 +231,50 @@ export const apiService = {
     },
     saveFcmToken: async (userId: string, token: string | null) => {
         await updateDoc(doc(db, USERS_COLLECTION, userId), { fcmToken: token });
+    },
+    
+    // --- Follow System ---
+    followUser: async (currentUserId: string, targetUserId: string) => {
+        const currentUserRef = doc(db, USERS_COLLECTION, currentUserId);
+        const targetUserRef = doc(db, USERS_COLLECTION, targetUserId);
+
+        // Add target to current user's "following" list
+        await updateDoc(currentUserRef, {
+            following: arrayUnion(targetUserId)
+        });
+
+        // Add current user to target's "followers" list
+        await updateDoc(targetUserRef, {
+            followers: arrayUnion(currentUserId)
+        });
+    },
+
+    unfollowUser: async (currentUserId: string, targetUserId: string) => {
+        const currentUserRef = doc(db, USERS_COLLECTION, currentUserId);
+        const targetUserRef = doc(db, USERS_COLLECTION, targetUserId);
+
+        // Remove target from current user's "following" list
+        await updateDoc(currentUserRef, {
+            following: arrayRemove(targetUserId)
+        });
+
+        // Remove current user from target's "followers" list
+        await updateDoc(targetUserRef, {
+            followers: arrayRemove(currentUserId)
+        });
+    },
+
+    getUsersByIds: async (userIds: string[]) => {
+        if (!userIds || userIds.length === 0) return [];
+        // Firestore 'in' queries are limited to 10 items. For larger lists, we need to batch or just fetch all if manageable, 
+        // or fetch individually. For this implementation, we will fetch individually in parallel as it's simpler for client-side logic
+        // without complex batching for now, though production should batch.
+        
+        const promises = userIds.map(id => getDoc(doc(db, USERS_COLLECTION, id)));
+        const snapshots = await Promise.all(promises);
+        return snapshots
+            .filter(snap => snap.exists())
+            .map(snap => ({ id: snap.id, ...snap.data() } as User));
     },
 
     // --- Influencers ---

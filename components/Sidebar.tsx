@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
-import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon } from './Icons';
+import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon } from './Icons';
 import { authService } from '../services/authService';
+import FollowListModal from './FollowListModal';
 
 interface SidebarProps {
   user: User;
@@ -12,6 +14,9 @@ interface SidebarProps {
   isMobile?: boolean;
   isOpen?: boolean;
   onClose?: () => void;
+  appMode?: 'dashboard' | 'community';
+  communityFeedFilter?: 'global' | 'my_posts';
+  setCommunityFeedFilter?: (filter: 'global' | 'my_posts') => void;
 }
 
 const MembershipStatusCard: React.FC<{ user: User; onClick: () => void }> = ({ user, onClick }) => {
@@ -44,9 +49,17 @@ const MembershipStatusCard: React.FC<{ user: User; onClick: () => void }> = ({ u
     );
   };
 
-const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isMobile = false, isOpen = false, onClose = () => {} }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isMobile = false, isOpen = false, onClose = () => {}, appMode = 'dashboard', communityFeedFilter, setCommunityFeedFilter }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [followModalType, setFollowModalType] = useState<'followers' | 'following' | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  // Local state to force re-render when following changes in modal (though App.tsx refreshes user usually, this is for immediate feedback)
+  const [localUser, setLocalUser] = useState<User>(user);
+
+  useEffect(() => {
+      setLocalUser(user);
+  }, [user]);
 
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -59,6 +72,18 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
           document.removeEventListener("mousedown", handleClickOutside);
       };
   }, []);
+
+  const handleToggleFollow = (targetId: string) => {
+      // Optimistic update for sidebar modal usage
+      const currentFollowing = localUser.following || [];
+      let newFollowing;
+      if (currentFollowing.includes(targetId)) {
+          newFollowing = currentFollowing.filter(id => id !== targetId);
+      } else {
+          newFollowing = [...currentFollowing, targetId];
+      }
+      setLocalUser({ ...localUser, following: newFollowing });
+  };
 
   const allNavItems = [
     // User's Profile (Handled separately now)
@@ -114,14 +139,28 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
       return user.staffPermissions?.includes('super_admin') || user.staffPermissions?.includes(permission as any);
   };
 
-  const navItems = allNavItems.filter(item => {
-    if (!item.roles.includes(userRole)) return false;
-    if (item.requiredPermission && !hasPermission(item.requiredPermission)) return false;
-    return true;
-  });
+  let displayNavItems: any[] = [];
 
-  const handleItemClick = (view: View) => {
+  if (appMode === 'community') {
+      displayNavItems = [
+          { view: View.PROFILE, label: 'My Account', icon: ProfileIcon },
+          { view: View.COMMUNITY, label: 'Global Feed', icon: GlobeIcon, filter: 'global' },
+          { view: View.COMMUNITY, label: 'My Posts', icon: DocumentIcon, filter: 'my_posts' }
+      ];
+  } else {
+      displayNavItems = allNavItems.filter(item => {
+        if (item.view === View.COMMUNITY) return false; // Hide generic community button in dashboard mode if it was there
+        if (!item.roles.includes(userRole)) return false;
+        if (item.requiredPermission && !hasPermission(item.requiredPermission)) return false;
+        return true;
+      });
+  }
+
+  const handleItemClick = (view: View, filter?: 'global' | 'my_posts') => {
     setActiveView(view);
+    if (filter && setCommunityFeedFilter) {
+        setCommunityFeedFilter(filter);
+    }
     setIsProfileMenuOpen(false);
     if (isMobile) {
       onClose();
@@ -135,7 +174,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     }
   };
 
-  const navButtons = navItems.map(item => {
+  const navButtons = displayNavItems.map(item => {
     if (item.view === View.PROFILE) {
         return (
             <div key="profile-menu" className="relative" ref={profileMenuRef}>
@@ -168,11 +207,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
             </div>
         );
     }
-      const isActive = activeView === item.view;
+      const isActive = activeView === item.view && (!item.filter || item.filter === communityFeedFilter);
       return (
         <button
           key={`${item.view}-${item.label}`}
-          onClick={() => handleItemClick(item.view)}
+          onClick={() => handleItemClick(item.view, item.filter)}
           className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200 ${
             isActive
               ? 'bg-gradient-to-r from-teal-400 to-indigo-600 text-white shadow-lg'
@@ -186,48 +225,73 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     });
   
   const isCreator = ['influencer', 'livetv', 'banneragency'].includes(user.role);
-  const showMembershipCard = isCreator ? platformSettings.isCreatorMembershipEnabled : platformSettings.isProMembershipEnabled;
+  // Hide membership card in community mode
+  const showMembershipCard = appMode === 'community' ? false : (isCreator ? platformSettings.isCreatorMembershipEnabled : platformSettings.isProMembershipEnabled);
 
-  if (isMobile) {
-    return (
+  const renderContent = () => (
       <>
-        {/* Overlay */}
-        <div 
-          className={`fixed inset-0 bg-black bg-opacity-50 z-30 transition-opacity md:hidden ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-          onClick={onClose}
-          aria-hidden="true"
-        ></div>
-        {/* Sidebar */}
-        <aside 
-          className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 flex flex-col z-40 transform transition-transform md:hidden dark:bg-gray-800 dark:border-gray-700 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
-        >
-          <div className="h-20 flex items-center px-6">
+        <div className="h-20 flex items-center px-6">
             <button onClick={handleLogoClick} className="focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg">
                 <LogoIcon />
             </button>
-          </div>
-          <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-            {navButtons}
-          </nav>
-          {showMembershipCard && <MembershipStatusCard user={user} onClick={() => handleItemClick(View.MEMBERSHIP)} />}
-        </aside>
-      </>
-    );
-  }
+        </div>
+        
+        {/* Follow Stats for Community Mode */}
+        {appMode === 'community' && (
+            <div className="px-6 pb-2 mb-2 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between text-sm">
+                    <button onClick={() => setFollowModalType('followers')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
+                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{localUser.followers?.length || 0}</span>
+                        <span className="text-gray-500 dark:text-gray-400 text-xs">Followers</span>
+                    </button>
+                    <button onClick={() => setFollowModalType('following')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
+                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{localUser.following?.length || 0}</span>
+                        <span className="text-gray-500 dark:text-gray-400 text-xs">Following</span>
+                    </button>
+                </div>
+            </div>
+        )}
 
-  // Desktop
+        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+            {navButtons}
+        </nav>
+        {showMembershipCard && <MembershipStatusCard user={user} onClick={() => handleItemClick(View.MEMBERSHIP)} />}
+      </>
+  );
+
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:flex flex-col dark:bg-gray-800 dark:border-gray-700">
-      <div className="h-20 flex items-center px-6">
-        <button onClick={handleLogoClick} className="focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg">
-            <LogoIcon />
-        </button>
-      </div>
-      <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-        {navButtons}
-      </nav>
-      {showMembershipCard && <MembershipStatusCard user={user} onClick={() => handleItemClick(View.MEMBERSHIP)} />}
-    </aside>
+    <>
+      {isMobile ? (
+        <>
+          {/* Overlay */}
+          <div 
+            className={`fixed inset-0 bg-black bg-opacity-50 z-30 transition-opacity md:hidden ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            onClick={onClose}
+            aria-hidden="true"
+          ></div>
+          {/* Sidebar */}
+          <aside 
+            className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 flex flex-col z-40 transform transition-transform md:hidden dark:bg-gray-800 dark:border-gray-700 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          >
+            {renderContent()}
+          </aside>
+        </>
+      ) : (
+        <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:flex flex-col dark:bg-gray-800 dark:border-gray-700">
+          {renderContent()}
+        </aside>
+      )}
+
+      {followModalType && (
+          <FollowListModal 
+              title={followModalType === 'followers' ? 'Followers' : 'Following'}
+              userIds={followModalType === 'followers' ? (localUser.followers || []) : (localUser.following || [])}
+              currentUser={localUser}
+              onClose={() => setFollowModalType(null)}
+              onToggleFollow={handleToggleFollow}
+          />
+      )}
+    </>
   );
 };
 

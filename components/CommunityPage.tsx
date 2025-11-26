@@ -1,14 +1,14 @@
 
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User, Post } from '../types';
 import { apiService } from '../services/apiService';
 import { serverTimestamp } from 'firebase/firestore';
 import PostCard from './PostCard';
-import { ImageIcon, GlobeIcon, LockClosedIcon } from './Icons';
+import { ImageIcon, GlobeIcon, LockClosedIcon, ProfileIcon } from './Icons';
 
 interface CommunityPageProps {
     user: User;
+    feedType: 'global' | 'my_posts';
 }
 
 const CreatePostForm: React.FC<{ user: User; onPostCreated: () => void; }> = ({ user, onPostCreated }) => {
@@ -109,9 +109,16 @@ const CreatePostForm: React.FC<{ user: User; onPostCreated: () => void; }> = ({ 
     );
 };
 
-const CommunityPage: React.FC<CommunityPageProps> = ({ user }) => {
+const CommunityPage: React.FC<CommunityPageProps> = ({ user, feedType }) => {
     const [posts, setPosts] = useState<Post[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    
+    // Local user state to reflect instant follow updates within this component tree
+    const [currentUser, setCurrentUser] = useState<User>(user);
+
+    useEffect(() => {
+        setCurrentUser(user);
+    }, [user]);
 
     const fetchPosts = useCallback(async () => {
         setIsLoading(true);
@@ -159,27 +166,53 @@ const CommunityPage: React.FC<CommunityPageProps> = ({ user }) => {
         setPosts(posts.map(p => p.id === postId ? { ...p, commentCount: p.commentCount + (change === 'increment' ? 1 : -1) } : p));
     };
 
+    const handleToggleFollow = (targetId: string) => {
+        // Optimistic update of local user state
+        const currentFollowing = currentUser.following || [];
+        let newFollowing;
+        if (currentFollowing.includes(targetId)) {
+            newFollowing = currentFollowing.filter(id => id !== targetId);
+        } else {
+            newFollowing = [...currentFollowing, targetId];
+        }
+        setCurrentUser({ ...currentUser, following: newFollowing });
+    };
+
+    const displayedPosts = feedType === 'global' 
+        ? posts 
+        : posts.filter(p => p.userId === user.id);
 
     return (
         <div className="max-w-4xl mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-6">Community Feed</h1>
+            
             <CreatePostForm user={user} onPostCreated={fetchPosts} />
             
             {isLoading ? (
-                <p className="text-gray-600 dark:text-gray-300">Loading feed...</p>
-            ) : posts.length === 0 ? (
-                <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow"><p className="text-gray-500 dark:text-gray-400">The feed is empty. Be the first to post!</p></div>
+                <p className="text-gray-600 dark:text-gray-300 text-center py-8">Loading feed...</p>
+            ) : displayedPosts.length === 0 ? (
+                <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-2xl shadow">
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                        {feedType === 'my_posts' ? <ProfileIcon className="w-8 h-8 text-gray-400" /> : <GlobeIcon className="w-8 h-8 text-gray-400" />}
+                    </div>
+                    <p className="text-gray-500 dark:text-gray-400">
+                        {feedType === 'my_posts' 
+                            ? "You haven't posted anything yet." 
+                            : "The feed is empty. Be the first to post!"}
+                    </p>
+                </div>
             ) : (
                 <div className="space-y-6">
-                    {posts.map(post => (
+                    {displayedPosts.map(post => (
                         <PostCard 
                             key={post.id} 
                             post={post} 
-                            currentUser={user}
+                            currentUser={currentUser}
                             onDelete={handleDeletePost}
                             onUpdate={handleUpdatePost}
                             onToggleLike={handleToggleLike}
                             onCommentChange={handleCommentChange}
+                            onToggleFollow={handleToggleFollow}
                         />
                     ))}
                 </div>

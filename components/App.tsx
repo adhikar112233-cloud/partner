@@ -273,6 +273,8 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState<View>(View.DASHBOARD);
+  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts'>('global'); // New State
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -445,12 +447,22 @@ const App: React.FC = () => {
             }
         }
         switch (firebaseUser.role) {
-            case 'staff': setActiveView(View.ADMIN); break;
-            case 'brand': setActiveView(View.INFLUENCERS); break;
-            default: setActiveView(View.DASHBOARD); break;
+            case 'staff': 
+                setAppMode('dashboard');
+                setActiveView(View.ADMIN); 
+                break;
+            case 'brand': 
+                setAppMode('dashboard');
+                setActiveView(View.INFLUENCERS); 
+                break;
+            default: 
+                setAppMode('dashboard');
+                setActiveView(View.DASHBOARD); 
+                break;
         }
       } else {
         sessionStorage.removeItem('hasSeenWelcome');
+        setAppMode('dashboard');
         setActiveView(View.DASHBOARD);
         setActiveChat(null);
       }
@@ -748,7 +760,7 @@ const App: React.FC = () => {
         if (!platformSettings.isCommunityFeedEnabled) {
             return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Community Feed Disabled</h2><p className="dark:text-gray-300">This feature is currently turned off by the administrator.</p></div>;
         }
-        return <CommunityPage user={user} />;
+        return <CommunityPage user={user} feedType={communityFeedFilter} />;
       case View.MESSAGES:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Messages</h2><p className="dark:text-gray-300">Select a conversation from the header to start chatting.</p></div>;
       case View.COLLAB_REQUESTS:
@@ -789,6 +801,9 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
+        appMode={appMode}
+        communityFeedFilter={communityFeedFilter}
+        setCommunityFeedFilter={setCommunityFeedFilter}
       />
       <Sidebar 
         isMobile
@@ -799,6 +814,9 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
+        appMode={appMode}
+        communityFeedFilter={communityFeedFilter}
+        setCommunityFeedFilter={setCommunityFeedFilter}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <NotificationManager user={user} />
@@ -820,6 +838,7 @@ const App: React.FC = () => {
         
         <Header 
             user={user} 
+            activeView={activeView}
             setActiveView={setActiveView}
             platformSettings={platformSettings}
             onConversationSelected={handleConversationSelected}
@@ -828,6 +847,8 @@ const App: React.FC = () => {
             setTheme={setTheme}
             unreadCount={unreadCount}
             onActivityFeedToggle={() => setIsFeedOpen(prev => !prev)}
+            appMode={appMode}
+            setAppMode={setAppMode}
         />
 
         {platformBanners.length > 0 && (

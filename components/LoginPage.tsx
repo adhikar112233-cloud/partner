@@ -114,8 +114,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
 
         try {
             clearRecaptcha('login');
-            
-            // Short delay to ensure DOM is ready
             await new Promise(resolve => setTimeout(resolve, 100));
 
             const container = document.getElementById('recaptcha-container');
@@ -125,9 +123,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
 
             const appVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
                 'size': 'invisible',
-                'callback': (response: any) => {
-                    // reCAPTCHA solved
-                },
+                'callback': (response: any) => {},
                 'expired-callback': () => {
                     setError('Recaptcha expired. Please try again.');
                     setIsLoading(false);
@@ -140,7 +136,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             const confirmationResult = await authService.sendLoginOtp(phoneNumber, appVerifier);
             confirmationResultRef.current = confirmationResult;
             setLoginOtpSent(true);
-            setTimer(60); // Start 60s timer
+            setTimer(60); 
         } catch (err: any) {
             console.error("OTP Error:", err);
             if (err.code === 'auth/invalid-phone-number') {
@@ -167,7 +163,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         try {
             if (!confirmationResultRef.current) throw new Error("Session expired. Please resend OTP.");
             await authService.verifyLoginOtp(confirmationResultRef.current, otp);
-            // Success handled by auth listener in App.tsx
         } catch (err: any) {
             setError(err.message || "Invalid OTP. Please check the code and try again.");
         } finally {
@@ -211,20 +206,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         setIsLoading(true);
         try {
             clearRecaptcha('signup');
-            
-            // Short delay
             await new Promise(resolve => setTimeout(resolve, 100));
 
             const container = document.getElementById('recaptcha-container-signup');
-            if (!container) {
-                throw new Error("Recaptcha container not found.");
-            }
+            if (!container) throw new Error("Recaptcha container not found.");
 
             const appVerifier = new RecaptchaVerifier(auth, 'recaptcha-container-signup', {
                 'size': 'invisible',
-                'callback': (response: any) => {
-                    // reCAPTCHA solved
-                },
+                'callback': (response: any) => {},
                 'expired-callback': () => {
                     setError('Recaptcha expired. Please try again.');
                     setIsLoading(false);
@@ -263,16 +252,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         try {
             if (!confirmationResultRef.current) throw new Error("Session expired.");
             
-            // 1. Verify OTP
-            await authService.verifyLoginOtp(confirmationResultRef.current, otp);
+            // 1. Verify OTP - signs the user in as a Phone Auth user
+            await confirmationResultRef.current.confirm(otp);
             
-            // 2. Logout temporary session
-            await authService.logout();
-
-            // 3. Create real account
-            await authService.register(email, password, role, name, companyName, mobileNumber, referralCode);
+            // 2. Link this authenticated session with Email/Password and create profile
+            await authService.registerAfterPhoneAuth(email, password, role, name, companyName, mobileNumber, referralCode);
             
         } catch (err: any) {
+            console.error("Verification/Registration error:", err);
             setError(err.message || "Verification or Registration failed.");
         } finally {
             setIsLoading(false);

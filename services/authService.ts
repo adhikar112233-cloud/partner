@@ -1,14 +1,4 @@
 
-
-
-
-
-
-
-
-
-
-
 import { User, UserRole, PlatformSettings, Membership } from '../types';
 import { auth, db, isFirebaseConfigured, RecaptchaVerifier, signInWithPhoneNumber } from './firebase';
 import { apiService } from './apiService';
@@ -22,7 +12,8 @@ import {
     GoogleAuthProvider,
     signInWithPopup,
     sendPasswordResetEmail,
-    updatePassword
+    updatePassword,
+    updateEmail
 } from 'firebase/auth';
 // Fix: Corrected Firebase imports for 'doc', 'setDoc', 'getDoc', and 'Timestamp' to align with Firebase v9 modular syntax.
 import { doc, setDoc, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
@@ -105,6 +96,33 @@ export const authService = {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const firebaseUser = userCredential.user;
 
+        return await authService.createUserProfile(firebaseUser.uid, email, role, name, companyName, mobileNumber, referralCode);
+    },
+
+    // New method to handle registration after phone is already verified
+    registerAfterPhoneAuth: async (email: string, password: string, role: UserRole, name: string, companyName: string, mobileNumber: string, referralCode?: string): Promise<User> => {
+        if (!isFirebaseConfigured) throw new Error("Firebase is not configured.");
+        const currentUser = auth.currentUser;
+        if (!currentUser) throw new Error("No authenticated user found. Please verify OTP first.");
+
+        // Link Email/Password to the existing Phone Auth user
+        try {
+            await updateEmail(currentUser, email);
+            await updatePassword(currentUser, password);
+        } catch (error: any) {
+            if (error.code === 'auth/email-already-in-use') {
+                throw new Error("This email is already associated with another account.");
+            }
+            if (error.code === 'auth/requires-recent-login') {
+                throw new Error("Session expired. Please verify OTP again.");
+            }
+            throw error;
+        }
+
+        return await authService.createUserProfile(currentUser.uid, email, role, name, companyName, mobileNumber, referralCode);
+    },
+
+    createUserProfile: async (uid: string, email: string, role: UserRole, name: string, companyName: string, mobileNumber: string, referralCode?: string): Promise<User> => {
         const now = Timestamp.now();
         const oneYearFromNow = new Date(now.toDate());
         oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
@@ -127,7 +145,7 @@ export const authService = {
             name,
             piNumber: generatePiNumber(),
             companyName,
-            email, // Storing email in profile for convenience
+            email,
             mobileNumber,
             avatar: DEFAULT_AVATAR_URL,
             location: '',
@@ -141,47 +159,38 @@ export const authService = {
             coins: 0,
         };
 
-        // Assign default 'super_admin' role to the first staff member
         if (role === 'staff') {
             userProfileData.staffPermissions = ['super_admin'];
         }
 
-        // Create a document in Firestore for the user's profile
-        await setDoc(doc(db, 'users', firebaseUser.uid), userProfileData);
+        await setDoc(doc(db, 'users', uid), userProfileData);
 
-        // If a referral code was provided, attempt to apply it
         if (referralCode) {
             try {
-                await apiService.applyReferralCode(firebaseUser.uid, referralCode);
-                // Update local object to reflect potential coin change if we were to return it immediately
-                // though applyReferralCode is async and transactional. 
-                // For UI consistency, we might rely on the subsequent profile fetch or real-time update.
+                await apiService.applyReferralCode(uid, referralCode);
                 userProfileData.coins = 20; 
                 userProfileData.referredBy = referralCode;
             } catch (error) {
                 console.error("Failed to apply referral code:", error);
-                // We don't fail registration if referral fails, just log it.
             }
         }
 
-        // If the new user is an influencer, create a default public profile for them
         if (role === 'influencer') {
             const influencerProfileData = {
                 name,
-                handle: email.split('@')[0], // a default handle
+                handle: email.split('@')[0],
                 avatar: DEFAULT_AVATAR_URL,
                 bio: 'A passionate creator ready to collaborate!',
                 followers: 0,
-                niche: 'Lifestyle', // default
+                niche: 'Lifestyle',
                 engagementRate: 0,
                 socialMediaLinks: '',
                 location: '',
                 membershipActive: false,
             };
-            await setDoc(doc(db, 'influencers', firebaseUser.uid), influencerProfileData);
+            await setDoc(doc(db, 'influencers', uid), influencerProfileData);
         }
         
-        // If the new user is a Live TV Channel, create a default channel profile
         if (role === 'livetv') {
             const channelProfileData = {
                 name: companyName || name,
@@ -189,16 +198,14 @@ export const authService = {
                 description: `A new channel on BIGYAPON, ready for advertisers.`,
                 audienceSize: 0,
                 niche: 'General',
-                ownerId: firebaseUser.uid,
+                ownerId: uid,
             };
-            // Use the user UID as the document ID for easy mapping
-            await setDoc(doc(db, 'livetv_channels', firebaseUser.uid), channelProfileData);
+            await setDoc(doc(db, 'livetv_channels', uid), channelProfileData);
         }
 
-
         return {
-            id: firebaseUser.uid,
-            email: firebaseUser.email!,
+            id: uid,
+            email: email,
             ...userProfileData
         } as User;
     },
@@ -207,15 +214,11 @@ export const authService = {
         if (!isFirebaseConfigured) throw new Error("Firebase is not configured.");
         let emailToLogin = identifier;
 
-        // If the identifier doesn't look like an email, assume it's a mobile number
         if (!identifier.includes('@')) {
             const userProfile = await apiService.getUserByMobile(identifier);
             if (userProfile && userProfile.email) {
                 emailToLogin = userProfile.email;
             } else {
-                // If mobile number not found, use a non-existent email to trigger
-                // a standard 'auth/invalid-credential' error from Firebase.
-                // This provides a consistent error experience on the frontend.
                 emailToLogin = `invalid-user-${Date.now()}@bigyapon.com`;
             }
         }
@@ -255,7 +258,6 @@ export const authService = {
                 throw new Error('Your account has been blocked by an administrator.');
             }
 
-            // Phone auth users might not have an email, but our app structure needs one.
             const email = firebaseUser.email || `${firebaseUser.phoneNumber}@collabzz.phone`;
 
             return {
@@ -281,79 +283,11 @@ export const authService = {
             const userDoc = await getDoc(userDocRef);
 
             if (!userDoc.exists()) {
-                // This is a new user (signup), create their profile
-                const now = Timestamp.now();
-                const oneYearFromNow = new Date(now.toDate());
-                oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
-
-                const defaultMembership: Membership = {
-                    plan: 'free',
-                    isActive: false,
-                    startsAt: now,
-                    expiresAt: Timestamp.fromDate(oneYearFromNow),
-                    usage: {
-                        directCollaborations: 0,
-                        campaigns: 0,
-                        liveTvBookings: 0,
-                        bannerAdBookings: 0,
-                    }
-                };
-
-                const newUserProfile = {
-                    name: firebaseUser.displayName || 'New User',
-                    email: firebaseUser.email!,
-                    piNumber: generatePiNumber(),
-                    companyName: '', // User can fill this in later
-                    mobileNumber: firebaseUser.phoneNumber || '',
-                    role: role, // Use the role from the signup form
-                    avatar: firebaseUser.photoURL || DEFAULT_AVATAR_URL,
-                    location: '',
-                    membership: defaultMembership,
-                    isBlocked: false,
-                    kycStatus: 'not_submitted' as const,
-                    kycDetails: {},
-                    creatorVerificationStatus: 'not_submitted' as const,
-                    creatorVerificationDetails: {},
-                    msmeRegistrationNumber: '',
-                    coins: 0,
-                };
-                await setDoc(userDocRef, newUserProfile);
-
-                if (role === 'influencer') {
-                    const influencerProfileData = {
-                        name: firebaseUser.displayName || 'New User',
-                        handle: firebaseUser.email!.split('@')[0],
-                        avatar: firebaseUser.photoURL || DEFAULT_AVATAR_URL,
-                        bio: 'A passionate creator ready to collaborate!',
-                        followers: 0,
-                        niche: 'Lifestyle',
-                        engagementRate: 0,
-                        socialMediaLinks: '',
-                        location: '',
-                        membershipActive: false,
-                    };
-                    await setDoc(doc(db, 'influencers', firebaseUser.uid), influencerProfileData);
-                }
-                
-                if (role === 'livetv') {
-                    const channelProfileData = {
-                        name: firebaseUser.displayName || 'New Channel',
-                        logo: `https://placehold.co/100x100/3f51b5/ffffff?text=${(firebaseUser.displayName || 'N').charAt(0)}`,
-                        description: `A new channel on BIGYAPON, ready for advertisers.`,
-                        audienceSize: 0,
-                        niche: 'General',
-                        ownerId: firebaseUser.uid,
-                    };
-                    await setDoc(doc(db, 'livetv_channels', firebaseUser.uid), channelProfileData);
-                }
-
-            }
-            // If userDoc exists, it's a login, so we check if they are blocked.
-            else {
+                await authService.createUserProfile(firebaseUser.uid, firebaseUser.email!, role, firebaseUser.displayName || 'New User', '', firebaseUser.phoneNumber || '');
+            } else {
                 const profile = userDoc.data();
                 if (profile.isBlocked) {
                     await signOut(auth);
-                    // Throw an error to be caught by the UI and display a message.
                     throw new Error('This account has been blocked by an administrator.');
                 }
             }
@@ -369,57 +303,51 @@ export const authService = {
     },
 
     onAuthChange: (callback: (user: User | null) => void) => {
-        // Fix: Add a guard to prevent crash if Firebase initialization failed.
         if (!isFirebaseConfigured) {
             callback(null);
-            return () => {}; // Return a no-op unsubscribe function
+            return () => {};
         }
         return onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
             if (firebaseUser) {
                 try {
-                    // Check if the user was just created to apply a more patient retry strategy for the signup race condition.
                     const creationTimestamp = firebaseUser.metadata.creationTime ? new Date(firebaseUser.metadata.creationTime).getTime() : 0;
                     const now = new Date().getTime();
-                    const isNewUser = (now - creationTimestamp) < 10000; // User created in the last 10 seconds.
+                    const isNewUser = (now - creationTimestamp) < 10000; 
                     
-                    const attempts = isNewUser ? 6 : 3; // 6 attempts for new users (~3s), 3 for existing (~1.5s)
+                    const attempts = isNewUser ? 6 : 3;
                     const delay = 500;
 
                     let profile: Omit<User, 'id' | 'email'> | null = null;
                     for (let i = 0; i < attempts; i++) {
                         try {
                             profile = await getUserProfile(firebaseUser.uid);
-                            break; // Success, profile found.
+                            break; 
                         } catch (error) {
                             if (error instanceof Error && error.message.includes('User profile not found')) {
-                                if (i < attempts - 1) { // If it's not the last attempt
-                                    await new Promise(res => setTimeout(res, delay)); // Wait and retry
+                                if (i < attempts - 1) { 
+                                    await new Promise(res => setTimeout(res, delay)); 
                                 } else {
-                                    throw error; // Rethrow on the last attempt
+                                    throw error; 
                                 }
                             } else {
-                                throw error; // Rethrow other critical errors immediately
+                                throw error; 
                             }
                         }
                     }
 
                     if (!profile) {
-                         // This should now be even less likely to be hit.
                         throw new Error('User profile could not be fetched after multiple attempts.');
                     }
                     
-                    // Security check: if user is blocked, sign them out.
                     if (profile.isBlocked) {
                         await signOut(auth);
                         callback(null);
                         return;
                     }
                     
-                    // Backfill PI Number for existing users
                     if (!profile.piNumber) {
                         profile.piNumber = generatePiNumber();
                         const userDocRef = doc(db, 'users', firebaseUser.uid);
-                        // Asynchronously update the document in the background, don't wait for it
                         updateDoc(userDocRef, { piNumber: profile.piNumber }).catch(err => {
                             console.error("Failed to backfill PI number for user:", firebaseUser.uid, err);
                         });
@@ -432,10 +360,6 @@ export const authService = {
                     });
                 } catch (error) {
                     console.error("Failed to fetch user profile, logging out.", error);
-                     if (error instanceof Error && error.message.includes('User profile not found')) {
-                        console.log("User authenticated but profile does not exist after retries. This might indicate an incomplete signup or auth without profile.");
-                     }
-                    // If we are not already signed out, do so.
                     if (auth.currentUser) {
                         await signOut(auth);
                     }
@@ -459,7 +383,6 @@ export const authService = {
             throw new Error("No authenticated user found. Please verify OTP again.");
         }
         await updatePassword(user, newPassword);
-        // Sign out after password update for a clean flow
         await signOut(auth);
     },
 };

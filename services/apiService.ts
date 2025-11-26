@@ -189,6 +189,7 @@ export const apiService = {
             discountSettings: { creatorProfileBoost: { isEnabled: false, percentage: 0 }, brandMembership: { isEnabled: false, percentage: 0 }, creatorMembership: { isEnabled: false, percentage: 0 }, brandCampaignBoost: { isEnabled: false, percentage: 0 } },
             isPayoutInstantVerificationEnabled: true,
             isInstantKycEnabled: true, // Default enabled
+            isGoogleLoginEnabled: true,
             payoutSettings: { requireSelfieForPayout: true, requireLiveVideoForDailyPayout: true }
         };
         return docSnap.exists() ? { ...defaults, ...docSnap.data() } : defaults as PlatformSettings;

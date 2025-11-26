@@ -94,6 +94,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                     <textarea value={settings.welcomeMessage || ''} onChange={e => handleSettingChange('welcomeMessage', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" rows={2} />
                 </SettingRow>
                 
+                {/* Authentication */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Authentication</h4></div>
+                <SettingRow label="Google Login" helpText="Allow users to sign up/login using their Google account.">
+                    <div className="flex items-center">
+                        <input type="checkbox" id="googleLogin" checked={settings.isGoogleLoginEnabled} onChange={e => handleSettingChange('isGoogleLoginEnabled', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
+                        <label htmlFor="googleLogin" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Google Login</label>
+                    </div>
+                </SettingRow>
+
                 {/* Integration */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Backend Integration</h4></div>
                 <SettingRow label="Backend URL" helpText="The URL of your deployed Firebase Cloud Function.">

@@ -157,6 +157,7 @@ export interface PlatformSettings {
     
     isForgotPasswordOtpEnabled: boolean;
     isOtpLoginEnabled: boolean;
+    isGoogleLoginEnabled: boolean;
     
     // Payment Settings
     activePaymentGateway: string;

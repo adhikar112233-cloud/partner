@@ -61,6 +61,17 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         }
     };
 
+    // Generic error handler to catch missing key errors from backend
+    const handleApiError = (err: any) => {
+        console.error(err);
+        if (err.message && (err.message.includes("Server configuration error") || err.message.includes("Keys missing"))) {
+            setError("System Error: Verification API keys are not configured. Please contact the administrator.");
+        } else {
+            setError(err.message || "An unknown error occurred.");
+        }
+        setIsLoading(false);
+    };
+
     const handleLivenessCheck = async () => {
         if (!selfieDataUrl) {
             setError("Take a selfie first.");
@@ -71,10 +82,11 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
             const result = await apiService.verifyLiveness(user.id, selfieDataUrl);
             if (result.success) {
                 setIsLivenessVerified(true);
-                alert("Liveness Verified! You are a real person.");
+                setSuccess("Liveness Verified!");
+                setTimeout(() => setSuccess(null), 3000);
             }
         } catch (err: any) {
-            setError(err.message);
+            handleApiError(err);
         } finally {
             setIsLoading(false);
         }
@@ -89,7 +101,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
             const res = await apiService.verifyAadhaarOtp(aadhaarNumber);
             setAadhaarRefId(res.ref_id);
             setOtpSent(true);
-        } catch(e: any) { setError(e.message); }
+        } catch(e: any) { handleApiError(e); }
         finally { setIsLoading(false); }
     };
 
@@ -100,7 +112,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
             await apiService.verifyAadhaarSubmit(user.id, aadhaarOtp, aadhaarRefId);
             setSuccess("Aadhaar Verified Successfully!");
             setTimeout(onKycSubmitted, 2000);
-        } catch(e: any) { setError(e.message); }
+        } catch(e: any) { handleApiError(e); }
         finally { setIsLoading(false); }
     };
 
@@ -111,11 +123,13 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
         setError(null);
         try {
             // Verify against the user's registered name
-            await apiService.verifyPan(user.id, panNumber, user.name);
-            setSuccess("PAN Verified Successfully!");
-            setTimeout(onKycSubmitted, 2000);
+            const res = await apiService.verifyPan(user.id, panNumber, user.name);
+            if (res.success) {
+                setSuccess("PAN Verified Successfully!");
+                setTimeout(onKycSubmitted, 2000);
+            }
         } catch (e: any) {
-            setError(e.message || "PAN Verification Failed");
+            handleApiError(e);
         } finally {
             setIsLoading(false);
         }
@@ -131,7 +145,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
             setSuccess("Driving License Verified Successfully!");
             setTimeout(onKycSubmitted, 2000);
         } catch (e: any) {
-            setError(e.message || "DL Verification Failed");
+            handleApiError(e);
         } finally {
             setIsLoading(false);
         }
@@ -161,63 +175,72 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
             ); 
             setSuccess("Submitted! Waiting for admin approval.");
             setTimeout(onKycSubmitted, 2000);
-        } catch(e) { 
-            console.error(e);
-            setError("Failed to submit documents."); 
-            setIsLoading(false); 
+        } catch(e: any) { 
+            handleApiError(e);
         }
     };
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 flex justify-center items-center">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 w-full max-w-3xl">
-                <div className="flex justify-center mb-6"><LogoIcon className="h-12 w-auto" /></div>
-                <h2 className="text-2xl font-bold text-center dark:text-white mb-2">Complete Verification</h2>
-                <p className="text-center text-gray-500 dark:text-gray-400 mb-8">Select a method to verify your identity</p>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 w-full max-w-3xl transition-all duration-300">
+                <div className="flex justify-center mb-6">
+                    <LogoIcon className="h-12 w-auto" />
+                </div>
+                
+                <h2 className="text-2xl font-bold text-center text-gray-800 dark:text-white mb-2">
+                    {isResubmit ? 'Resubmit Verification' : 'Identity Verification'}
+                </h2>
+                
+                <p className="text-center text-gray-500 dark:text-gray-400 mb-8">
+                    {mode === 'options' 
+                        ? 'Select a verification method to proceed' 
+                        : 'Enter details accurately to avoid rejection'
+                    }
+                </p>
 
                 {mode === 'options' && (
-                    <div className="space-y-6">
+                    <div className="space-y-6 animate-fade-in-down">
                         {platformSettings.isInstantKycEnabled && (
                             <div className="space-y-3">
-                                <p className="text-sm font-bold text-gray-400 uppercase tracking-wide">Instant Verification (Fastest)</p>
+                                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide dark:text-gray-500">Instant Verification (Recommended)</p>
                                 
-                                <button onClick={() => setMode('aadhaar_otp')} className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group">
+                                <button onClick={() => setMode('aadhaar_otp')} className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors group dark:bg-indigo-900/20 dark:border-indigo-800 dark:hover:bg-indigo-900/40">
                                     <div className="flex items-center space-x-4">
                                         <div className="p-2 bg-indigo-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
                                         <div className="text-left">
-                                            <p className="font-bold text-gray-800">Aadhaar Card</p>
-                                            <p className="text-xs text-gray-500">Verify via OTP</p>
+                                            <p className="font-bold text-gray-800 dark:text-white">Aadhaar Card</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Verify via OTP</p>
                                         </div>
                                     </div>
-                                    <span className="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                                    <span className="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform dark:text-indigo-400">&rarr;</span>
                                 </button>
 
-                                <button onClick={() => setMode('pan_verify')} className="w-full flex items-center justify-between p-4 bg-teal-50 border border-teal-100 rounded-xl hover:bg-teal-100 transition-colors group">
+                                <button onClick={() => setMode('pan_verify')} className="w-full flex items-center justify-between p-4 bg-teal-50 border border-teal-100 rounded-xl hover:bg-teal-100 transition-colors group dark:bg-teal-900/20 dark:border-teal-800 dark:hover:bg-teal-900/40">
                                     <div className="flex items-center space-x-4">
                                         <div className="p-2 bg-teal-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
                                         <div className="text-left">
-                                            <p className="font-bold text-gray-800">PAN Card</p>
-                                            <p className="text-xs text-gray-500">Verify Instantly</p>
+                                            <p className="font-bold text-gray-800 dark:text-white">PAN Card</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Instant Name Match</p>
                                         </div>
                                     </div>
-                                    <span className="text-teal-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                                    <span className="text-teal-600 font-bold group-hover:translate-x-1 transition-transform dark:text-teal-400">&rarr;</span>
                                 </button>
 
-                                <button onClick={() => setMode('dl_verify')} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group">
+                                <button onClick={() => setMode('dl_verify')} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group dark:bg-blue-900/20 dark:border-blue-800 dark:hover:bg-blue-900/40">
                                     <div className="flex items-center space-x-4">
                                         <div className="p-2 bg-blue-600 text-white rounded-lg"><CheckBadgeIcon className="w-6 h-6" /></div>
                                         <div className="text-left">
-                                            <p className="font-bold text-gray-800">Driving License</p>
-                                            <p className="text-xs text-gray-500">Verify Instantly</p>
+                                            <p className="font-bold text-gray-800 dark:text-white">Driving License</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Verify Credentials</p>
                                         </div>
                                     </div>
-                                    <span className="text-blue-600 font-bold group-hover:translate-x-1 transition-transform">&rarr;</span>
+                                    <span className="text-blue-600 font-bold group-hover:translate-x-1 transition-transform dark:text-blue-400">&rarr;</span>
                                 </button>
                             </div>
                         )}
 
                         <div className="space-y-3">
-                            <p className="text-sm font-bold text-gray-400 uppercase tracking-wide">Manual Verification (Takes 24-48h)</p>
+                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide dark:text-gray-500">Manual Verification</p>
                             <button onClick={() => setMode('manual')} className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-600">
                                 <div className="flex items-center space-x-4">
                                     <div className="p-2 bg-gray-200 text-gray-600 rounded-lg dark:bg-gray-600 dark:text-gray-300">
@@ -225,7 +248,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                                     </div>
                                     <div className="text-left">
                                         <p className="font-bold text-gray-800 dark:text-gray-100">Upload Documents</p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Passport, Voter ID, etc.</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">If instant verification fails</p>
                                     </div>
                                 </div>
                                 <span className="text-gray-400 font-bold">&rarr;</span>
@@ -236,64 +259,67 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
 
                 {/* Instant: Aadhaar */}
                 {mode === 'aadhaar_otp' && (
-                    <div className="space-y-6">
-                        <div className="text-center">
-                            <h3 className="text-xl font-bold text-indigo-600">Aadhaar Verification</h3>
-                            <p className="text-sm text-gray-500">Enter your Aadhaar number to receive an OTP.</p>
+                    <div className="space-y-6 animate-fade-in-down">
+                        <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                            <h3 className="text-lg font-bold text-indigo-700 dark:text-indigo-300">Aadhaar OTP</h3>
+                            <p className="text-xs text-gray-600 dark:text-gray-300">We'll send an OTP to your Aadhaar-linked mobile.</p>
                         </div>
                         {!otpSent ? (
-                            <>
-                                <input type="text" value={aadhaarNumber} onChange={e=>setAadhaarNumber(e.target.value)} placeholder="Enter 12-digit Aadhaar Number" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white text-center font-mono text-lg" maxLength={12} />
-                                <button onClick={sendAadhaarOtp} disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50">{isLoading ? 'Sending...' : 'Send OTP'}</button>
-                            </>
+                            <div className="space-y-4">
+                                <input type="text" value={aadhaarNumber} onChange={e=>setAadhaarNumber(e.target.value)} placeholder="Enter 12-digit Aadhaar Number" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-center font-mono text-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" maxLength={12} />
+                                <button onClick={sendAadhaarOtp} disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 shadow-lg transform hover:-translate-y-0.5 transition-all">
+                                    {isLoading ? 'Sending OTP...' : 'Send OTP'}
+                                </button>
+                            </div>
                         ) : (
-                            <>
-                                <input type="text" value={aadhaarOtp} onChange={e=>setAadhaarOtp(e.target.value)} placeholder="Enter OTP" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white text-center font-mono text-lg" maxLength={6} />
-                                <button onClick={verifyAadhaarOtp} disabled={isLoading} className="w-full py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:opacity-50">{isLoading ? 'Verifying...' : 'Verify & Submit'}</button>
-                            </>
+                            <div className="space-y-4">
+                                <input type="text" value={aadhaarOtp} onChange={e=>setAadhaarOtp(e.target.value)} placeholder="Enter 6-digit OTP" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-center font-mono text-lg focus:ring-2 focus:ring-green-500 outline-none transition-all" maxLength={6} />
+                                <button onClick={verifyAadhaarOtp} disabled={isLoading} className="w-full py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:opacity-50 shadow-lg transform hover:-translate-y-0.5 transition-all">
+                                    {isLoading ? 'Verifying...' : 'Verify & Submit'}
+                                </button>
+                            </div>
                         )}
-                        {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
-                        <button onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Cancel</button>
                     </div>
                 )}
 
                 {/* Instant: PAN */}
                 {mode === 'pan_verify' && (
-                    <div className="space-y-6">
-                        <div className="text-center">
-                            <h3 className="text-xl font-bold text-teal-600">PAN Verification</h3>
-                            <p className="text-sm text-gray-500">Instant Name Match Verification.</p>
+                    <div className="space-y-6 animate-fade-in-down">
+                        <div className="text-center p-4 bg-teal-50 dark:bg-teal-900/20 rounded-lg">
+                            <h3 className="text-lg font-bold text-teal-700 dark:text-teal-300">PAN Validation</h3>
+                            <p className="text-xs text-gray-600 dark:text-gray-300">Ensure the name matches your profile: <strong>{user.name}</strong></p>
                         </div>
                         
-                        <input type="text" value={panNumber} onChange={e=>setPanNumber(e.target.value.toUpperCase())} placeholder="Enter PAN Number (e.g. ABCDE1234F)" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white text-center font-mono text-lg uppercase" maxLength={10} />
-                        <button onClick={verifyPan} disabled={isLoading} className="w-full py-3 bg-teal-600 text-white rounded-lg font-bold hover:bg-teal-700 disabled:opacity-50">{isLoading ? 'Verifying...' : 'Verify Now'}</button>
+                        <input type="text" value={panNumber} onChange={e=>setPanNumber(e.target.value.toUpperCase())} placeholder="Enter PAN Number (e.g. ABCDE1234F)" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-center font-mono text-lg uppercase focus:ring-2 focus:ring-teal-500 outline-none transition-all" maxLength={10} />
                         
-                        {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
-                        <button onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Cancel</button>
+                        <button onClick={verifyPan} disabled={isLoading} className="w-full py-3 bg-teal-600 text-white rounded-lg font-bold hover:bg-teal-700 disabled:opacity-50 shadow-lg transform hover:-translate-y-0.5 transition-all">
+                            {isLoading ? 'Verifying...' : 'Verify PAN'}
+                        </button>
                     </div>
                 )}
 
                 {/* Instant: DL */}
                 {mode === 'dl_verify' && (
-                    <div className="space-y-6">
-                        <div className="text-center">
-                            <h3 className="text-xl font-bold text-blue-600">Driving License Verification</h3>
-                            <p className="text-sm text-gray-500">Enter details as per your license.</p>
+                    <div className="space-y-6 animate-fade-in-down">
+                        <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                            <h3 className="text-lg font-bold text-blue-700 dark:text-blue-300">Driver's License</h3>
+                            <p className="text-xs text-gray-600 dark:text-gray-300">Match your DL details exactly.</p>
                         </div>
                         
-                        <input type="text" value={dlNumber} onChange={e=>setDlNumber(e.target.value)} placeholder="DL Number" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white font-mono" />
-                        <input type="date" value={dob} onChange={e=>setDob(e.target.value)} placeholder="Date of Birth" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:text-white" />
+                        <div className="space-y-4">
+                            <input type="text" value={dlNumber} onChange={e=>setDlNumber(e.target.value)} placeholder="DL Number" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                            <input type="date" value={dob} onChange={e=>setDob(e.target.value)} placeholder="Date of Birth" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
                         
-                        <button onClick={verifyDl} disabled={isLoading} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50">{isLoading ? 'Verifying...' : 'Verify Now'}</button>
-                        
-                        {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
-                        <button onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Cancel</button>
+                        <button onClick={verifyDl} disabled={isLoading} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 shadow-lg transform hover:-translate-y-0.5 transition-all">
+                            {isLoading ? 'Verifying...' : 'Verify DL'}
+                        </button>
                     </div>
                 )}
 
                 {/* Manual Upload */}
                 {mode === 'manual' && (
-                    <form onSubmit={handleManualSubmit} className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+                    <form onSubmit={handleManualSubmit} className="space-y-6 max-h-[60vh] overflow-y-auto pr-2 animate-fade-in-down">
                         <h3 className="text-lg font-bold text-gray-700 dark:text-gray-200 border-b pb-2">1. ID Proof</h3>
                         <div className="space-y-4">
                             <select name="idType" value={formData.idType} onChange={handleInputChange} className="w-full p-3 border rounded dark:bg-gray-700 dark:text-white" required>
@@ -308,7 +334,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                             <div className="border-2 border-dashed p-4 rounded-lg text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" onClick={() => idProofRef.current?.click()}>
                                 {idProofPreview ? (
                                     <div className="relative">
-                                        <img src={idProofPreview} className="h-32 mx-auto rounded object-contain" />
+                                        <img src={idProofPreview} className="h-32 mx-auto rounded object-contain" alt="ID Proof" />
                                         <p className="text-xs text-gray-500 mt-2">Change ID Photo</p>
                                     </div>
                                 ) : (
@@ -326,7 +352,7 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                              <div className="border-2 border-dashed p-4 rounded-lg text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" onClick={() => panFileRef.current?.click()}>
                                 {panPreview ? (
                                     <div className="relative">
-                                        <img src={panPreview} className="h-32 mx-auto rounded object-contain" />
+                                        <img src={panPreview} className="h-32 mx-auto rounded object-contain" alt="PAN Card" />
                                         <p className="text-xs text-gray-500 mt-2">Change PAN Photo</p>
                                     </div>
                                 ) : (
@@ -355,12 +381,33 @@ const KycPage: React.FC<KycPageProps> = ({ user, onKycSubmitted, isResubmit = fa
                             {isLivenessVerified && <p className="text-green-600 font-bold text-center mt-2 flex items-center justify-center gap-2"><CheckBadgeIcon className="w-5 h-5"/> Liveness Verified</p>}
                         </div>
 
-                        {error && <p className="text-red-500 text-center bg-red-50 p-2 rounded">{error}</p>}
-                        <div className="flex flex-col gap-2">
-                            <button type="submit" disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">Submit Documents</button>
-                            <button type="button" onClick={() => setMode('options')} className="text-sm text-gray-500 w-full text-center hover:underline">Back</button>
+                        <div className="flex flex-col gap-2 pt-4">
+                            <button type="submit" disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+                                {isLoading ? 'Submitting...' : 'Submit Documents'}
+                            </button>
                         </div>
                     </form>
+                )}
+
+                {error && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg animate-fade-in-down">
+                        <p className="text-red-700 text-sm text-center font-medium">{error}</p>
+                    </div>
+                )}
+                
+                {success && (
+                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg animate-fade-in-down">
+                        <p className="text-green-700 text-sm text-center font-bold">{success}</p>
+                    </div>
+                )}
+
+                {mode !== 'options' && (
+                    <button 
+                        onClick={() => { setMode('options'); setError(null); setSuccess(null); }} 
+                        className="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 font-medium"
+                    >
+                        Cancel & Go Back
+                    </button>
                 )}
             </div>
         </div>

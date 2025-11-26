@@ -8,9 +8,12 @@ interface SettingsPanelProps {
     onSettingsUpdate: () => void;
 }
 
-const SettingRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-    <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between border-b dark:border-gray-700">
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 sm:mb-0 sm:w-1/3">{label}</label>
+const SettingRow: React.FC<{ label: string; children: React.ReactNode; helpText?: string }> = ({ label, children, helpText }) => (
+    <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-start justify-between border-b dark:border-gray-700">
+        <div className="sm:w-1/3 mb-2 sm:mb-0 pr-4">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block">{label}</label>
+            {helpText && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{helpText}</p>}
+        </div>
         <div className="sm:w-2/3">{children}</div>
     </div>
 );
@@ -65,104 +68,90 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
 
     return (
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div className="px-6 py-4 border-b dark:border-gray-700 flex justify-between items-center">
+            <div className="px-6 py-4 border-b dark:border-gray-700 flex justify-between items-center sticky top-0 bg-white dark:bg-gray-800 z-10">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">Platform Settings</h3>
-                <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm">
                     {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
             </div>
             
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">General</h4></div>
-                <SettingRow label="Enable Community Feed">
-                    <input type="checkbox" checked={settings.isCommunityFeedEnabled} onChange={e => handleSettingChange('isCommunityFeedEnabled', e.target.checked)} />
+            <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-200px)] overflow-y-auto">
+                {/* General */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">General Configuration</h4></div>
+                <SettingRow label="Community Feed" helpText="Enable/Disable the public social feed for users.">
+                    <div className="flex items-center">
+                        <input type="checkbox" id="community" checked={settings.isCommunityFeedEnabled} onChange={e => handleSettingChange('isCommunityFeedEnabled', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
+                        <label htmlFor="community" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Feed</label>
+                    </div>
                 </SettingRow>
-                <SettingRow label="Enable Maintenance Mode">
-                    <input type="checkbox" checked={settings.isMaintenanceModeEnabled} onChange={e => handleSettingChange('isMaintenanceModeEnabled', e.target.checked)} />
+                <SettingRow label="Maintenance Mode" helpText="Restricts access to the platform for non-admin users.">
+                    <div className="flex items-center">
+                        <input type="checkbox" id="maint" checked={settings.isMaintenanceModeEnabled} onChange={e => handleSettingChange('isMaintenanceModeEnabled', e.target.checked)} className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded" />
+                        <label htmlFor="maint" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Maintenance</label>
+                    </div>
                 </SettingRow>
-                <SettingRow label="Enable Welcome Message">
-                    <input type="checkbox" checked={settings.isWelcomeMessageEnabled} onChange={e => handleSettingChange('isWelcomeMessageEnabled', e.target.checked)} />
-                </SettingRow>
-                <SettingRow label="Welcome Message Text">
-                    <textarea value={settings.welcomeMessage || ''} onChange={e => handleSettingChange('welcomeMessage', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" rows={3} />
+                <SettingRow label="Welcome Message">
+                    <textarea value={settings.welcomeMessage || ''} onChange={e => handleSettingChange('welcomeMessage', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" rows={2} />
                 </SettingRow>
                 
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Integration Helper</h4></div>
-                <SettingRow label="Webhook URL">
+                {/* Integration */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Backend Integration</h4></div>
+                <SettingRow label="Backend URL" helpText="The URL of your deployed Firebase Cloud Function.">
                     <div className="flex items-center gap-2">
                         <code className="flex-1 p-2 bg-gray-100 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-600 text-sm font-mono text-gray-800 dark:text-gray-300 break-all">
-                            {`${BACKEND_URL}/webhook`}
+                            {BACKEND_URL}
                         </code>
-                        <button 
-                            onClick={() => { navigator.clipboard.writeText(`${BACKEND_URL}/webhook`); alert("URL Copied!"); }}
-                            className="px-3 py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 text-sm font-medium"
-                        >
-                            Copy
-                        </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Use this URL for both Payment Gateway and Payouts (Version 1) webhooks.</p>
                 </SettingRow>
 
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Payment & Payout Keys (Cashfree)</h4></div>
+                {/* Payment Keys */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Payment Gateway (Cashfree PG)</h4></div>
                 <SettingRow label="Active Gateway">
                     <select value={settings.activePaymentGateway} onChange={e => handleSettingChange('activePaymentGateway', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                         <option value="cashfree">Cashfree</option>
                     </select>
                 </SettingRow>
-                <SettingRow label="PG App ID">
-                    <input type="text" value={settings.paymentGatewayApiId || ''} onChange={e => handleSettingChange('paymentGatewayApiId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                <SettingRow label="App ID" helpText="From Cashfree PG Dashboard.">
+                    <input type="text" value={settings.paymentGatewayApiId || ''} onChange={e => handleSettingChange('paymentGatewayApiId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
                 </SettingRow>
-                <SettingRow label="PG Secret Key">
-                    <input type="password" value={settings.paymentGatewayApiSecret || ''} onChange={e => handleSettingChange('paymentGatewayApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                </SettingRow>
-                <SettingRow label="PG Webhook Secret (Optional)">
-                    <input type="password" value={settings.paymentGatewayWebhookSecret || ''} onChange={e => handleSettingChange('paymentGatewayWebhookSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Paste Webhook Secret Key here" />
-                </SettingRow>
-                <div className="px-6 py-2 bg-yellow-50 text-yellow-800 text-xs dark:bg-yellow-900/20 dark:text-yellow-200">Payouts require separate keys from the Cashfree Payout Dashboard.</div>
-                <SettingRow label="Payout Client ID">
-                    <input type="text" value={settings.payoutClientId || ''} onChange={e => handleSettingChange('payoutClientId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="CF.... or similar" />
-                </SettingRow>
-                <SettingRow label="Payout Client Secret">
-                    <input type="password" value={settings.payoutClientSecret || ''} onChange={e => handleSettingChange('payoutClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                <SettingRow label="Secret Key" helpText="From Cashfree PG Dashboard.">
+                    <input type="password" value={settings.paymentGatewayApiSecret || ''} onChange={e => handleSettingChange('paymentGatewayApiSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
                 </SettingRow>
 
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Cashfree Verification (KYC) Keys</h4></div>
-                <SettingRow label="Verification Client ID">
-                    <input type="text" value={settings.cashfreeKycClientId || ''} onChange={e => handleSettingChange('cashfreeKycClientId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="From Cashfree Verification Dashboard" />
+                {/* Verification Keys */}
+                <div className="px-6 py-3 bg-yellow-50 dark:bg-yellow-900/20"><h4 className="font-semibold text-yellow-800 dark:text-yellow-200">Verification / KYC API (Cashfree Verification)</h4></div>
+                <SettingRow label="Verification Client ID" helpText="Required for Instant KYC. Get this from Cashfree Verification Dashboard -> API Keys.">
+                    <input type="text" value={settings.cashfreeKycClientId || ''} onChange={e => handleSettingChange('cashfreeKycClientId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" placeholder="e.g. CF................" />
                 </SettingRow>
-                <SettingRow label="Verification Client Secret">
-                    <input type="password" value={settings.cashfreeKycClientSecret || ''} onChange={e => handleSettingChange('cashfreeKycClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                <SettingRow label="Verification Client Secret" helpText="Required for Instant KYC. Get this from Cashfree Verification Dashboard -> API Keys.">
+                    <input type="password" value={settings.cashfreeKycClientSecret || ''} onChange={e => handleSettingChange('cashfreeKycClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" placeholder="e.g. ...................." />
                 </SettingRow>
 
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Fees & Commissions</h4></div>
-                <SettingRow label="Enable Platform Commission">
-                    <input type="checkbox" checked={settings.isPlatformCommissionEnabled} onChange={e => handleSettingChange('isPlatformCommissionEnabled', e.target.checked)} />
+                {/* Payout Keys */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Payouts (Cashfree Payouts)</h4></div>
+                <SettingRow label="Payout Client ID" helpText="From Cashfree Payouts Dashboard.">
+                    <input type="text" value={settings.payoutClientId || ''} onChange={e => handleSettingChange('payoutClientId', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
                 </SettingRow>
+                <SettingRow label="Payout Client Secret" helpText="From Cashfree Payouts Dashboard.">
+                    <input type="password" value={settings.payoutClientSecret || ''} onChange={e => handleSettingChange('payoutClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
+                </SettingRow>
+
+                {/* Fees */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Financials</h4></div>
                 <SettingRow label="Platform Commission (%)">
                     <input type="number" value={settings.platformCommissionRate} onChange={e => handleSettingChange('platformCommissionRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                </SettingRow>
-                <SettingRow label="Enable GST">
-                    <input type="checkbox" checked={settings.isGstEnabled} onChange={e => handleSettingChange('isGstEnabled', e.target.checked)} />
                 </SettingRow>
                 <SettingRow label="GST Rate (%)">
                     <input type="number" value={settings.gstRate} onChange={e => handleSettingChange('gstRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
 
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Verification & KYC</h4></div>
-                <SettingRow label="Enable Instant KYC (Identity)">
-                    <input type="checkbox" checked={settings.isInstantKycEnabled} onChange={e => handleSettingChange('isInstantKycEnabled', e.target.checked)} />
+                {/* KYC Settings */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">KYC & Verification Rules</h4></div>
+                <SettingRow label="Enable Instant KYC" helpText="Uses Cashfree API to verify Aadhaar, PAN, DL instantly.">
+                    <input type="checkbox" checked={settings.isInstantKycEnabled} onChange={e => handleSettingChange('isInstantKycEnabled', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
                 </SettingRow>
-                <SettingRow label="Require ID Proof for KYC">
-                    <input type="checkbox" checked={settings.isKycIdProofRequired} onChange={e => handleSettingChange('isKycIdProofRequired', e.target.checked)} />
-                </SettingRow>
-                <SettingRow label="Require Live Selfie for KYC">
-                    <input type="checkbox" checked={settings.isKycSelfieRequired} onChange={e => handleSettingChange('isKycSelfieRequired', e.target.checked)} />
-                </SettingRow>
-                <SettingRow label="Enable Instant Bank/UPI Verification for Payouts">
-                    <input type="checkbox" checked={settings.isPayoutInstantVerificationEnabled} onChange={e => handleSettingChange('isPayoutInstantVerificationEnabled', e.target.checked)} />
-                </SettingRow>
-                <SettingRow label="Require Selfie for Payouts">
-                    <input type="checkbox" checked={settings.payoutSettings.requireSelfieForPayout} onChange={e => handleNestedChange('payoutSettings', 'requireSelfieForPayout', e.target.checked)} />
+                <SettingRow label="Require Live Selfie" helpText="For both KYC and Payouts to prevent fraud.">
+                    <input type="checkbox" checked={settings.isKycSelfieRequired} onChange={e => handleSettingChange('isKycSelfieRequired', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
                 </SettingRow>
             </div>
         </div>

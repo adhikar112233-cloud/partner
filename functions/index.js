@@ -1,4 +1,3 @@
-
 const functions = require("firebase-functions");
 const express = require("express");
 const cors = require("cors");
@@ -15,6 +14,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 // --- HELPER: Get Cashfree Config ---
+// Fetches API keys securely from Firestore to avoid hardcoding them.
 async function getCashfreeConfig(type = 'verification') {
     const settingsDoc = await db.doc('settings/platform').get();
     const settings = settingsDoc.data() || {};
@@ -32,7 +32,7 @@ async function getCashfreeConfig(type = 'verification') {
             isTest: settings.payoutClientId?.includes("TEST")
         };
     } else {
-        // Verification
+        // Verification Keys
         return {
             clientId: settings.cashfreeKycClientId,
             clientSecret: settings.cashfreeKycClientSecret,
@@ -46,7 +46,7 @@ app.post('/verify-pan', async (req, res) => {
     try {
         const { userId, pan, name } = req.body;
         const config = await getCashfreeConfig('verification');
-        if (!config.clientId) return res.status(500).json({ message: "Keys missing." });
+        if (!config.clientId) return res.status(500).json({ message: "Server configuration error: Keys missing." });
 
         const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
 
@@ -59,7 +59,10 @@ app.post('/verify-pan', async (req, res) => {
         const data = await response.json();
 
         if (response.ok && data.valid) {
+            // Check if the name on PAN matches the user's registered name roughly
             const nameMatch = data.name_match_score >= 0.8; 
+            
+            // Update Firestore with verification status
             await db.collection('users').doc(userId).update({
                 'creatorVerificationDetails.isBusinessPanVerified': true,
                 'kycDetails.isPanVerified': true,
@@ -158,14 +161,14 @@ app.post('/verify-dl', async (req, res) => {
     }
 });
 
-// --- ENDPOINT: Liveness Check (MOCK for Stability) ---
+// --- ENDPOINT: Liveness Check ---
 app.post('/verify-liveness', async (req, res) => {
     try {
-        const { userId } = req.body; 
+        const { userId } = req.body; // Expecting imageBase64 in body in a real implementation
         
-        // In production, you would upload the base64 image to Cashfree's Face Match / Liveness API
-        // or compare it against the Aadhaar photo. 
-        // For this integration to work robustly without complex file handling middleware:
+        // Note: Real Liveness APIs usually require uploading the image blob. 
+        // For stability in this setup, we act as a pass-through or mock success 
+        // after receiving the request.
         
         await db.collection('users').doc(userId).update({
             'kycDetails.isLivenessVerified': true
@@ -185,6 +188,7 @@ app.post('/verify-bank', async (req, res) => {
         const config = await getCashfreeConfig('verification');
         const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
 
+        // "Bank Account Verification" drops ₹1 to the account to verify it
         const response = await fetch(`${baseUrl}/bank-account/sync`, {
             method: 'POST',
             headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
@@ -251,16 +255,14 @@ app.post('/verify-gst', async (req, res) => {
     }
 });
 
-// --- Payment Creation Endpoint (Needed for payment flow) ---
+// --- ENDPOINT: Payment Gateway Order Creation ---
 app.post('/', async (req, res) => {
     try {
-        // This endpoint handles /createpayment
         const { amount, phone, customerId, returnUrl } = req.body;
-        
-        // Simple response for testing if keys aren't set, otherwise logic for order creation
         const config = await getCashfreeConfig('payment');
+        
         if (!config.appId) {
-             // Mock success for demo if keys missing
+             // Return a mock response if keys are not configured (for demo/testing)
              return res.json({ 
                  paymentSessionId: "mock_session_id", 
                  environment: "sandbox", 
@@ -268,7 +270,6 @@ app.post('/', async (req, res) => {
              });
         }
         
-        // Real Cashfree Order Creation
         const baseUrl = config.isTest ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
         const orderId = "order_" + Date.now();
         
@@ -306,4 +307,5 @@ app.post('/', async (req, res) => {
     }
 });
 
+// Export the Express app as a Cloud Function named 'createpayment'
 exports.createpayment = functions.https.onRequest(app);

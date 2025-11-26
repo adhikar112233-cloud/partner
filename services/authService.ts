@@ -1,6 +1,6 @@
 
-import { User, UserRole, PlatformSettings, Membership } from '../types';
-import { auth, db, isFirebaseConfigured, RecaptchaVerifier, signInWithPhoneNumber } from './firebase';
+import { User, UserRole, PlatformSettings, Membership, StaffPermission } from '../types';
+import { auth, db, isFirebaseConfigured, RecaptchaVerifier, signInWithPhoneNumber, firebaseConfig } from './firebase';
 import { apiService } from './apiService';
 import { 
     createUserWithEmailAndPassword, 
@@ -13,10 +13,12 @@ import {
     signInWithPopup,
     sendPasswordResetEmail,
     updatePassword,
-    updateEmail
+    updateEmail,
+    getAuth
 } from 'firebase/auth';
 // Fix: Corrected Firebase imports for 'doc', 'setDoc', 'getDoc', and 'Timestamp' to align with Firebase v9 modular syntax.
 import { doc, setDoc, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { initializeApp, deleteApp } from 'firebase/app';
 
 const DEFAULT_AVATAR_URL = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDRjMCAwIDAtMSAwLTJoMTJ2Mmg0di00YzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==';
 
@@ -128,7 +130,7 @@ export const authService = {
         return await authService.createUserProfile(currentUser.uid, email, role, name, companyName, mobileNumber, referralCode);
     },
 
-    createUserProfile: async (uid: string, email: string, role: UserRole, name: string, companyName: string, mobileNumber: string, referralCode?: string): Promise<User> => {
+    createUserProfile: async (uid: string, email: string, role: UserRole, name: string, companyName: string, mobileNumber: string, referralCode?: string, permissions?: StaffPermission[]): Promise<User> => {
         const now = Timestamp.now();
         const oneYearFromNow = new Date(now.toDate());
         oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
@@ -168,7 +170,7 @@ export const authService = {
         };
 
         if (role === 'staff') {
-            userProfileData.staffPermissions = ['super_admin'];
+            userProfileData.staffPermissions = permissions || ['super_admin'];
         }
 
         await setDoc(doc(db, 'users', uid), userProfileData);
@@ -308,6 +310,45 @@ export const authService = {
     logout: (): Promise<void> => {
         if (!isFirebaseConfigured) return Promise.resolve();
         return signOut(auth);
+    },
+
+    createUserByAdmin: async (email: string, password: string, role: UserRole, name: string, mobileNumber: string, membershipPlan: any, permissions?: StaffPermission[]): Promise<void> => {
+        if (!isFirebaseConfigured) throw new Error("Firebase is not configured.");
+        
+        // Use a secondary app to create user so it doesn't log out the admin
+        const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+        const secondaryAuth = getAuth(secondaryApp);
+
+        try {
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+            const firebaseUser = userCredential.user;
+            
+            // Create user profile using the MAIN db instance (Admin's context)
+            await authService.createUserProfile(firebaseUser.uid, email, role, name, '', mobileNumber, '', permissions);
+            
+            if (membershipPlan && membershipPlan !== 'free') {
+                const now = Timestamp.now();
+                const oneYearFromNow = new Date(now.toDate());
+                oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+                
+                const membershipData: Membership = {
+                    plan: membershipPlan,
+                    isActive: true,
+                    startsAt: now,
+                    expiresAt: Timestamp.fromDate(oneYearFromNow),
+                    usage: { directCollaborations: 0, campaigns: 0, liveTvBookings: 0, bannerAdBookings: 0 }
+                };
+                await updateDoc(doc(db, 'users', firebaseUser.uid), { membership: membershipData });
+            }
+
+            // Cleanup
+            await signOut(secondaryAuth);
+            await deleteApp(secondaryApp);
+        } catch (error) {
+            // Cleanup on error
+            await deleteApp(secondaryApp);
+            throw error;
+        }
     },
 
     onAuthChange: (callback: (user: User | null) => void) => {

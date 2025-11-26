@@ -99,6 +99,10 @@ export interface User {
     coins?: number;
     fcmToken?: string | null;
     
+    // Stats for Leaderboard
+    totalEarnings?: number;
+    completedCollabCount?: number;
+
     // Community Follow System
     followers?: string[]; // Array of User IDs
     following?: string[]; // Array of User IDs
@@ -126,6 +130,7 @@ export interface Influencer {
     socialMediaLinks?: string;
     isBoosted?: boolean;
     membershipActive?: boolean;
+    isVerified?: boolean; // New: Creator Verification Badge
 }
 
 export interface DiscountSetting {
@@ -248,7 +253,8 @@ export enum View {
     BOOST_PROFILE = 'boost_profile',
     PARTNERS = 'partners',
     PAYMENT_SUCCESS = 'payment_success',
-    CREATOR_VERIFICATION = 'creator_verification'
+    CREATOR_VERIFICATION = 'creator_verification',
+    LEADERBOARD = 'leaderboard'
 }
 
 export interface ProfileData {
@@ -259,6 +265,7 @@ export interface ProfileData {
     handle?: string;
     companyName?: string;
     bio?: string;
+    isVerified?: boolean; // New: Creator Verification Badge
 }
 
 export interface ConversationParticipant {
@@ -301,6 +308,7 @@ export interface LiveTvChannel {
     audienceSize: number;
     niche: string;
     isBoosted?: boolean;
+    isVerified?: boolean; // New: Creator Verification Badge
 }
 
 export interface BannerAd {
@@ -657,4 +665,23 @@ export interface CombinedCollabItem {
     paymentStatus: string;
     payoutStatus: string;
     originalData: any;
+}
+
+export interface LeaderboardEntry {
+    userId: string;
+    userName: string;
+    userAvatar: string;
+    userRole: UserRole;
+    score: number; // Earnings or Collab count
+    rank: number;
+}
+
+export interface Leaderboard {
+    id: string;
+    title: string; // e.g., "Top 10 Earners 2024"
+    year: number;
+    type: 'earnings' | 'collabs';
+    isActive: boolean;
+    entries: LeaderboardEntry[];
+    createdAt: any;
 }

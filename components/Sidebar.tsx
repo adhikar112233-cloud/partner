@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
-import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon } from './Icons';
+import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon } from './Icons';
 import { authService } from '../services/authService';
 import FollowListModal from './FollowListModal';
 
@@ -79,6 +79,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     
     // Other Roles (moved up)
     { view: View.BANNERADS, label: 'My Banner Ads', icon: BannerAdsIcon, roles: ['banneragency'] },
+
+    // Top 10 Leaderboard (Visible to all)
+    { view: View.LEADERBOARD, label: 'Top 10 Board', icon: TrophyIcon, roles: ['brand', 'influencer', 'banneragency', 'livetv'] },
 
     // Payment History for non-brands
     { view: View.PAYMENT_HISTORY, label: 'Payment History', icon: PaymentIcon, roles: ['livetv', 'banneragency']},

@@ -5,7 +5,7 @@ import { PlatformSettings, User, PayoutRequest, Post, Influencer, SocialMediaLin
 import { Timestamp, doc, updateDoc, QueryDocumentSnapshot, DocumentData, setDoc } from 'firebase/firestore';
 import PostCard from './PostCard';
 import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
-import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, ChatBubbleLeftEllipsisIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, LockClosedIcon, LockOpenIcon, KeyIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, EnvelopeIcon, ProfileIcon, ShareIcon as SocialsIcon, TrashIcon, PencilIcon, CheckBadgeIcon } from './Icons';
+import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, ChatBubbleLeftEllipsisIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, LockClosedIcon, LockOpenIcon, KeyIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, EnvelopeIcon, ProfileIcon, ShareIcon as SocialsIcon, TrashIcon, PencilIcon, CheckBadgeIcon, TrophyIcon } from './Icons';
 import LiveHelpPanel from './LiveHelpPanel';
 import { db, firebaseConfig } from '../services/firebase';
 import PayoutsPanel from './PayoutsPanel';
@@ -14,8 +14,10 @@ import MarketingPanel from './MarketingPanel';
 import PlatformBannerPanel from './PlatformBannerPanel';
 import { authService } from '../services/authService';
 import PartnersPanel from './PartnersPanel';
+import LeaderboardManager from './LeaderboardManager';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import UserManagementPanel from './UserManagementPanel';
 
 interface AdminPanelProps {
     user: User;
@@ -58,7 +60,7 @@ const toJsDate = (ts: any): Date | undefined => {
     return undefined;
 };
 
-type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands';
+type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands' | 'leaderboards';
 
 
 // --- Creator Verification Components ---
@@ -594,89 +596,162 @@ const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabIt
     );
 };
 
-const UserManagementPanel: React.FC<{ users: User[], onUserSelect: (user: User) => void }> = ({ users, onUserSelect }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    
-    const filteredUsers = users.filter(u => 
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.piNumber && u.piNumber.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+const StaffModal: React.FC<{
+    staff: User | null;
+    onClose: () => void;
+    onSave: (data: any) => void;
+}> = ({ staff, onClose, onSave }) => {
+    const [name, setName] = useState(staff?.name || '');
+    const [email, setEmail] = useState(staff?.email || '');
+    const [mobile, setMobile] = useState(staff?.mobileNumber || '');
+    const [password, setPassword] = useState('');
+    const [permissions, setPermissions] = useState<StaffPermission[]>(staff?.staffPermissions || []);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const allPermissions: StaffPermission[] = ['super_admin', 'user_management', 'financial', 'collaborations', 'kyc', 'community', 'support', 'marketing', 'live_help', 'analytics'];
+
+    const togglePermission = (perm: StaffPermission) => {
+        setPermissions(prev => prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm]);
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        try {
+            await onSave({ name, email, mobile, password, permissions });
+            onClose();
+        } catch (error) {
+            console.error(error);
+            alert("Failed to save staff member.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
-        <div className="p-6 h-full flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Management</h2>
-                <input 
-                    type="text" 
-                    placeholder="Search users..." 
-                    className="p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-            </div>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
-                        <tr>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">User</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Role</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Status</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Joined</th>
-                            <th className="p-4 text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {filteredUsers.map(user => (
-                            <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                <td className="p-4 flex items-center gap-3">
-                                    <img src={user.avatar} alt="" className="w-8 h-8 rounded-full bg-gray-200" />
-                                    <div>
-                                        <div className="font-medium dark:text-gray-200">{user.name}</div>
-                                        <div className="text-xs text-gray-500">{user.email}</div>
-                                    </div>
-                                </td>
-                                <td className="p-4 capitalize text-gray-600 dark:text-gray-300">{user.role}</td>
-                                <td className="p-4">
-                                    <span className={`px-2 py-1 text-xs rounded-full ${user.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                                        {user.isBlocked ? 'Blocked' : 'Active'}
-                                    </span>
-                                </td>
-                                <td className="p-4 text-sm text-gray-500">
-                                    N/A
-                                </td>
-                                <td className="p-4 text-right">
-                                    <button onClick={() => onUserSelect(user)} className="text-indigo-600 hover:text-indigo-800 text-sm font-medium">View</button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <h3 className="text-xl font-bold mb-4 dark:text-gray-100">{staff ? 'Edit Staff Member' : 'Add New Staff'}</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium dark:text-gray-300">Name</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} required className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium dark:text-gray-300">Email</label>
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} required disabled={!!staff} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60" />
+                    </div>
+                    {!staff && (
+                        <div>
+                            <label className="block text-sm font-medium dark:text-gray-300">Password</label>
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </div>
+                    )}
+                    <div>
+                        <label className="block text-sm font-medium dark:text-gray-300">Mobile</label>
+                        <input type="tel" value={mobile} onChange={e => setMobile(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium dark:text-gray-300 mb-2">Permissions</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {allPermissions.map(perm => (
+                                <label key={perm} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer dark:border-gray-600">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={permissions.includes(perm)} 
+                                        onChange={() => togglePermission(perm)}
+                                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-sm capitalize dark:text-gray-300">{perm.replace('_', ' ')}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded dark:text-gray-300 dark:hover:bg-gray-700">Cancel</button>
+                        <button type="submit" disabled={isLoading} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">
+                            {isLoading ? 'Saving...' : 'Save Staff'}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     );
 };
 
 const StaffManagementPanel: React.FC<{ staffUsers: User[], onUpdate: () => void, platformSettings: PlatformSettings }> = ({ staffUsers, onUpdate, platformSettings }) => {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingStaff, setEditingStaff] = useState<User | null>(null);
+
+    const handleSave = async (data: any) => {
+        if (editingStaff) {
+            await apiService.updateUser(editingStaff.id, {
+                name: data.name,
+                mobileNumber: data.mobile,
+                staffPermissions: data.permissions
+            });
+        } else {
+            await authService.createUserByAdmin(
+                data.email,
+                data.password,
+                'staff',
+                data.name,
+                data.mobile,
+                'free',
+                data.permissions
+            );
+        }
+        onUpdate();
+    };
+
+    const handleDelete = async (user: User) => {
+        if (window.confirm(`Are you sure you want to remove ${user.name} from staff? This will block their account.`)) {
+            await apiService.updateUser(user.id, { isBlocked: true, role: 'brand' }); // Demote and block
+            onUpdate();
+        }
+    };
+
     return (
-        <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Staff Management</h2>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
-                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="p-6 h-full flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Staff Management</h2>
+                <button onClick={() => { setEditingStaff(null); setIsModalOpen(true); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                    + Create Staff
+                </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
                     {staffUsers.map(staff => (
-                        <li key={staff.id} className="p-4 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <img src={staff.avatar} alt="" className="w-10 h-10 rounded-full" />
+                        <div key={staff.id} className="p-4 border rounded-lg dark:border-gray-700 flex flex-col justify-between bg-gray-50 dark:bg-gray-700/30">
+                            <div className="flex items-center gap-3 mb-3">
+                                <img src={staff.avatar} alt="" className="w-12 h-12 rounded-full object-cover" />
                                 <div>
-                                    <p className="font-medium dark:text-gray-200">{staff.name}</p>
-                                    <p className="text-sm text-gray-500">{staff.email}</p>
+                                    <p className="font-bold dark:text-gray-200">{staff.name}</p>
+                                    <p className="text-xs text-gray-500">{staff.email}</p>
                                 </div>
                             </div>
-                            <span className="text-sm text-gray-500">{staff.staffPermissions?.join(', ') || 'No permissions'}</span>
-                        </li>
+                            <div className="flex flex-wrap gap-1 mb-4">
+                                {staff.staffPermissions?.map(perm => (
+                                    <span key={perm} className="px-2 py-0.5 text-[10px] uppercase font-semibold bg-blue-100 text-blue-800 rounded-full dark:bg-blue-900 dark:text-blue-200">
+                                        {perm.replace('_', ' ')}
+                                    </span>
+                                ))}
+                            </div>
+                            <div className="flex justify-end gap-2 border-t pt-3 dark:border-gray-600">
+                                <button onClick={() => { setEditingStaff(staff); setIsModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded dark:hover:bg-blue-900/30"><PencilIcon className="w-4 h-4" /></button>
+                                <button onClick={() => handleDelete(staff)} className="p-1.5 text-red-600 hover:bg-red-50 rounded dark:hover:bg-red-900/30"><TrashIcon className="w-4 h-4" /></button>
+                            </div>
+                        </div>
                     ))}
-                </ul>
+                </div>
             </div>
+            {isModalOpen && (
+                <StaffModal 
+                    staff={editingStaff} 
+                    onClose={() => setIsModalOpen(false)} 
+                    onSave={handleSave} 
+                />
+            )}
         </div>
     );
 };
@@ -689,23 +764,43 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allT
                 <table className="w-full text-left">
                     <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600 sticky top-0">
                         <tr>
+                            <th className="p-4 whitespace-nowrap">Collab ID</th>
                             <th className="p-4">Title</th>
                             <th className="p-4">Type</th>
-                            <th className="p-4">Brand</th>
-                            <th className="p-4">Influencer/Partner</th>
+                            <th className="p-4">Brand (User ID)</th>
+                            <th className="p-4">Partner (User ID)</th>
                             <th className="p-4">Status</th>
                             <th className="p-4">Payment</th>
+                            <th className="p-4 whitespace-nowrap">Creator Payout</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {collaborations.map(collab => (
                             <tr key={collab.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <td className="p-4 font-mono text-xs text-gray-500 dark:text-gray-400 select-all">
+                                    {collab.originalData.collabId || collab.id.substring(0, 8) + '...'}
+                                </td>
                                 <td className="p-4 font-medium dark:text-gray-200">{collab.title}</td>
                                 <td className="p-4 text-sm text-gray-500">{collab.type}</td>
-                                <td className="p-4 text-sm text-gray-600 dark:text-gray-300">{collab.customerName}</td>
-                                <td className="p-4 text-sm text-gray-600 dark:text-gray-300">{collab.providerName}</td>
-                                <td className="p-4"><span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-600 rounded-full">{collab.status}</span></td>
+                                <td className="p-4">
+                                    <div className="text-sm text-gray-800 dark:text-gray-200">{collab.customerName}</div>
+                                    <div className="text-xs text-gray-500 font-mono">{collab.customerPiNumber || 'N/A'}</div>
+                                </td>
+                                <td className="p-4">
+                                    <div className="text-sm text-gray-800 dark:text-gray-200">{collab.providerName}</div>
+                                    <div className="text-xs text-gray-500 font-mono">{collab.providerPiNumber || 'N/A'}</div>
+                                </td>
+                                <td className="p-4"><span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-600 rounded-full capitalize">{collab.status.replace(/_/g, ' ')}</span></td>
                                 <td className="p-4"><span className={`px-2 py-1 text-xs rounded-full ${collab.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{collab.paymentStatus}</span></td>
+                                <td className="p-4">
+                                    <span className={`px-2 py-1 text-xs rounded-full capitalize ${
+                                        collab.payoutStatus === 'Completed' ? 'bg-green-100 text-green-800' : 
+                                        collab.payoutStatus === 'Requested' ? 'bg-purple-100 text-purple-800' : 
+                                        'bg-gray-100 text-gray-600'
+                                    }`}>
+                                        {collab.payoutStatus}
+                                    </span>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -749,108 +844,19 @@ const DiscountSettingsPanel: React.FC<{ settings: PlatformSettings, setSettings:
     );
 };
 
-const UserDetailsModal: React.FC<{ user: User | null, onClose: () => void, onSendReset: (u: User) => void, onToggleBlock: (u: User) => void, allTransactions: Transaction[], allPayouts: PayoutRequest[], allCollabs: CombinedCollabItem[], influencerProfile: Influencer | null, onUpdate: () => void }> = ({ user, onClose, onSendReset, onToggleBlock }) => {
-    if (!user) return null;
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold dark:text-gray-100">{user.name}</h2>
-                    <button onClick={onClose} className="text-gray-500">&times;</button>
-                </div>
-                <div className="space-y-4">
-                    <div className="flex items-center gap-4">
-                        <img src={user.avatar} alt="" className="w-16 h-16 rounded-full" />
-                        <div>
-                            <p className="text-gray-600 dark:text-gray-300">{user.email}</p>
-                            <p className="text-sm text-gray-500">{user.role}</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-4 pt-4 border-t dark:border-gray-700">
-                        <button onClick={() => onSendReset(user)} className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200">Send Password Reset</button>
-                        <button onClick={() => onToggleBlock(user)} className={`px-4 py-2 rounded-lg text-sm font-medium text-white ${user.isBlocked ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
-                            {user.isBlocked ? 'Unblock User' : 'Block User'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTransactions, allPayouts, allCollabs, allRefunds, allDailyPayouts, platformSettings, onUpdate }) => {
     const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
-    const [selectedUser, setSelectedUser] = useState<User | null>(null);
-    const [isUserDetailsModalOpen, setIsUserDetailsModalOpen] = useState(false);
-    const [selectedInfluencerProfile, setSelectedInfluencerProfile] = useState<Influencer | null>(null);
-
     const [disputes, setDisputes] = useState<Dispute[]>([]);
     const [isLoadingDisputes, setIsLoadingDisputes] = useState(false);
     
-    const [paginatedUsers, setPaginatedUsers] = useState<User[]>([]);
-    const [lastVisibleUser, setLastVisibleUser] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-    const [isFetchingUsers, setIsFetchingUsers] = useState(false);
-    const USER_PAGE_LIMIT = 20;
-
-    const staffUsers = useMemo(() => allUsers.filter(u => u.role === 'staff'), [allUsers]);
-    const regularUsers = useMemo(() => allUsers.filter(u => u.role !== 'staff'), [allUsers]);
-
-    const fetchUsers = useCallback(async (loadMore = false) => {
-        setIsFetchingUsers(true);
-        const options: any = { pageLimit: USER_PAGE_LIMIT };
-        if (loadMore && lastVisibleUser) {
-            options.startAfterDoc = lastVisibleUser;
-        }
-        const { users, lastVisible } = await apiService.getUsersPaginated(options);
-        setPaginatedUsers(prev => loadMore ? [...prev, ...users] : users);
-        setLastVisibleUser(lastVisible);
-        setIsFetchingUsers(false);
-    }, [lastVisibleUser]);
+    const staffUsers = useMemo(() => allUsers.filter(u => u.role === 'staff' && !u.isBlocked), [allUsers]);
 
     useEffect(() => {
-        if (activeTab === 'user_management') {
-            fetchUsers();
-        }
         if (activeTab === 'disputes') {
             setIsLoadingDisputes(true);
             apiService.getDisputes().then(setDisputes).finally(() => setIsLoadingDisputes(false));
         }
-    }, [activeTab, fetchUsers]);
-
-    const handleOpenUserDetails = async (userToView: User) => {
-        setSelectedUser(userToView);
-        if (userToView.role === 'influencer') {
-            const profile = await apiService.getInfluencerProfile(userToView.id);
-            setSelectedInfluencerProfile(profile);
-        }
-        setIsUserDetailsModalOpen(true);
-    };
-
-    const handleCloseUserDetails = () => {
-        setIsUserDetailsModalOpen(false);
-        setSelectedUser(null);
-        setSelectedInfluencerProfile(null);
-    };
-
-    const handleSendResetEmail = async (userToSend: User) => {
-        try {
-            await authService.sendPasswordResetEmail(userToSend.email);
-            alert(`Password reset email sent to ${userToSend.email}.`);
-        } catch (error) {
-            console.error(error);
-            alert("Failed to send reset email.");
-        }
-    };
-    
-    const handleToggleBlock = async (userToToggle: User) => {
-        try {
-            await apiService.updateUser(userToToggle.id, { isBlocked: !userToToggle.isBlocked });
-            onUpdate(); 
-        } catch (error) {
-            console.error(error);
-            alert("Failed to update user status.");
-        }
-    };
+    }, [activeTab]);
 
     const handleCollabUpdate = async (id: string, type: string, data: Partial<AnyCollaboration>) => {
         const collabTypeMap: { [key: string]: 'direct' | 'campaign' | 'ad_slot' | 'banner_booking' } = {
@@ -922,71 +928,75 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
         { id: 'payouts', label: 'Payouts & Refunds', icon: PaymentIcon, permission: 'financial' },
         { id: 'payment_history', label: 'Payment History', icon: PaymentIcon, permission: 'financial' },
         { id: 'community', label: 'Community', icon: CommunityIcon, permission: 'community' },
-        { id: 'live_help', label: 'Live Help', icon: ChatBubbleLeftEllipsisIcon, permission: 'support' },
-        { id: 'marketing', label: 'Marketing', icon: EnvelopeIcon, permission: 'marketing' },
+        { id: 'live_help', label: 'Live Help Queue', icon: SupportIcon, permission: 'live_help' },
+        { id: 'marketing', label: 'Marketing Tools', icon: RocketIcon, permission: 'marketing' },
         { id: 'disputes', label: 'Disputes', icon: ExclamationTriangleIcon, permission: 'support' },
         { id: 'discounts', label: 'Discount Settings', icon: SparklesIcon, permission: 'super_admin' },
         { id: 'platform_banners', label: 'Platform Banners', icon: BannerAdsIcon, permission: 'marketing' },
-        { id: 'client_brands', label: 'Our Partners', icon: RocketIcon, permission: 'marketing' },
+        { id: 'client_brands', label: 'Partner Brands', icon: UserGroupIcon, permission: 'marketing' },
+        { id: 'leaderboards', label: 'Leaderboards', icon: TrophyIcon, permission: 'marketing' },
     ];
-    
-    const hasPermission = (permission?: StaffPermission) => {
-        if (!permission) return true; 
-        return user.staffPermissions?.includes('super_admin') || user.staffPermissions?.includes(permission);
+
+    const visibleTabs = tabs.filter(tab => {
+        if (!tab.permission) return true;
+        if (user.staffPermissions?.includes('super_admin')) return true;
+        return user.staffPermissions?.includes(tab.permission);
+    });
+
+    const renderContent = () => {
+        switch (activeTab) {
+            case 'dashboard': return <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />;
+            case 'user_management': return <UserManagementPanel allUsers={allUsers} onUpdate={onUpdate} transactions={allTransactions} payouts={allPayouts} collabs={allCollabs} />;
+            case 'staff_management': return <StaffManagementPanel staffUsers={staffUsers} onUpdate={onUpdate} platformSettings={platformSettings} />;
+            case 'collaborations': return <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} />;
+            case 'kyc': return <KycPanel onUpdate={onUpdate} />;
+            case 'creator_verification': return <CreatorVerificationPanel onUpdate={onUpdate} />;
+            case 'payouts': return <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={onUpdate} />;
+            case 'payment_history': return <AdminPaymentHistoryPage transactions={allTransactions} payouts={allPayouts} allUsers={allUsers} collaborations={combinedCollaborations.map(c => ({ id: c.id, trackingId: c.originalData.collabId }))} />;
+            case 'community': return <CommunityManagementPanel />;
+            case 'live_help': return <LiveHelpPanel adminUser={user} />;
+            case 'marketing': return <MarketingPanel allUsers={allUsers} platformSettings={platformSettings} onUpdate={onUpdate} />;
+            case 'disputes': return <DisputesPanel disputes={disputes} allTransactions={allTransactions} onUpdate={onUpdate} />;
+            case 'discounts': return <DiscountSettingsPanel settings={platformSettings} setSettings={() => {}} setIsDirty={() => {}} />;
+            case 'platform_banners': return <PlatformBannerPanel onUpdate={onUpdate} />;
+            case 'client_brands': return <PartnersPanel onUpdate={onUpdate} />;
+            case 'leaderboards': return <LeaderboardManager allUsers={allUsers} allTransactions={allTransactions} allCollabs={allCollabs} onUpdate={onUpdate} />;
+            default: return <div>Select a tab</div>;
+        }
     };
 
-    const visibleTabs = tabs.filter(tab => hasPermission(tab.permission));
-    
     return (
-        <div className="flex h-full">
-            <nav className="w-64 bg-gray-800 text-white p-4 space-y-2 flex-shrink-0 overflow-y-auto">
-                 {visibleTabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                            activeTab === tab.id
-                                ? 'bg-gray-900'
-                                : 'hover:bg-gray-700'
-                        }`}
-                    >
-                        <tab.icon className="w-5 h-5 mr-3" />
-                        <span>{tab.label}</span>
-                    </button>
-                ))}
-            </nav>
-            <main className="flex-1 bg-gray-100 dark:bg-gray-900 overflow-hidden">
-                {/* Render Panels based on activeTab */}
-                {activeTab === 'dashboard' && <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />}
-                {activeTab === 'user_management' && <UserManagementPanel users={regularUsers} onUserSelect={handleOpenUserDetails} />}
-                {activeTab === 'staff_management' && <StaffManagementPanel staffUsers={staffUsers} onUpdate={onUpdate} platformSettings={platformSettings} />}
-                {activeTab === 'collaborations' && <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} />}
-                {activeTab === 'kyc' && <KycPanel onUpdate={onUpdate} />}
-                {activeTab === 'creator_verification' && <CreatorVerificationPanel onUpdate={onUpdate} />}
-                {activeTab === 'payouts' && <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={onUpdate} />}
-                {activeTab === 'payment_history' && <AdminPaymentHistoryPage transactions={allTransactions} payouts={allPayouts} allUsers={allUsers} collaborations={combinedCollaborations} />}
-                {activeTab === 'community' && <CommunityManagementPanel />}
-                {activeTab === 'live_help' && <LiveHelpPanel adminUser={user} />}
-                {activeTab === 'marketing' && <MarketingPanel allUsers={allUsers} platformSettings={platformSettings} onUpdate={onUpdate} />}
-                {activeTab === 'disputes' && <DisputesPanel disputes={disputes} allTransactions={allTransactions} onUpdate={() => apiService.getDisputes().then(setDisputes)} />}
-                {activeTab === 'discounts' && <DiscountSettingsPanel settings={platformSettings} setSettings={() => {}} setIsDirty={() => {}} />}
-                {activeTab === 'platform_banners' && <PlatformBannerPanel onUpdate={onUpdate} />}
-                {activeTab === 'client_brands' && <PartnersPanel onUpdate={onUpdate} />}
+        <div className="flex h-full bg-gray-100 dark:bg-gray-900 overflow-hidden">
+            {/* Sidebar for Admin Tabs */}
+            <div className="w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col flex-shrink-0 overflow-y-auto">
+                <div className="p-4 border-b dark:border-gray-700">
+                    <h2 className="text-lg font-bold text-gray-800 dark:text-white">Admin Panel</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{user.name}</p>
+                </div>
+                <nav className="flex-1 p-2 space-y-1">
+                    {visibleTabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                                activeTab === tab.id
+                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-200'
+                                    : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700'
+                            }`}
+                        >
+                            <tab.icon className={`mr-3 h-5 w-5 ${activeTab === tab.id ? 'text-indigo-500 dark:text-indigo-300' : 'text-gray-400 dark:text-gray-500'}`} />
+                            {tab.label}
+                        </button>
+                    ))}
+                </nav>
+            </div>
 
-                 {isUserDetailsModalOpen && (
-                    <UserDetailsModal 
-                        user={selectedUser} 
-                        onClose={handleCloseUserDetails}
-                        onSendReset={handleSendResetEmail}
-                        onToggleBlock={handleToggleBlock}
-                        allTransactions={allTransactions}
-                        allPayouts={allPayouts}
-                        allCollabs={combinedCollaborations}
-                        influencerProfile={selectedInfluencerProfile}
-                        onUpdate={onUpdate}
-                    />
-                 )}
-            </main>
+            {/* Main Content */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+                {renderContent()}
+            </div>
         </div>
     );
 };
+
+export default AdminPanel;

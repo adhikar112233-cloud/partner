@@ -19,7 +19,6 @@ const getExpiryDate = (planId) => {
     const now = new Date();
     if (['basic'].includes(planId)) return new Date(now.setMonth(now.getMonth() + 1));
     if (['pro'].includes(planId)) return new Date(now.setMonth(now.getMonth() + 6));
-    // Default or Premium is 1 year
     return new Date(now.setFullYear(now.getFullYear() + 1));
 };
 
@@ -38,7 +37,6 @@ async function processPaymentSuccess(orderId) {
     const orderData = orderDoc.data();
 
     if (orderData.status === 'COMPLETED') {
-        console.log("Order already marked as COMPLETED.");
         return { success: true, message: "Already completed" };
     }
 
@@ -156,7 +154,6 @@ async function processPaymentSuccess(orderId) {
     batch.update(orderRef, { status: 'COMPLETED' });
 
     await batch.commit();
-    console.log("Database updated successfully.");
     return { success: true, status: 'PAID' };
 }
 
@@ -263,7 +260,6 @@ app.post('/', async (req, res) => {
                 environment: isTest ? "sandbox" : "production"
             });
         } else {
-            console.error("Cashfree Init Error:", data);
             res.status(400).json({ message: data.message || "Cashfree Error" });
         }
 
@@ -298,15 +294,13 @@ app.get('/verify-order/:orderId', async (req, res) => {
     }
 });
 
-// --- ENDPOINT 3: INITIATE PAYOUT (Cashfree Payouts V1) ---
+// --- ENDPOINT 3: INITIATE PAYOUT (Cashfree Payouts) ---
 app.post('/initiate-payout', async (req, res) => {
     try {
         const { payoutId, collection } = req.body;
         
-        // 1. Get Settings & Credentials
         const settingsDoc = await db.doc('settings/platform').get();
         const settings = settingsDoc.data() || {};
-        // Trim to avoid "Token is not valid" caused by spaces
         const clientId = settings.payoutClientId ? settings.payoutClientId.trim() : '';
         const clientSecret = settings.payoutClientSecret ? settings.payoutClientSecret.trim() : '';
 
@@ -314,7 +308,6 @@ app.post('/initiate-payout', async (req, res) => {
             return res.status(500).json({ message: "Payout keys missing in Admin Settings." });
         }
 
-        // 2. Get Payout Request Document
         const collectionName = collection || 'payout_requests';
         const payoutRef = db.collection(collectionName).doc(payoutId);
         const payoutDoc = await payoutRef.get();
@@ -328,17 +321,16 @@ app.post('/initiate-payout', async (req, res) => {
             return res.status(400).json({ message: "Payout already processed." });
         }
 
-        // 3. Parse Beneficiary Details
+        // Beneficiary Details Parsing
         let beneId, beneName, beneAccount, beneIfsc, beneVpa, beneEmail, benePhone;
         
         if (payoutData.upiId) {
-            beneId = `UPI_${payoutData.userId}`.replace(/[^a-zA-Z0-9]/g, ''); // Sanitize ID
+            beneId = `UPI_${payoutData.userId}`.replace(/[^a-zA-Z0-9]/g, '');
             beneVpa = payoutData.upiId;
             beneName = payoutData.userName;
-            beneEmail = "user@bigyapon.com"; // Placeholder required by CF
-            benePhone = "9999999999"; // Placeholder required by CF
+            beneEmail = "user@bigyapon.com"; 
+            benePhone = "9999999999"; 
         } else if (payoutData.bankDetails) {
-            // Simple parsing assuming the format stored in PayoutRequestPage.tsx
             const lines = payoutData.bankDetails.split('\n');
             const holderLine = lines.find(l => l.includes('Account Holder:'));
             const accLine = lines.find(l => l.includes('Account Number:'));
@@ -358,61 +350,38 @@ app.post('/initiate-payout', async (req, res) => {
             return res.status(400).json({ message: "No payment details found." });
         }
 
-        // 4. Cashfree Payout API Logic
+        // Cashfree Payout API Logic
         const isTest = clientId.includes("TEST");
-        // Use gamma for Sandbox, api for Prod
         const actualBaseUrl = isTest ? "https://payout-gamma.cashfree.com" : "https://payout-api.cashfree.com";
 
-        console.log(`Initiating Payout Auth to: ${actualBaseUrl}`);
-
-        // STEP A: AUTHORIZE (Get Bearer Token)
+        // A. AUTHORIZE
         const authResponse = await fetch(`${actualBaseUrl}/payout/v1/authorize`, {
             method: 'POST',
-            headers: {
-                'X-Client-Id': clientId,
-                'X-Client-Secret': clientSecret,
-                'Content-Type': 'application/json'
-            }
+            headers: { 'X-Client-Id': clientId, 'X-Client-Secret': clientSecret, 'Content-Type': 'application/json' }
         });
-        
         const authData = await authResponse.json();
         
         if(authData.status !== 'SUCCESS' || !authData.data || !authData.data.token) {
-             console.error("Payout Auth Error:", JSON.stringify(authData));
              return res.status(400).json({ message: `Auth Failed: ${authData.message || authData.subCode}`, data: authData });
         }
-        
         const authToken = authData.data.token;
 
-        // STEP B: ADD BENEFICIARY (Idempotent-ish, ignore if exists)
-        const benePayload = {
-            beneId,
-            name: beneName,
-            email: beneEmail,
-            phone: benePhone,
-            address1: "India"
-        };
+        // B. ADD BENEFICIARY
+        const benePayload = { beneId, name: beneName, email: beneEmail, phone: benePhone, address1: "India" };
         if (beneVpa) benePayload.vpa = beneVpa;
-        else {
-            benePayload.bankAccount = beneAccount;
-            benePayload.ifsc = beneIfsc;
-        }
+        else { benePayload.bankAccount = beneAccount; benePayload.ifsc = beneIfsc; }
 
         await fetch(`${actualBaseUrl}/payout/v1/addBeneficiary`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(benePayload)
         });
-        // We ignore errors here (e.g. beneficiary already exists 409) and proceed to transfer
 
-        // STEP C: REQUEST TRANSFER
+        // C. REQUEST TRANSFER
         const transferId = `TF_${payoutId}_${Date.now()}`;
         const transferPayload = {
             beneId,
-            amount: Number(payoutData.approvedAmount || payoutData.amount), // Handle daily payout amount override
+            amount: Number(payoutData.approvedAmount || payoutData.amount),
             transferId,
             transferMode: beneVpa ? "UPI" : "IMPS",
             remarks: `Payout for ${payoutData.collabTitle}`
@@ -420,54 +389,41 @@ app.post('/initiate-payout', async (req, res) => {
 
         const transferResponse = await fetch(`${actualBaseUrl}/payout/v1/requestTransfer`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(transferPayload)
         });
 
         const transferData = await transferResponse.json();
 
         if (transferData.status === 'SUCCESS' || transferData.subCode === '200') {
-            // Success
             await payoutRef.update({
-                status: 'processing', // Will be updated to 'completed' via Webhook or manually
+                status: 'processing',
                 transferId: transferId,
                 payoutReference: transferData.data?.referenceId || ''
             });
             return res.json({ success: true, message: "Transfer Initiated", data: transferData });
         } else {
-            console.error("Transfer Error:", transferData);
             return res.status(400).json({ message: transferData.message || "Transfer Failed", data: transferData });
         }
 
     } catch (error) {
-        console.error("Payout Error:", error);
         return res.status(500).json({ message: error.message });
     }
 });
 
-// --- ENDPOINT 4: WEBHOOK (Cashfree Calls This) ---
+// --- ENDPOINT 4: WEBHOOK ---
 app.post('/webhook', async (req, res) => {
     try {
         const data = req.body;
-        // Cashfree expects 200 OK immediately
         res.status(200).send('OK');
 
-        console.log("Webhook Received:", JSON.stringify(data));
-
-        // 1. Payment Gateway Success
         if (data.type === "PAYMENT_SUCCESS_WEBHOOK") {
             const orderId = data.data?.order?.order_id;
             if (orderId) {
                 const actualStatus = await verifyCashfreeStatus(orderId);
-                if (actualStatus === 'PAID') {
-                    await processPaymentSuccess(orderId);
-                }
+                if (actualStatus === 'PAID') await processPaymentSuccess(orderId);
             }
         }
-        // 2. Payout Updates (Transfer Success/Failed/Reversed)
         else if (["TRANSFER_SUCCESS", "TRANSFER_FAILED", "TRANSFER_REVERSED"].includes(data.type)) {
              const transfer = data.data;
              const transferId = transfer.transferId;
@@ -477,14 +433,10 @@ app.post('/webhook', async (req, res) => {
              if (data.type === "TRANSFER_FAILED") newStatus = 'rejected';
              if (data.type === "TRANSFER_REVERSED") newStatus = 'rejected';
 
-             // Find document by transferId
-             // We check both collections as we don't know which one it was
              const payoutQuery = await db.collection('payout_requests').where('transferId', '==', transferId).get();
              
              if (!payoutQuery.empty) {
                  payoutQuery.docs[0].ref.update({ status: newStatus });
-                 
-                 // If completed, update collab status
                  if (newStatus === 'completed') {
                      const pData = payoutQuery.docs[0].data();
                      let colName = '';
@@ -494,9 +446,7 @@ app.post('/webhook', async (req, res) => {
                      if(pData.collaborationType === 'banner_booking') colName = 'banner_booking_requests';
                      
                      if(colName && pData.collaborationId) {
-                         db.collection(colName).doc(pData.collaborationId).update({
-                             paymentStatus: 'payout_complete'
-                         });
+                         db.collection(colName).doc(pData.collaborationId).update({ paymentStatus: 'payout_complete' });
                      }
                  }
              } else {
@@ -506,41 +456,30 @@ app.post('/webhook', async (req, res) => {
                  }
              }
         }
-
     } catch (error) {
-        console.error("Webhook Processing Error:", error);
-        // Don't return error to Cashfree to avoid retries if logic fails
+        console.error("Webhook Error:", error);
     }
 });
 
-// --- ENDPOINT 5: Cashfree KYC (PAN Verification) ---
+// --- ENDPOINT 5: Verify PAN ---
 app.post('/verify-pan', async (req, res) => {
     try {
         const { userId, pan, name } = req.body;
-        
-        if (!pan || !name) {
-            return res.status(400).json({ message: "PAN and Name are required." });
-        }
+        if (!pan || !name) return res.status(400).json({ message: "PAN and Name are required." });
 
         const settingsDoc = await db.doc('settings/platform').get();
         const settings = settingsDoc.data() || {};
         const clientId = settings.cashfreeKycClientId;
         const clientSecret = settings.cashfreeKycClientSecret;
 
-        if (!clientId || !clientSecret) {
-            return res.status(500).json({ message: "Cashfree Verification keys missing in Admin Settings." });
-        }
+        if (!clientId || !clientSecret) return res.status(500).json({ message: "Cashfree Verification keys missing." });
 
         const isTest = clientId.includes("TEST");
         const baseUrl = isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
 
         const response = await fetch(`${baseUrl}/pan`, {
             method: 'POST',
-            headers: {
-                'x-client-id': clientId,
-                'x-client-secret': clientSecret,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'x-client-id': clientId, 'x-client-secret': clientSecret, 'Content-Type': 'application/json' },
             body: JSON.stringify({ pan, name })
         });
 
@@ -548,7 +487,6 @@ app.post('/verify-pan', async (req, res) => {
 
         if (response.ok && data.valid) {
             const nameMatch = data.name_match_score >= 0.8; 
-            
             await db.collection('users').doc(userId).update({
                 kycStatus: nameMatch ? 'approved' : 'pending', 
                 'kycDetails.idType': 'PAN',
@@ -557,20 +495,16 @@ app.post('/verify-pan', async (req, res) => {
                 'kycDetails.panNameMatch': nameMatch,
                 'kycDetails.verifiedBy': 'Cashfree'
             });
-
-            return res.json({ success: true, message: "PAN Verified Successfully", data: data });
+            return res.json({ success: true, message: "PAN Verified", data });
         } else {
-            console.error("Cashfree PAN Error:", data);
             return res.status(400).json({ message: data.message || "PAN Verification Failed", data });
         }
-
     } catch (error) {
-        console.error("Verification Error:", error);
         res.status(500).json({ message: error.message });
     }
 });
 
-// --- ENDPOINT 6: Cashfree Bank Account Verification (Penny Drop) ---
+// --- ENDPOINT 6: Verify Bank (Penny Drop) ---
 app.post('/verify-bank', async (req, res) => {
     try {
         const { userId, account, ifsc, name } = req.body;
@@ -594,7 +528,7 @@ app.post('/verify-bank', async (req, res) => {
         const data = await response.json();
 
         if (response.ok && data.valid) {
-            return res.json({ success: true, message: "Bank Account Verified", nameMatch: data.name_match_score >= 0.8, registeredName: data.registered_name });
+            return res.json({ success: true, message: "Bank Verified", nameMatch: data.name_match_score >= 0.8, registeredName: data.registered_name });
         } else {
             return res.status(400).json({ message: data.message || "Verification Failed" });
         }
@@ -603,11 +537,10 @@ app.post('/verify-bank', async (req, res) => {
     }
 });
 
-// --- ENDPOINT 7: Cashfree UPI Verification ---
+// --- ENDPOINT 7: Verify UPI ---
 app.post('/verify-upi', async (req, res) => {
     try {
         const { userId, vpa, name } = req.body;
-        
         const settingsDoc = await db.doc('settings/platform').get();
         const settings = settingsDoc.data() || {};
         const clientId = settings.cashfreeKycClientId;
@@ -636,11 +569,10 @@ app.post('/verify-upi', async (req, res) => {
     }
 });
 
-// --- ENDPOINT 8: Cashfree GST Verification ---
+// --- ENDPOINT 8: Verify GST ---
 app.post('/verify-gst', async (req, res) => {
     try {
         const { userId, gstin, businessName } = req.body;
-        
         const settingsDoc = await db.doc('settings/platform').get();
         const settings = settingsDoc.data() || {};
         const clientId = settings.cashfreeKycClientId;
@@ -673,41 +605,19 @@ app.post('/verify-gst', async (req, res) => {
     }
 });
 
-// --- ENDPOINT: Mock KYC Verification (For Testing) ---
+// --- ENDPOINT: Mock KYC ---
 app.post('/mock-kyc-verify', async (req, res) => {
     try {
         const { userId, status, details } = req.body;
-        if (!userId) {
-            return res.status(400).json({ message: "userId is required" });
-        }
-
         const newStatus = status || 'approved';
         
-        // Mock Data Generation
-        const mockKycData = details || {
-            verifiedBy: 'Mock DigiLocker',
-            verificationDate: new Date().toISOString(),
-            idType: 'Aadhaar',
-            idNumber: 'XXXX-XXXX-' + Math.floor(1000 + Math.random() * 9000),
-            name: 'Verified User',
-            dob: '01-01-1990',
-            gender: 'Male',
-            address: '123 Mock Street, Digital City, Internet',
-            pincode: '110001',
-            state: 'Delhi',
-            country: 'India'
-        };
-
         await db.collection('users').doc(userId).update({
             kycStatus: newStatus,
-            kycDetails: mockKycData
+            kycDetails: details || {}
         });
 
-        console.log(`Mock KYC Verification successful for user ${userId} with status ${newStatus}`);
-        res.json({ success: true, message: "Mock KYC Verification Processed", status: newStatus, data: mockKycData });
-
+        res.json({ success: true, message: "Mock KYC Processed", status: newStatus });
     } catch (error) {
-        console.error("Mock KYC Verification Error:", error);
         res.status(500).json({ message: "Internal Server Error" });
     }
 });

@@ -26,8 +26,9 @@ const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user,
       setIsVerifying(true);
       setError(null);
       try {
-          // Using existing verifyPan but with Business context (user.companyName or name)
-          await apiService.verifyPan(user.id, formData.businessPan, user.companyName || user.name);
+          // Use user.companyName if available for business name matching, otherwise user.name
+          const nameToMatch = user.companyName || user.name;
+          await apiService.verifyPan(user.id, formData.businessPan, nameToMatch);
           setFormData(prev => ({ ...prev, isBusinessPanVerified: true }));
           alert("Business PAN Verified Successfully!");
       } catch (err: any) {
@@ -42,7 +43,8 @@ const CreatorVerificationPage: React.FC<CreatorVerificationPageProps> = ({ user,
       setIsVerifying(true);
       setError(null);
       try {
-          await apiService.verifyGst(user.id, formData.registrationNo, user.companyName || user.name);
+          const nameToMatch = user.companyName || user.name;
+          await apiService.verifyGst(user.id, formData.registrationNo, nameToMatch);
           setFormData(prev => ({ ...prev, isGstVerified: true }));
           alert("GST Verified Successfully!");
       } catch (err: any) {

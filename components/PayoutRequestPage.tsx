@@ -29,7 +29,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     const [verifiedName, setVerifiedName] = useState<string | null>(null);
     const [isVerifying, setIsVerifying] = useState(false);
 
-    // FIX: Add useMemo to correctly derive the collaboration title from the union type.
+    // Memoize title computation to avoid re-renders
     const collaborationTitle = useMemo(() => {
         if ('title' in collaboration) return collaboration.title;
         if ('campaignTitle' in collaboration) return collaboration.campaignTitle;

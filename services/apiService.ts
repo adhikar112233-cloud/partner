@@ -28,7 +28,6 @@ const getTime = (ts: any): number => {
 
 // Default settings if not found in DB
 const DEFAULT_SETTINGS: PlatformSettings = {
-    // ... (No changes to default settings)
     isCommunityFeedEnabled: true,
     isCreatorMembershipEnabled: true,
     isProMembershipEnabled: true,
@@ -74,7 +73,8 @@ const DEFAULT_SETTINGS: PlatformSettings = {
 };
 
 export const apiService = {
-    // ... (Previous methods remain unchanged until verifyPan)
+    // ... (Previous methods for settings, users, influencers, collabs remain unchanged)
+    
     initializeFirestoreData: async () => {
         // Optional: Create initial collections or settings if empty
     },
@@ -87,7 +87,6 @@ export const apiService = {
             if (docSnap.exists()) {
                 return { ...DEFAULT_SETTINGS, ...docSnap.data() } as PlatformSettings;
             } else {
-                // Initialize if missing
                 return DEFAULT_SETTINGS;
             }
         } catch (error) {
@@ -241,7 +240,7 @@ export const apiService = {
         await updateDoc(doc(db, 'banner_booking_requests', id), data);
     },
 
-    // --- Ad Slot Requests (Live TV) ---
+    // --- Ad Slot Requests ---
     sendAdSlotRequest: async (req: Omit<AdSlotRequest, 'id' | 'status' | 'timestamp'>) => {
         await addDoc(collection(db, 'ad_slot_requests'), {
             ...req,
@@ -271,7 +270,7 @@ export const apiService = {
         await updateDoc(doc(db, 'ad_slot_requests', id), data);
     },
 
-    // --- Collaboration Requests (Direct) ---
+    // --- Collab Requests ---
     sendCollabRequest: async (req: any) => {
         const docRef = await addDoc(collection(db, 'collaboration_requests'), {
             ...req,
@@ -345,7 +344,6 @@ export const apiService = {
     },
 
     applyToCampaign: async (app: Omit<CampaignApplication, 'id' | 'status' | 'timestamp'>) => {
-        // Add applicant to campaign
         const campaignRef = doc(db, 'campaigns', app.campaignId);
         await updateDoc(campaignRef, {
             applicantIds: arrayUnion(app.influencerId)
@@ -388,10 +386,6 @@ export const apiService = {
             const data = d.data();
             return { id: d.id, ...data };
         });
-    },
-
-    getMessages: async (userId1: string, userId2: string): Promise<any[]> => {
-        return [];
     },
 
     getMessagesListener: (userId1: string, userId2: string, onUpdate: (msgs: any[]) => void, onError: (err: any) => void) => {
@@ -522,11 +516,8 @@ export const apiService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, pan, name })
         });
-        
         const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.message || "Verification failed");
-        }
+        if (!response.ok) throw new Error(data.message || "Verification failed");
         return data;
     },
 
@@ -601,14 +592,12 @@ export const apiService = {
         const payload = { ...data };
         if (payload.collabId === undefined) payload.collabId = null;
 
-        // 1. Create Payout Request
         await addDoc(collection(db, 'payout_requests'), {
             ...payload,
             status: 'pending',
             timestamp: serverTimestamp()
         });
         
-        // 2. Update Collaboration Payment Status
         let collectionName = '';
         switch (data.collaborationType) {
             case 'direct': collectionName = 'collaboration_requests'; break;
@@ -658,7 +647,6 @@ export const apiService = {
             timestamp: serverTimestamp()
         });
 
-        // Update Collaboration Status
         let collectionName = '';
         switch (data.collabType) {
             case 'direct': collectionName = 'collaboration_requests'; break;
@@ -737,7 +725,7 @@ export const apiService = {
             status: 'open',
             timestamp: serverTimestamp()
         });
-        // Update collab status to 'disputed'
+        
         const collectionMap: any = {
             'direct': 'collaboration_requests',
             'campaign': 'campaign_applications',
@@ -940,7 +928,6 @@ export const apiService = {
     },
 
     sendPushNotification: async (title: string, body: string, targetRole: string, url?: string) => {
-        console.log(`Sending push: ${title} to ${targetRole}`);
         let q = query(collection(db, 'users'));
         if (targetRole !== 'all') {
             q = query(collection(db, 'users'), where('role', '==', targetRole));
@@ -969,7 +956,6 @@ export const apiService = {
     },
 
     sendBulkEmail: async (role: string, subject: string, body: string) => {
-        console.log(`Queued email to ${role}: ${subject}`);
         await addDoc(collection(db, 'email_queue'), {
             role,
             subject,
@@ -1091,7 +1077,6 @@ export const apiService = {
                 throw new Error(data.message || "Payout initiation failed");
             }
             
-            console.log("Payout initiated successfully", data);
             return data;
         } catch (error) {
             console.error("Process Payout Error:", error);

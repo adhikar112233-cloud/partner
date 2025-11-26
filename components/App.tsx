@@ -663,7 +663,6 @@ const App: React.FC = () => {
                />;
       case View.PAYMENT_SUCCESS:
         return <PaymentSuccessPage user={user} onComplete={async () => {
-            // FIX: Update to await refreshUser to ensure the state is updated before view change.
             await refreshUser();
             window.history.replaceState({}, document.title, window.location.pathname);
             refreshAllData();

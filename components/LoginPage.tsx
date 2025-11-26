@@ -78,6 +78,8 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
                 try { recaptchaVerifierForgotRef.current.clear(); } catch(e) {}
                 recaptchaVerifierForgotRef.current = null;
             }
+            const container = document.getElementById('recaptcha-container-forgot');
+            if (container) container.innerHTML = '';
         };
     }, []);
 
@@ -158,6 +160,8 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void; platformSettings: Pla
                 try { recaptchaVerifierForgotRef.current.clear(); } catch(e) {}
                 recaptchaVerifierForgotRef.current = null;
             }
+            const container = document.getElementById('recaptcha-container-forgot');
+            if (container) container.innerHTML = '';
             
             if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
                 setError('auth/unauthorized-domain');
@@ -358,6 +362,22 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   // ReCaptcha ref
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
+  // Clean ReCaptcha Instance Helper
+  const clearRecaptcha = (ref: React.MutableRefObject<RecaptchaVerifier | null>, containerId: string) => {
+    if (ref.current) {
+        try {
+            ref.current.clear();
+        } catch (error) {
+            console.warn(`Failed to clear recaptcha on ${containerId}`, error);
+        }
+        ref.current = null;
+    }
+    const container = document.getElementById(containerId);
+    if (container) {
+        container.innerHTML = '';
+    }
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref') || params.get('code');
@@ -365,16 +385,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         setReferralCode(ref);
         setAuthMode('signup');
     }
-    // Cleanup ReCaptcha on mount/unmount
+    // Cleanup ReCaptcha on unmount
     return () => {
-        if (recaptchaVerifierRef.current) {
-            try { recaptchaVerifierRef.current.clear(); } catch(e) {}
-            recaptchaVerifierRef.current = null;
-        }
-        if (recaptchaVerifierSignupRef.current) {
-            try { recaptchaVerifierSignupRef.current.clear(); } catch(e) {}
-            recaptchaVerifierSignupRef.current = null;
-        }
+        clearRecaptcha(recaptchaVerifierRef, 'recaptcha-container-login');
+        clearRecaptcha(recaptchaVerifierSignupRef, 'recaptcha-container-signup');
     };
   }, []);
 
@@ -414,14 +428,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
     setSignupConfirmationResult(null);
     
     // Clean up Recaptcha when switching modes
-    if (recaptchaVerifierRef.current) {
-        try { recaptchaVerifierRef.current.clear(); } catch(e) { console.warn(e); }
-        recaptchaVerifierRef.current = null;
-    }
-    if (recaptchaVerifierSignupRef.current) {
-        try { recaptchaVerifierSignupRef.current.clear(); } catch(e) { console.warn(e); }
-        recaptchaVerifierSignupRef.current = null;
-    }
+    clearRecaptcha(recaptchaVerifierRef, 'recaptcha-container-login');
+    clearRecaptcha(recaptchaVerifierSignupRef, 'recaptcha-container-signup');
   };
   
   const handleSendLoginOtp = async () => {
@@ -437,13 +445,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
       
       setIsLoading(true);
       try {
-          if (recaptchaVerifierRef.current) {
-              try { recaptchaVerifierRef.current.clear(); } catch (e) {}
-              recaptchaVerifierRef.current = null;
-          }
-          
-          const container = document.getElementById('recaptcha-container-login');
-          if (container) { container.innerHTML = ''; }
+          clearRecaptcha(recaptchaVerifierRef, 'recaptcha-container-login');
 
           const newVerifier = new RecaptchaVerifier(auth, 'recaptcha-container-login', { 
               'size': 'invisible',
@@ -451,6 +453,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
               'expired-callback': () => {
                   setError("Recaptcha expired, please try again.");
                   setIsLoading(false);
+                  clearRecaptcha(recaptchaVerifierRef, 'recaptcha-container-login');
               }
           });
           
@@ -481,14 +484,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
       }
 
       try {
-          // Cleanup previous instances
-          if (recaptchaVerifierSignupRef.current) {
-              try { recaptchaVerifierSignupRef.current.clear(); } catch (e) {}
-              recaptchaVerifierSignupRef.current = null;
-          }
-          
+          clearRecaptcha(recaptchaVerifierSignupRef, 'recaptcha-container-signup');
+
           const container = document.getElementById('recaptcha-container-signup');
-          if (container) { container.innerHTML = ''; }
+          if (!container) {
+              throw new Error("Recaptcha container not found in DOM.");
+          }
 
           const newVerifier = new RecaptchaVerifier(auth, 'recaptcha-container-signup', { 
               'size': 'invisible',
@@ -496,6 +497,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
               'expired-callback': () => {
                   setError("Recaptcha expired, please try again.");
                   setIsLoading(false);
+                  clearRecaptcha(recaptchaVerifierSignupRef, 'recaptcha-container-signup');
               }
           });
           
@@ -541,22 +543,28 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
   };
 
   const handleAuthError = (err: any) => {
-      if (err.code === 'auth/unauthorized-domain' || err.code === 'auth/network-request-failed') {
+      const errorCode = err.code;
+      const errorMessage = err.message || '';
+
+      if (errorCode === 'auth/unauthorized-domain' || 
+          errorCode === 'auth/captcha-check-failed' ||
+          errorCode === 'auth/network-request-failed' ||
+          errorMessage.includes('Hostname match not found')) {
         setError('auth/unauthorized-domain');
-      } else if (err.code === 'auth/auth-domain-config-required') {
+      } else if (errorCode === 'auth/auth-domain-config-required') {
         setError('auth/auth-domain-config-required');
-      } else if (err.code === 'auth/internal-error') {
+      } else if (errorCode === 'auth/internal-error') {
           setError('auth/internal-error');
-      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-verification-code') {
+      } else if (errorCode === 'auth/invalid-credential' || errorCode === 'auth/invalid-verification-code') {
           setError('Invalid credentials or OTP. Please check and try again.');
-      } else if (err.message && err.message.includes('blocked')) {
-        setError(err.message);
-      } else if (err.code === 'auth/too-many-requests') {
+      } else if (errorMessage && errorMessage.includes('blocked')) {
+        setError(errorMessage);
+      } else if (errorCode === 'auth/too-many-requests') {
           setError('Too many requests. Please wait a while.');
-      } else if (err.code === 'auth/email-already-in-use') {
+      } else if (errorCode === 'auth/email-already-in-use') {
           setError("Email is already registered.");
       } else {
-        setError(err.message || 'Authentication failed. Please check your credentials.');
+        setError(errorMessage || 'Authentication failed. Please check your credentials.');
       }
   };
 
@@ -621,7 +629,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         title = "Action Required: Authorize Domain";
         content = (
             <>
-                <p>Firebase authentication requires this app's domain to be on an allowlist. This is a one-time setup.</p>
+                <p>Firebase authentication requires this app's domain to be on an allowlist. This is a security feature.</p>
                 <ol className="list-decimal list-inside space-y-2 mt-3 text-sm">
                     <li>
                         <strong>Go to Auth Settings:</strong>
@@ -647,9 +655,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             <>
                 <p>The request failed. This typically means:</p>
                 <ul className="list-disc list-inside space-y-1 mt-2 text-sm">
-                    <li>The domain <strong>{window.location.hostname}</strong> is not whitelisted in Firebase Authentication Settings.</li>
+                    <li>The domain <strong>{window.location.hostname}</strong> is not authorized. Follow the "Authorize Domain" steps above.</li>
                     <li>The <strong>Phone Provider</strong> is not enabled in Firebase Console.</li>
-                    <li>Your Firebase project may have exceeded its SMS quota (Spark plan limit is 10/day). Upgrade to Blaze or add a test phone number.</li>
+                    <li>Your Firebase project may have exceeded its SMS quota.</li>
                 </ul>
             </>
         );

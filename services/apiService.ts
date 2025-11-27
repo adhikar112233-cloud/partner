@@ -884,6 +884,9 @@ export const apiService = {
         const snapshot = await getDocs(collection(db, 'disputes'));
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Dispute));
     },
+    updateDispute: async (id: string, data: any) => {
+        await updateDoc(doc(db, 'disputes', id), data);
+    },
     getNotificationsForUserListener: (userId: string, callback: (notifs: AppNotification[]) => void, onError: (err: any) => void) => {
         const q = query(collection(db, `users/${userId}/notifications`), orderBy('timestamp', 'desc'), limit(50));
         return onSnapshot(q, (snapshot) => {

@@ -408,12 +408,40 @@ const CollaborationsPanel: React.FC<{
     collaborations: CombinedCollabItem[];
     allTransactions: Transaction[];
     onUpdate: (id: string, type: string, data: any) => Promise<void>;
-}> = ({ collaborations }) => {
+}> = ({ collaborations, allTransactions, onUpdate }) => {
     const [selectedCollab, setSelectedCollab] = useState<CombinedCollabItem | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const filteredCollaborations = useMemo(() => {
+        if (!searchQuery) return collaborations;
+        const lower = searchQuery.toLowerCase();
+        return collaborations.filter(c =>
+            (c.title && c.title.toLowerCase().includes(lower)) ||
+            (c.customerName && c.customerName.toLowerCase().includes(lower)) ||
+            (c.providerName && c.providerName.toLowerCase().includes(lower)) ||
+            (c.id && c.id.toLowerCase().includes(lower)) ||
+            (c.visibleCollabId && c.visibleCollabId.toLowerCase().includes(lower)) ||
+            (c.customerPiNumber && c.customerPiNumber.toLowerCase().includes(lower)) ||
+            (c.providerPiNumber && c.providerPiNumber.toLowerCase().includes(lower))
+        );
+    }, [collaborations, searchQuery]);
 
     return (
         <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold mb-4 dark:text-white">All Collaborations</h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <h2 className="text-2xl font-bold dark:text-white">All Collaborations</h2>
+                <div className="relative w-full sm:w-64">
+                    <input 
+                        type="text" 
+                        placeholder="Search collaborations..." 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                    <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                </div>
+            </div>
+            
             <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0 z-10 text-xs uppercase text-gray-500 dark:text-gray-400">
@@ -427,7 +455,7 @@ const CollaborationsPanel: React.FC<{
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
-                        {collaborations.map(c => (
+                        {filteredCollaborations.map(c => (
                             <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                                 <td className="p-4">
                                     <div className="font-bold text-gray-800 dark:text-white">{c.title}</div>
@@ -480,6 +508,13 @@ const CollaborationsPanel: React.FC<{
                                 </td>
                             </tr>
                         ))}
+                        {filteredCollaborations.length === 0 && (
+                            <tr>
+                                <td colSpan={6} className="p-8 text-center text-gray-500 dark:text-gray-400">
+                                    No collaborations found matching your search.
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
@@ -491,6 +526,7 @@ const CollaborationsPanel: React.FC<{
 // --- KYC Panel ---
 const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
     const [pendingKycs, setPendingKycs] = useState<User[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
     
     useEffect(() => {
         apiService.getKycSubmissions().then(setPendingKycs);
@@ -511,12 +547,35 @@ const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
         }
     };
 
+    const filteredKycs = useMemo(() => {
+        if (!searchQuery) return pendingKycs;
+        const lower = searchQuery.toLowerCase();
+        return pendingKycs.filter(u => 
+            u.name.toLowerCase().includes(lower) ||
+            u.email.toLowerCase().includes(lower) ||
+            (u.kycDetails?.idNumber && u.kycDetails.idNumber.toLowerCase().includes(lower))
+        );
+    }, [pendingKycs, searchQuery]);
+
     return (
         <div className="p-6">
-            <h2 className="text-2xl font-bold mb-4 dark:text-white">Pending KYC Requests</h2>
-            {pendingKycs.length === 0 ? <p className="dark:text-gray-400">No pending KYC requests.</p> : (
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <h2 className="text-2xl font-bold dark:text-white">Pending KYC Requests</h2>
+                <div className="relative w-full sm:w-64">
+                    <input 
+                        type="text" 
+                        placeholder="Search KYC..." 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                    <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                </div>
+            </div>
+
+            {filteredKycs.length === 0 ? <p className="dark:text-gray-400">No pending KYC requests found.</p> : (
                 <div className="space-y-4">
-                    {pendingKycs.map(u => (
+                    {filteredKycs.map(u => (
                         <div key={u.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow flex justify-between items-center">
                             <div>
                                 <p className="font-bold dark:text-white">{u.name}</p>
@@ -539,6 +598,7 @@ const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
 // --- Creator Verification Panel ---
 const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
     const [pendingVerifications, setPendingVerifications] = useState<User[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         apiService.getPendingCreatorVerifications().then(setPendingVerifications);
@@ -559,12 +619,34 @@ const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate
         }
     };
 
+    const filteredVerifications = useMemo(() => {
+        if (!searchQuery) return pendingVerifications;
+        const lower = searchQuery.toLowerCase();
+        return pendingVerifications.filter(u => 
+            u.name.toLowerCase().includes(lower) ||
+            u.email.toLowerCase().includes(lower)
+        );
+    }, [pendingVerifications, searchQuery]);
+
     return (
         <div className="p-6">
-            <h2 className="text-2xl font-bold mb-4 dark:text-white">Creator Verification Requests</h2>
-            {pendingVerifications.length === 0 ? <p className="dark:text-gray-400">No pending requests.</p> : (
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <h2 className="text-2xl font-bold dark:text-white">Creator Verification Requests</h2>
+                <div className="relative w-full sm:w-64">
+                    <input 
+                        type="text" 
+                        placeholder="Search requests..." 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                    <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                </div>
+            </div>
+
+            {filteredVerifications.length === 0 ? <p className="dark:text-gray-400">No pending requests found.</p> : (
                 <div className="space-y-4">
-                    {pendingVerifications.map(u => (
+                    {filteredVerifications.map(u => (
                         <div key={u.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow flex justify-between items-center">
                             <div>
                                 <p className="font-bold dark:text-white">{u.name} ({u.role})</p>
@@ -585,6 +667,7 @@ const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate
 // --- Community Management Panel ---
 const CommunityManagementPanel: React.FC = () => {
     const [posts, setPosts] = useState<Post[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
     
     useEffect(() => {
         apiService.getPosts().then(setPosts);
@@ -597,11 +680,33 @@ const CommunityManagementPanel: React.FC = () => {
         }
     };
 
+    const filteredPosts = useMemo(() => {
+        if (!searchQuery) return posts;
+        const lower = searchQuery.toLowerCase();
+        return posts.filter(p => 
+            p.userName.toLowerCase().includes(lower) ||
+            p.text.toLowerCase().includes(lower)
+        );
+    }, [posts, searchQuery]);
+
     return (
         <div className="p-6">
-            <h2 className="text-2xl font-bold mb-4 dark:text-white">Community Management</h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <h2 className="text-2xl font-bold dark:text-white">Community Management</h2>
+                <div className="relative w-full sm:w-64">
+                    <input 
+                        type="text" 
+                        placeholder="Search posts..." 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                    <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                </div>
+            </div>
+
             <div className="grid gap-4">
-                {posts.map(post => (
+                {filteredPosts.length === 0 ? <p className="dark:text-gray-400">No posts found.</p> : filteredPosts.map(post => (
                     <div key={post.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow">
                         <div className="flex justify-between items-center">
                             <p className="font-bold dark:text-white">{post.userName}</p>
@@ -616,22 +721,127 @@ const CommunityManagementPanel: React.FC = () => {
     );
 };
 
+// --- Dispute Modal ---
+const DisputeResolutionModal: React.FC<{
+    dispute: Dispute;
+    onClose: () => void;
+    onResolve: () => void;
+}> = ({ dispute, onClose, onResolve }) => {
+    const [isResolving, setIsResolving] = useState(false);
+
+    const handleResolveAction = async () => {
+        setIsResolving(true);
+        try {
+            await apiService.updateDispute(dispute.id, { status: 'resolved' });
+            onResolve();
+            onClose();
+        } catch (error) {
+            console.error("Failed to resolve dispute", error);
+            alert("Failed to resolve dispute. Please try again.");
+        } finally {
+            setIsResolving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[110] p-4 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Resolve Dispute</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm">
+                    Are you sure you want to resolve this dispute? This will mark it as closed in the system.
+                </p>
+                <div className="flex justify-end gap-3">
+                    <button 
+                        onClick={onClose}
+                        disabled={isResolving}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleResolveAction}
+                        disabled={isResolving}
+                        className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:opacity-50"
+                    >
+                        {isResolving ? 'Resolving...' : 'Confirm Resolve'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- Disputes Panel ---
-const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transaction[], onUpdate: () => void }> = ({ disputes }) => {
+const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transaction[], onUpdate: () => void }> = ({ disputes, onUpdate }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedDispute, setSelectedDispute] = useState<Dispute | null>(null);
+
+    const filteredDisputes = useMemo(() => {
+        if (!searchQuery) return disputes;
+        const lower = searchQuery.toLowerCase();
+        return disputes.filter(d => 
+            d.collaborationTitle.toLowerCase().includes(lower) ||
+            d.disputedByName.toLowerCase().includes(lower) ||
+            d.disputedAgainstName.toLowerCase().includes(lower) ||
+            d.reason.toLowerCase().includes(lower) ||
+            d.id.toLowerCase().includes(lower)
+        );
+    }, [disputes, searchQuery]);
+
+    const handleResolveClick = (dispute: Dispute) => {
+        setSelectedDispute(dispute);
+    };
+
     return (
         <div className="p-6">
-            <h2 className="text-2xl font-bold mb-4 dark:text-white">Disputes</h2>
-            {disputes.length === 0 ? <p className="dark:text-gray-400">No open disputes.</p> : (
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <h2 className="text-2xl font-bold dark:text-white">Disputes</h2>
+                <div className="relative w-full sm:w-64">
+                    <input 
+                        type="text" 
+                        placeholder="Search disputes..." 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                    <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                </div>
+            </div>
+
+            {filteredDisputes.length === 0 ? <p className="dark:text-gray-400">No open disputes found.</p> : (
                 <div className="space-y-4">
-                    {disputes.map(d => (
+                    {filteredDisputes.map(d => (
                         <div key={d.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-red-500">
-                            <p className="font-bold dark:text-white">Dispute on: {d.collaborationTitle}</p>
+                            <div className="flex justify-between">
+                                <p className="font-bold dark:text-white">Dispute on: {d.collaborationTitle}</p>
+                                <span className="text-xs font-mono text-gray-400">ID: {d.id}</span>
+                            </div>
                             <p className="text-sm text-gray-600 dark:text-gray-400">By: {d.disputedByName} vs {d.disputedAgainstName}</p>
                             <p className="mt-2 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm italic dark:text-gray-300">{d.reason}</p>
                             <p className="mt-2 font-bold dark:text-gray-200">Amount: ₹{d.amount}</p>
+                            
+                            {d.status !== 'resolved' && (
+                                <div className="mt-4 flex justify-end pt-3 border-t dark:border-gray-700">
+                                    <button 
+                                        onClick={() => handleResolveClick(d)}
+                                        className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
+                                    >
+                                        <CheckBadgeIcon className="w-4 h-4" />
+                                        Resolve
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
+            )}
+
+            {selectedDispute && (
+                <DisputeResolutionModal 
+                    dispute={selectedDispute} 
+                    onClose={() => setSelectedDispute(null)} 
+                    onResolve={onUpdate} 
+                />
             )}
         </div>
     );

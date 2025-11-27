@@ -1,12 +1,14 @@
 
 
+
+
 // ... (imports)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, LiveHelpSession, LiveHelpMessage, QuickReply } from '../types';
 import { db } from '../services/firebase';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { apiService } from '../services/apiService';
-import { CogIcon, TrashIcon, PencilIcon } from './Icons';
+import { CogIcon, TrashIcon, PencilIcon, SearchIcon } from './Icons';
 
 // ... (ManageQuickRepliesModal remains same)
 const ManageQuickRepliesModal: React.FC<{
@@ -284,6 +286,7 @@ const LiveHelpPanel: React.FC<LiveHelpPanelProps> = ({ adminUser }) => {
     const [activeTab, setActiveTab] = useState<Tab>('new');
     const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
     const [isManageRepliesModalOpen, setIsManageRepliesModalOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         const unsubscribe = apiService.getAllLiveHelpSessionsListener((sessions) => {
@@ -319,20 +322,32 @@ const LiveHelpPanel: React.FC<LiveHelpPanelProps> = ({ adminUser }) => {
         closed: { label: 'Closed', data: closedSessions },
     };
 
-    const currentList = tabData[activeTab].data;
+    const currentList = tabData[activeTab].data.filter(session => 
+        !searchQuery || session.userName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     return (
         <div className="flex h-full">
             <div className="w-1/3 border-r bg-gray-50 flex flex-col">
-                <div className="p-2 border-b">
+                <div className="p-2 border-b space-y-2">
+                    <div className="relative w-full">
+                        <input 
+                            type="text" 
+                            placeholder="Search user..." 
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="w-full pl-8 pr-2 py-1 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <SearchIcon className="absolute left-2 top-1.5 h-4 w-4 text-gray-400" />
+                    </div>
                     <div className="flex space-x-1">
                         {Object.keys(tabData).map(key => (
                             <button
                                 key={key}
                                 onClick={() => setActiveTab(key as Tab)}
-                                className={`flex-1 text-xs font-semibold p-2 rounded-md transition-colors ${activeTab === key ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-200'}`}
+                                className={`flex-1 text-[10px] sm:text-xs font-semibold p-2 rounded-md transition-colors whitespace-nowrap overflow-hidden text-ellipsis ${activeTab === key ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-200'}`}
                             >
-                                {tabData[key as Tab].label} ({tabData[key as Tab].data.length})
+                                {tabData[key as Tab].label}
                             </button>
                         ))}
                     </div>

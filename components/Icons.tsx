@@ -5,9 +5,10 @@ interface LogoIconProps {
   showTagline?: boolean;
   iconOnly?: boolean;
   className?: string;
+  idSuffix?: string;
 }
 
-export const LogoIcon: React.FC<LogoIconProps> = ({ showTagline = false, iconOnly = false, className = "" }) => {
+export const LogoIcon: React.FC<LogoIconProps> = ({ showTagline = false, iconOnly = false, className = "", idSuffix = "" }) => {
     // Wider viewBox to prevent clipping of the full text
     let svgViewBox = showTagline ? "0 0 260 65" : "0 0 260 55"; 
     if (iconOnly) {
@@ -17,33 +18,37 @@ export const LogoIcon: React.FC<LogoIconProps> = ({ showTagline = false, iconOnl
     const defaultClass = showTagline ? "h-14 w-auto" : "h-10 w-auto";
     const combinedClass = className || defaultClass;
 
+    const boxGradientId = `box-gradient${idSuffix ? `-${idSuffix}` : ''}`;
+    const textGradientId = `text-gradient${idSuffix ? `-${idSuffix}` : ''}`;
+    const shadowId = `logoShadow${idSuffix ? `-${idSuffix}` : ''}`;
+
     return (
         <svg className={combinedClass} viewBox={svgViewBox} fill="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
-                <linearGradient id="box-gradient" x1="0" y1="0" x2="1" y2="1">
+                <linearGradient id={boxGradientId} x1="0" y1="0" x2="1" y2="1">
                     <stop offset="0%" stopColor="#00c6fb"/>
                     <stop offset="100%" stopColor="#005bea"/>
                 </linearGradient>
-                 <linearGradient id="text-gradient" x1="0" y1="0" x2="1" y2="0">
+                 <linearGradient id={textGradientId} x1="0" y1="0" x2="1" y2="0">
                     <stop offset="0%" stopColor="#00c6fb"/>
                     <stop offset="100%" stopColor="#005bea"/>
                 </linearGradient>
-                <filter id="logoShadow" x="-50%" y="-50%" width="200%" height="200%">
+                <filter id={shadowId} x="-50%" y="-50%" width="200%" height="200%">
                   <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#000000" floodOpacity="0.15" />
                 </filter>
             </defs>
             
             {/* Rounded Square with "B" */}
-            <g filter="url(#logoShadow)">
-                <rect x="2" y="2" width="48" height="48" rx="12" fill="url(#box-gradient)" />
+            <g filter={`url(#${shadowId})`}>
+                <rect x="2" y="2" width="48" height="48" rx="12" fill={`url(#${boxGradientId})`} />
                 <path d="M4 4 H46 A10 10 0 0 1 46 46 H4 A10 10 0 0 1 4 4 Z" stroke="#ffffff" strokeWidth="1.5" strokeOpacity="0.25" fill="none"/>
             </g>
-            <text x="26" y="38" fontSize="32" fontWeight="900" fontFamily="Arial, sans-serif" textAnchor="middle" fill="white" filter="url(#logoShadow)" style={{ userSelect: 'none' }}>B</text>
+            <text x="26" y="38" fontSize="32" fontWeight="900" fontFamily="Arial, sans-serif" textAnchor="middle" fill="white" filter={`url(#${shadowId})`} style={{ userSelect: 'none' }}>B</text>
             
             {/* BIGYAPON text - Only render if not iconOnly to keep DOM light, though viewBox hides it anyway */}
             {!iconOnly && (
                 <>
-                    <text x="60" y="38" fontSize="30" fontWeight="900" fontFamily="Arial, sans-serif" fill="url(#text-gradient)" filter="url(#logoShadow)" letterSpacing="-0.5" style={{ userSelect: 'none' }}>BIGYAPON</text>
+                    <text x="60" y="38" fontSize="30" fontWeight="900" fontFamily="Arial, sans-serif" fill={`url(#${textGradientId})`} filter={`url(#${shadowId})`} letterSpacing="-0.5" style={{ userSelect: 'none' }}>BIGYAPON</text>
                     {/* Tagline */}
                     {showTagline && (
                         <text x="60" y="56" fontSize="13" fontWeight="500" fontFamily="Arial, sans-serif" fill="#64748b" letterSpacing="0.5" style={{ userSelect: 'none' }}>Promote Smart. Grow Fast.</text>
@@ -269,7 +274,7 @@ export const RocketIcon = ({ className }: { className?: string }) => (
 
 export const CogIcon = ({ className }: { className?: string }) => (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12a7.5 7.5 0 0015 0m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12a7.5 7.5 0 0015 0m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5" />
     </svg>
 );
 
@@ -377,7 +382,7 @@ export const WalletIcon = ({ className }: { className?: string }) => (
 
 export const GiftIcon = ({ className }: { className?: string }) => (
   <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H4.5a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H4.5a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.125c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
   </svg>
 );
 
@@ -442,5 +447,12 @@ export const LoanRecharge3DIcon = ({ className }: { className?: string }) => (
             {/* Text */}
             <text x="80" y="40" fill="white" fontSize="24" fontWeight="bold" fontFamily="Arial, sans-serif" letterSpacing="1">LOAN & RECHARGE</text>
         </g>
+    </svg>
+);
+
+export const EyeIcon = ({ className }: { className?: string }) => (
+    <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
 );

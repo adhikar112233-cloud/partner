@@ -174,6 +174,7 @@ export interface PlatformSettings {
     isLiveHelpEnabled: boolean;
     isProfileBoostingEnabled: boolean;
     isCampaignBoostingEnabled: boolean;
+    isBannerAdsEnabled?: boolean; // New flag for Banner Ads visibility
     
     // KYC Settings
     isKycIdProofRequired: boolean;
@@ -690,6 +691,11 @@ export interface CombinedCollabItem {
     paymentStatus: string;
     payoutStatus: string;
     originalData: any;
+    visibleCollabId?: string;
+    customerId?: string;
+    providerId?: string;
+    transactionRef?: string;
+    disputeStatus?: string;
 }
 
 export interface LeaderboardEntry {

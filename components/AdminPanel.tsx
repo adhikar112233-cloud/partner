@@ -5,7 +5,7 @@ import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaborat
 import { Timestamp } from 'firebase/firestore';
 import PostCard from './PostCard';
 import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
-import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, CheckBadgeIcon, TrophyIcon, DocumentTextIcon, SearchIcon, PencilIcon, TrashIcon } from './Icons';
+import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, CheckBadgeIcon, TrophyIcon, DocumentTextIcon, SearchIcon, PencilIcon, TrashIcon, EyeIcon } from './Icons';
 import LiveHelpPanel from './LiveHelpPanel';
 import PayoutsPanel from './PayoutsPanel';
 import { filterPostsWithAI } from '../services/geminiService';
@@ -27,6 +27,8 @@ interface AdminPanelProps {
     platformSettings: PlatformSettings;
     onUpdate: () => void;
 }
+
+const ALL_PERMISSIONS: StaffPermission[] = ['super_admin', 'user_management', 'financial', 'collaborations', 'kyc', 'community', 'support', 'marketing', 'live_help', 'analytics'];
 
 const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void }> = ({ enabled, onChange }) => (
     <button
@@ -92,35 +94,310 @@ const DashboardPanel: React.FC<{
     );
 };
 
+// --- Staff Modal ---
+const StaffModal: React.FC<{
+    staff: User | null;
+    onClose: () => void;
+    onSave: () => void;
+}> = ({ staff, onClose, onSave }) => {
+    const [name, setName] = useState(staff?.name || '');
+    const [email, setEmail] = useState(staff?.email || '');
+    const [password, setPassword] = useState(''); // Only for new
+    const [permissions, setPermissions] = useState<StaffPermission[]>(staff?.staffPermissions || []);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const togglePermission = (perm: StaffPermission) => {
+        setPermissions(prev => 
+            prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm]
+        );
+    };
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError(null);
+        try {
+            if (staff) {
+                // Edit
+                await apiService.updateUser(staff.id, {
+                    name,
+                    staffPermissions: permissions
+                });
+            } else {
+                // Create
+                if (!password || password.length < 6) throw new Error("Password must be at least 6 characters.");
+                // Generating a placeholder mobile number as it's required by the auth service logic for profile creation
+                const randomMobile = '9' + Math.floor(100000000 + Math.random() * 900000000).toString();
+                await authService.createUserByAdmin(email, password, 'staff', name, randomMobile, 'free', permissions);
+            }
+            onSave();
+            onClose();
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[70] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <h3 className="text-xl font-bold mb-4 dark:text-white">{staff ? 'Edit Staff' : 'Create Staff Account'}</h3>
+                <form onSubmit={handleSave} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                        <input value={name} onChange={e => setName(e.target.value)} required className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
+                    </div>
+                    {!staff && (
+                        <>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                                <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                                <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
+                            </div>
+                        </>
+                    )}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Permissions</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {ALL_PERMISSIONS.map(perm => (
+                                <label key={perm} className="flex items-center space-x-2 p-2 border rounded dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={permissions.includes(perm)} 
+                                        onChange={() => togglePermission(perm)}
+                                        className="rounded text-indigo-600"
+                                    />
+                                    <span className="text-sm capitalize dark:text-gray-200">{perm.replace('_', ' ')}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                    <div className="flex justify-end gap-3 mt-4">
+                        <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 dark:bg-gray-700 dark:text-white">Cancel</button>
+                        <button type="submit" disabled={isLoading} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">
+                            {isLoading ? 'Saving...' : 'Save Staff'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 // --- Staff Management Panel ---
 const StaffManagementPanel: React.FC<{
     staffUsers: User[];
     onUpdate: () => void;
     platformSettings: PlatformSettings;
 }> = ({ staffUsers, onUpdate }) => {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingStaff, setEditingStaff] = useState<User | null>(null);
+
+    const handleCreate = () => {
+        setEditingStaff(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEdit = (user: User) => {
+        setEditingStaff(user);
+        setIsModalOpen(true);
+    };
+
     return (
-        <div className="p-6">
-            <h2 className="text-2xl font-bold mb-4 dark:text-white">Staff Management</h2>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700">
+        <div className="p-6 h-full flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold dark:text-white">Staff Management</h2>
+                <button onClick={handleCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2">
+                    <UserGroupIcon className="w-5 h-5" />
+                    Create New Staff
+                </button>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden flex-1 overflow-y-auto">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                         <tr>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Name</th>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Email</th>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Permissions</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300 font-semibold border-b dark:border-gray-600">Name</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300 font-semibold border-b dark:border-gray-600">Email</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300 font-semibold border-b dark:border-gray-600">Permissions</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300 font-semibold border-b dark:border-gray-600 text-right">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                         {staffUsers.map(u => (
-                            <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td className="p-4 dark:text-gray-200">{u.name}</td>
+                            <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                <td className="p-4 dark:text-gray-200 font-medium">{u.name}</td>
                                 <td className="p-4 dark:text-gray-200">{u.email}</td>
-                                <td className="p-4 dark:text-gray-200">{u.staffPermissions?.join(', ') || 'None'}</td>
+                                <td className="p-4 dark:text-gray-200">
+                                    <div className="flex flex-wrap gap-1">
+                                        {u.staffPermissions?.includes('super_admin') ? (
+                                            <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-bold">Super Admin</span>
+                                        ) : (
+                                            u.staffPermissions?.map(p => (
+                                                <span key={p} className="px-2 py-0.5 bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded text-xs capitalize">
+                                                    {p.replace('_', ' ')}
+                                                </span>
+                                            ))
+                                        )}
+                                        {(!u.staffPermissions || u.staffPermissions.length === 0) && <span className="text-gray-400 text-sm">None</span>}
+                                    </div>
+                                </td>
+                                <td className="p-4 text-right">
+                                    <button onClick={() => handleEdit(u)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30 rounded-full transition-colors" title="Edit Permissions">
+                                        <PencilIcon className="w-5 h-5" />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-                {staffUsers.length === 0 && <p className="p-4 text-center text-gray-500">No staff users found.</p>}
+                {staffUsers.length === 0 && <div className="p-8 text-center text-gray-500 dark:text-gray-400">No staff users found. Create one to get started.</div>}
+            </div>
+
+            {isModalOpen && (
+                <StaffModal 
+                    staff={editingStaff} 
+                    onClose={() => setIsModalOpen(false)} 
+                    onSave={onUpdate} 
+                />
+            )}
+        </div>
+    );
+};
+
+// --- Collab Detail Modal ---
+const CollabDetailModal: React.FC<{ collab: CombinedCollabItem; onClose: () => void }> = ({ collab, onClose }) => {
+    const data = collab.originalData;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[100] p-4 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="p-5 border-b dark:border-gray-700 flex justify-between items-center">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">Collaboration Details</h2>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">{collab.visibleCollabId || collab.id}</p>
+                    </div>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl">&times;</button>
+                </div>
+                
+                <div className="p-6 overflow-y-auto space-y-6">
+                    {/* Status Section */}
+                    <div className="flex flex-wrap gap-4 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                        <div className="flex-1">
+                            <span className="text-xs text-gray-500 uppercase font-bold block mb-1">Status</span>
+                            <span className={`px-2 py-1 rounded text-sm font-semibold capitalize ${collab.status === 'disputed' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                                {collab.status.replace(/_/g, ' ')}
+                            </span>
+                        </div>
+                        <div className="flex-1">
+                            <span className="text-xs text-gray-500 uppercase font-bold block mb-1">Type</span>
+                            <span className="text-sm font-medium dark:text-gray-200">{collab.type}</span>
+                        </div>
+                        <div className="flex-1">
+                            <span className="text-xs text-gray-500 uppercase font-bold block mb-1">Date</span>
+                            <span className="text-sm font-medium dark:text-gray-200">{collab.date?.toLocaleDateString()}</span>
+                        </div>
+                    </div>
+
+                    {/* Parties */}
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="border dark:border-gray-700 p-4 rounded-lg">
+                            <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Brand / Customer</h3>
+                            <div className="flex items-center gap-3">
+                                <img src={collab.customerAvatar} className="w-10 h-10 rounded-full bg-gray-200 object-cover" alt="" />
+                                <div>
+                                    <div className="font-semibold text-gray-800 dark:text-white">{collab.customerName}</div>
+                                    <div className="text-xs font-mono text-gray-500">{collab.customerPiNumber || collab.customerId}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="border dark:border-gray-700 p-4 rounded-lg">
+                            <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Creator / Provider</h3>
+                            <div className="flex items-center gap-3">
+                                <img src={collab.providerAvatar} className="w-10 h-10 rounded-full bg-gray-200 object-cover" alt="" />
+                                <div>
+                                    <div className="font-semibold text-gray-800 dark:text-white">{collab.providerName}</div>
+                                    <div className="text-xs font-mono text-gray-500">{collab.providerPiNumber || collab.providerId}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Specific Details */}
+                    <div>
+                        <h3 className="text-sm font-bold text-gray-500 uppercase mb-2">Project Details</h3>
+                        <div className="bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg p-4 space-y-3">
+                            <div>
+                                <span className="text-sm text-gray-500 block">Title / Campaign Name</span>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">{collab.title}</span>
+                            </div>
+                            
+                            {/* Conditional Fields based on Type */}
+                            {data.message && (
+                                <div>
+                                    <span className="text-sm text-gray-500 block">Message/Brief</span>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 p-2 rounded mt-1">{data.message}</p>
+                                </div>
+                            )}
+                            {data.description && (
+                                <div>
+                                    <span className="text-sm text-gray-500 block">Description</span>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{data.description}</p>
+                                </div>
+                            )}
+                            
+                            {(data.startDate || data.endDate) && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><span className="text-sm text-gray-500">Start Date:</span> <span className="text-sm dark:text-gray-300 ml-1">{data.startDate}</span></div>
+                                    <div><span className="text-sm text-gray-500">End Date:</span> <span className="text-sm dark:text-gray-300 ml-1">{data.endDate}</span></div>
+                                </div>
+                            )}
+                            
+                            {data.adType && <div><span className="text-sm text-gray-500">Ad Type:</span> <span className="text-sm dark:text-gray-300 ml-1">{data.adType}</span></div>}
+                            {data.bannerAdLocation && <div><span className="text-sm text-gray-500">Location:</span> <span className="text-sm dark:text-gray-300 ml-1">{data.bannerAdLocation}</span></div>}
+                        </div>
+                    </div>
+
+                    {/* Financials */}
+                    <div>
+                        <h3 className="text-sm font-bold text-gray-500 uppercase mb-2">Financials</h3>
+                        <div className="bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg p-4 grid grid-cols-2 gap-4">
+                            <div>
+                                <span className="text-sm text-gray-500 block">Final Amount</span>
+                                <span className="font-bold text-green-600 text-lg">{data.finalAmount || data.budget || 'N/A'}</span>
+                            </div>
+                            <div>
+                                <span className="text-sm text-gray-500 block">Offer History</span>
+                                <span className="text-sm dark:text-gray-300">
+                                    {data.currentOffer ? `${data.currentOffer.amount} (by ${data.currentOffer.offeredBy})` : 'No negotiation'}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-sm text-gray-500 block">Payment Status</span>
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${collab.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                    {collab.paymentStatus}
+                                </span>
+                                {collab.transactionRef && <div className="text-xs text-gray-400 font-mono mt-1">Ref: {collab.transactionRef}</div>}
+                            </div>
+                            <div>
+                                <span className="text-sm text-gray-500 block">Payout Status</span>
+                                <span className={`px-2 py-0.5 rounded text-xs ${collab.payoutStatus === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                                    {collab.payoutStatus}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-4 border-t dark:border-gray-700 flex justify-end">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">Close</button>
+                </div>
             </div>
         </div>
     );
@@ -132,33 +409,81 @@ const CollaborationsPanel: React.FC<{
     allTransactions: Transaction[];
     onUpdate: (id: string, type: string, data: any) => Promise<void>;
 }> = ({ collaborations }) => {
+    const [selectedCollab, setSelectedCollab] = useState<CombinedCollabItem | null>(null);
+
     return (
         <div className="p-6 h-full flex flex-col">
             <h2 className="text-2xl font-bold mb-4 dark:text-white">All Collaborations</h2>
             <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0 z-10 text-xs uppercase text-gray-500 dark:text-gray-400">
                         <tr>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Title</th>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Type</th>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Brand</th>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Creator</th>
-                            <th className="p-4 text-gray-600 dark:text-gray-300">Status</th>
+                            <th className="p-4">Collab Details</th>
+                            <th className="p-4">Brand / User ID</th>
+                            <th className="p-4">Creator / User ID</th>
+                            <th className="p-4">Financials</th>
+                            <th className="p-4">Status</th>
+                            <th className="p-4 text-center">Action</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
                         {collaborations.map(c => (
-                            <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td className="p-4 dark:text-gray-200">{c.title}</td>
-                                <td className="p-4 dark:text-gray-200">{c.type}</td>
-                                <td className="p-4 dark:text-gray-200">{c.customerName}</td>
-                                <td className="p-4 dark:text-gray-200">{c.providerName}</td>
-                                <td className="p-4 dark:text-gray-200 capitalize">{c.status.replace(/_/g, ' ')}</td>
+                            <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                <td className="p-4">
+                                    <div className="font-bold text-gray-800 dark:text-white">{c.title}</div>
+                                    <div className="text-xs text-gray-500">{c.type}</div>
+                                    <div className="text-xs font-mono text-indigo-600 mt-1">{c.visibleCollabId || c.id}</div>
+                                </td>
+                                <td className="p-4">
+                                    <div className="font-medium dark:text-gray-200">{c.customerName}</div>
+                                    <div className="text-xs font-mono text-gray-500">{c.customerPiNumber || c.customerId}</div>
+                                </td>
+                                <td className="p-4">
+                                    <div className="font-medium dark:text-gray-200">{c.providerName}</div>
+                                    <div className="text-xs font-mono text-gray-500">{c.providerPiNumber || c.providerId}</div>
+                                </td>
+                                <td className="p-4">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-500 w-16">Payment:</span>
+                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${c.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                                {c.paymentStatus}
+                                            </span>
+                                        </div>
+                                        {c.transactionRef && (
+                                            <div className="text-xs text-gray-400 font-mono ml-[4.5rem]">
+                                                Tx: {c.transactionRef}
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-500 w-16">Payout:</span>
+                                            <span className={`px-2 py-0.5 rounded text-xs ${c.payoutStatus === 'Completed' ? 'bg-green-100 text-green-800' : c.payoutStatus === 'Requested' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'}`}>
+                                                {c.payoutStatus}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="p-4">
+                                    <span className={`px-2 py-1 rounded text-xs font-semibold capitalize ${c.status === 'disputed' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                                        {c.status.replace(/_/g, ' ')}
+                                    </span>
+                                    {c.disputeStatus && <div className="text-xs text-red-500 mt-1 font-bold">Disputed</div>}
+                                </td>
+                                <td className="p-4 text-center">
+                                    <button 
+                                        onClick={() => setSelectedCollab(c)}
+                                        className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors dark:text-indigo-400 dark:hover:bg-gray-700"
+                                        title="View Details"
+                                    >
+                                        <EyeIcon className="w-5 h-5" />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
+            {selectedCollab && <CollabDetailModal collab={selectedCollab} onClose={() => setSelectedCollab(null)} />}
         </div>
     );
 };
@@ -504,6 +829,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
     
     const combinedCollaborations = useMemo<CombinedCollabItem[]>(() => {
         const userMap = new Map(allUsers.map(u => [u.id, u]));
+        
+        // Map transactions to collab IDs for fast lookup
+        const paymentMap = new Map<string, Transaction>();
+        allTransactions.forEach(t => {
+            if (t.type === 'payment' && t.status === 'completed') {
+                paymentMap.set(t.relatedId, t); // relatedId is typically the collab ID
+            }
+        });
+
         return allCollabs.map((collab) => {
             const isDirect = 'influencerId' in collab;
             const isCampaign = 'campaignId' in collab;
@@ -519,6 +853,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
             const customer = userMap.get(customerId);
             const provider = providerId ? userMap.get(providerId) : undefined;
 
+            const paymentTx = paymentMap.get(collab.id);
+            // Fallback: check if stored in collab document (some implementations might do this)
+            const transactionRef = paymentTx ? (paymentTx.paymentGatewayDetails?.referenceId || paymentTx.paymentGatewayDetails?.payment_id || paymentTx.transactionId) : undefined;
+
+            // Dispute status check
+            const isDisputed = collab.status === 'disputed' || collab.status === 'brand_decision_pending' || collab.status === 'refund_pending_admin_review';
+
             return {
                 id: collab.id,
                 type: isDirect ? 'Direct' : isCampaign ? 'Campaign' : isLiveTv ? 'Live TV' : 'Banner Ad',
@@ -526,17 +867,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
                 customerName: (customer as User)?.name || collab.brandName || 'Unknown',
                 customerAvatar: (customer as User)?.avatar || collab.brandAvatar || '',
                 customerPiNumber: (customer as User)?.piNumber,
+                customerId: customerId, // New
                 providerName: (provider as User)?.name || ('influencerName' in collab && collab.influencerName) || ('liveTvName' in collab && collab.liveTvName) || ('agencyName' in collab && collab.agencyName) || 'Unknown',
                 providerAvatar: (provider as User)?.avatar || ('influencerAvatar' in collab && collab.influencerAvatar) || ('liveTvAvatar' in collab && collab.liveTvAvatar) || ('agencyAvatar' in collab && collab.agencyAvatar) || '',
                 providerPiNumber: (provider as User)?.piNumber,
+                providerId: providerId, // New
                 date: toJsDate(collab.timestamp),
                 status: collab.status as any,
                 paymentStatus: collab.paymentStatus === 'paid' || collab.paymentStatus === 'payout_requested' || collab.paymentStatus === 'payout_complete' ? 'Paid' : 'Unpaid',
                 payoutStatus: collab.paymentStatus === 'payout_requested' ? 'Requested' : collab.paymentStatus === 'payout_complete' ? 'Completed' : 'N/A',
-                originalData: collab
+                originalData: collab,
+                visibleCollabId: collab.collabId, // New
+                transactionRef: transactionRef, // New
+                disputeStatus: isDisputed ? 'Active' : undefined // New
             };
         });
-    }, [allCollabs, allUsers]);
+    }, [allCollabs, allUsers, allTransactions]);
 
 
     const tabs: { id: AdminTab; label: string; icon: React.FC<{className?: string}>, permission?: StaffPermission }[] = [

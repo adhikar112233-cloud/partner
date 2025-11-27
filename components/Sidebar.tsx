@@ -189,6 +189,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
                         {(user.role !== 'staff' || (user.staffPermissions && user.staffPermissions.includes('super_admin'))) &&
                             <button onClick={() => handleItemClick(View.SETTINGS)} className="w-full text-left px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">Settings</button>
                         }
+                        
                         <button onClick={() => authService.logout()} className="w-full flex items-center px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md">
                             <LogoutIcon className="w-5 h-5 mr-2"/>
                             Logout
@@ -223,7 +224,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
       <>
         <div className="h-20 flex items-center px-6">
             <button onClick={handleLogoClick} className="focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg">
-                <LogoIcon />
+                <LogoIcon idSuffix={isMobile ? "sidebar-mobile" : "sidebar-desktop"} />
             </button>
         </div>
         

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LogoIcon, MessagesIcon, YoutubeIcon, MenuIcon, NotificationIcon, DashboardIcon, CommunityIcon, LoanRecharge3DIcon, EllipsisVerticalIcon } from './Icons';
+import { MessagesIcon, YoutubeIcon, MenuIcon, NotificationIcon, DashboardIcon, CommunityIcon, LoanRecharge3DIcon, EllipsisVerticalIcon } from './Icons';
 import { User, View, PlatformSettings, ConversationParticipant, Conversation } from '../types';
 import ConversationsPanel from './ConversationsPanel';
 import { apiService } from '../services/apiService';
@@ -111,14 +111,14 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
   );
 
   // If no items are in the more menu, don't render the button
-  const hasMoreMenuItems = false; // Currently theme was moved, YouTube moved to main bar. If empty, hide it.
+  const hasMoreMenuItems = false; 
 
   return (
     <header className="bg-white border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700 relative z-20 flex flex-col w-full shadow-sm">
       {/* Top Row: Navigation & Actions */}
       <div className="h-16 md:h-20 flex items-center justify-between px-2 sm:px-4 w-full relative">
           
-          {/* LEFT: Menu & Logo */}
+          {/* LEFT: Menu (Mobile Only) */}
           <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             <button
               onClick={onMobileNavToggle}
@@ -127,16 +127,6 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
             >
               <MenuIcon className="w-6 h-6" />
             </button>
-            
-            {/* Logo: Compact on Mobile, Full on Desktop */}
-            <div className="flex items-center rounded-lg">
-                <div className="block sm:hidden">
-                    <LogoIcon iconOnly={true} className="h-8 w-auto" />
-                </div>
-                <div className="hidden sm:block">
-                    <LogoIcon className="h-8 sm:h-10 w-auto" />
-                </div>
-            </div>
           </div>
 
           {/* CENTER: Toggle (Desktop Only) - Absolutely positioned to stay centered */}

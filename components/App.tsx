@@ -1,25 +1,22 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
+import { isFirebaseConfigured, db, auth } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
-import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus, UserRole } from '../types';
-// Fix: Add QueryDocumentSnapshot and DocumentData for pagination types.
-import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
+import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification } from '../types';
+import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import InfluencerCard from './InfluencerCard';
 import ChatWindow from './ChatWindow';
-import { findInfluencersWithAI } from '../services/geminiService';
-import { SparklesIcon, LogoIcon, SearchIcon } from './Icons';
+import { SearchIcon } from './Icons';
 import Dashboard from './Dashboard';
 import ProfilePage from './ProfilePage';
 import SettingsPanel from './SettingsPanel';
-import { AdminPanel } from './AdminPanel';
+import AdminPanel from './AdminPanel';
 import PostLoginWelcomePage from './PostLoginWelcomePage';
-import SendMessageModal from './SendMessageModal';
 import CollabRequestModal from './CollabRequestModal';
 import CollaborationRequestsPage from './CollaborationRequestsPage';
 import ProfileDetailDrawer from './ProfileDetailDrawer';
@@ -45,6 +42,7 @@ import RefundRequestPage from './RefundRequestPage';
 import BoostPage from './BoostPage';
 import LiveHelpChat from './LiveHelpChat';
 import { NotificationManager } from './NotificationManager';
+import ClickableImageBanner from './ClickableImageBanner';
 import CreatorVerificationPage from './CreatorVerificationPage';
 import ActivityFeed from './ActivityFeed';
 import OurPartnersPage from './OurPartnersPage';
@@ -68,135 +66,30 @@ const FirebaseConfigError: React.FC = () => (
 );
 
 const DatabaseConfigError: React.FC<{ message: string }> = ({ message }) => {
-    const projectId = firebaseConfig?.projectId || "your-project-id";
-    const lowerMessage = message.toLowerCase();
-    const isApiNotEnabled = lowerMessage.includes("cloud firestore api") || lowerMessage.includes("datastore.googleapis.com");
-    const isPermissionDenied = lowerMessage.includes("permission-denied") || lowerMessage.includes("insufficient permissions") || lowerMessage.includes("missing or insufficient permissions");
-    const isOfflineOrProjectNotFound = lowerMessage.includes("offline") || lowerMessage.includes("project not found");
-
-    const getErrorDetails = () => {
-        if (isPermissionDenied) {
-            return {
-                title: "Permission Denied",
-                description: "Your Firestore Security Rules are blocking access.",
-                fixTitle: "How to Fix: Update Security Rules",
-                fixSteps: (
-                    <>
-                        <p>To allow this app to work, you need to allow read/write access in your Firestore Security Rules.</p>
-                        <ol className="list-decimal list-inside space-y-3 mt-3">
-                            <li>Go to the <a href={`https://console.firebase.google.com/project/${projectId}/firestore/rules`} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-bold">Firestore Rules Tab</a> for project <strong>{projectId}</strong>.</li>
-                            <li><strong>Delete</strong> the existing rules and <strong>paste</strong> the following:</li>
-                        </ol>
-                        <pre className="bg-gray-800 text-green-400 p-4 rounded-lg text-sm overflow-x-auto font-mono border border-gray-700 shadow-inner my-3">
-{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}`}
-                        </pre>
-                        <p className="text-sm bg-yellow-50 p-3 rounded border border-yellow-200 text-yellow-800">
-                            <strong>Note:</strong> These rules allow <strong>public access</strong>. This is fine for development but should be restricted for production.
-                        </p>
-                        
-                        <h4 className="font-bold mt-4">Check Firebase Storage Rules Too:</h4>
-                        <p>If image uploads are failing, ensure you have enabled Storage and set its rules:</p>
-                        <ol className="list-decimal list-inside space-y-2 mt-1">
-                            <li>Go to the <strong>Storage</strong> tab in Firebase Console.</li>
-                            <li>Click <strong>Get Started</strong> if you haven't already.</li>
-                            <li>Set rules to: <code>allow read, write: if true;</code> (for development).</li>
-                        </ol>
-
-                        <p className="mt-2">Click <strong>Publish</strong>, wait 30 seconds, and then reload this page.</p>
-                    </>
-                )
-            };
-        }
-        
-        if (isApiNotEnabled || isOfflineOrProjectNotFound) {
-             return {
-                title: "Database Not Found",
-                description: isOfflineOrProjectNotFound ? `The project ID "${projectId}" might be incorrect or the database doesn't exist.` : `The Firestore database has not been created or enabled for project "${projectId}".`,
-                fixTitle: "How to Fix: Create Firestore Database",
-                fixSteps: (
-                    <ol className="list-decimal list-inside space-y-4 text-gray-700">
-                        <li className="pl-2">
-                            <strong>Open Firebase Console:</strong> Go to <a href={`https://console.firebase.google.com/project/${projectId}/firestore`} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-medium">Firestore Database for {projectId}</a>.
-                        </li>
-                        <li className="pl-2">
-                            <strong>Create Database:</strong> Click the <strong>Create Database</strong> button.
-                        </li>
-                        <li className="pl-2">
-                            <strong>Select Test Mode:</strong> When prompted, select <strong>Start in Test Mode</strong>. This sets the correct permissions for development.
-                        </li>
-                        <li className="pl-2">
-                            <strong>Location:</strong> Choose a location and click <strong>Enable</strong>. Wait a minute for it to provision.
-                        </li>
-                    </ol>
-                )
-            };
-        }
-
-        return {
-            title: "Database Connection Issue",
-            description: "An unexpected error occurred while trying to connect to Firestore.",
-            fixTitle: "Troubleshooting Steps",
-            fixSteps: (
-                 <ol className="list-decimal list-inside space-y-2">
-                    <li>Verify the <strong>projectId</strong> in <code>services/firebase.ts</code> matches your Firebase project.</li>
-                    <li>Ensure you have an active internet connection.</li>
-                    <li>Check the <a href="https://status.firebase.google.com/" target="_blank" rel="noreferrer" className="text-indigo-600 underline">Firebase Status Dashboard</a> for outages.</li>
-                </ol>
-            )
-        };
-    };
-
-    const { title, description, fixTitle, fixSteps } = getErrorDetails();
-
+    // Simplified error display
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
             <div className="max-w-3xl w-full bg-white rounded-2xl shadow-xl p-8 border-t-4 border-indigo-600">
-                <div className="flex items-center gap-4 mb-6">
-                    <div className="p-3 bg-red-100 text-red-600 rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
-                        <p className="text-gray-500">{description}</p>
-                    </div>
-                </div>
-
+                <h1 className="text-2xl font-bold text-gray-900 mb-4">Database Connection Issue</h1>
                 <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm text-red-800 mb-6 break-all border border-gray-300">
                     <strong>Error:</strong> {message}
                 </div>
-                
-                 <div className="space-y-4 text-gray-700">
-                    <h3 className="text-lg font-bold text-gray-900 border-b pb-2 mb-2">{fixTitle}</h3>
-                    {fixSteps}
-                </div>
-
-                <div className="mt-8 flex justify-center">
-                    <button 
-                        onClick={() => window.location.reload()} 
-                        className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors shadow-lg transform hover:-translate-y-0.5 active:translate-y-0"
-                    >
-                        I've Fixed It - Reload App
+                <div className="flex justify-center">
+                    <button onClick={() => window.location.reload()} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors shadow-lg">
+                        Retry
                     </button>
                 </div>
             </div>
         </div>
     );
-}
+};
 
 const MaintenancePage: React.FC = () => (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl text-center">
-            <LogoIcon showTagline />
             <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mt-8">Down for Maintenance</h1>
             <p className="mt-4 text-gray-600 dark:text-gray-300">
-                BIGYAPON is currently undergoing scheduled maintenance. We'll be back online shortly. Thank you for your patience!
+                BIGYAPON is currently undergoing scheduled maintenance. We'll be back online shortly.
             </p>
         </div>
     </div>
@@ -234,32 +127,22 @@ const MembershipInactiveBanner: React.FC<{ onUpgrade: () => void }> = ({ onUpgra
 );
 
 const CreatorVerificationBanner: React.FC<{
-    status: CreatorVerificationStatus;
-    role: UserRole;
+    status: string;
     onVerify: () => void;
     reason?: string;
-}> = ({ status, role, onVerify, reason }) => {
+}> = ({ status, onVerify, reason }) => {
     const isRejected = status === 'rejected';
     const bgColor = isRejected ? 'bg-red-600' : 'bg-yellow-500';
     const textColor = 'text-white';
     const buttonBg = 'bg-white';
     const buttonTextColor = isRejected ? 'text-red-600' : 'text-yellow-600';
 
-    let message = "You are not verified. Please verify for improved brand/customer trust.";
-    if (role === 'banneragency') message = "You are not verified (Your Business). Please verify for improved brand/customer trust.";
-    if (role === 'livetv') message = "You are not verified (Your Channel). Please verify for improved brand/customer trust.";
-    if (role === 'influencer') message = "You are not verified (Creator). Please verify for improved brand/customer trust.";
-
-    if (isRejected) {
-        message = `Verification Rejected. Reason: ${reason || 'Please review and resubmit your details.'}`;
-    }
-
     return (
         <div className={`${bgColor} ${textColor} text-sm font-medium p-3`}>
             <div className="container mx-auto flex justify-between items-center gap-4">
                 <div>
-                    <p className="font-bold">{isRejected ? 'Verification Rejected' : 'Verification Required'}</p>
-                    <p>{message}</p>
+                    <p className="font-bold">{isRejected ? 'Verification Rejected' : 'Creator Verification Required'}</p>
+                    <p>{isRejected ? `Reason: ${reason || 'Please review and resubmit your details.'}` : "You're unverified. Brands have low trust in unverified creators. Please verify your identity."}</p>
                 </div>
                 <button
                     onClick={onVerify}
@@ -282,12 +165,13 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState<View>(View.DASHBOARD);
-  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
-  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
+  
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -301,7 +185,7 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [filteredInfluencers, setFilteredInfluencers] = useState<Influencer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isAiSearching, setIsAiSearching] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [platformBanners, setPlatformBanners] = useState<PlatformBanner[]>([]);
   
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
@@ -341,18 +225,15 @@ const App: React.FC = () => {
       })
       .catch(err => {
         console.error("Failed to reload platform settings:", err);
-        if (err.message && (err.message.includes("Cloud Firestore API") || err.code === "permission-denied" || err.message.includes("permission-denied"))) {
-             setConfigError("Permission denied: The Firestore database has not been initialized in the Firebase Console for project 'collabzz-757f1', or access is denied.");
-        } else {
-             setConfigError(err.message || "An unexpected error occurred while connecting to the database.");
-        }
+        setConfigError(err.message || "An unexpected error occurred while connecting to the database.");
     });
   }, []);
 
   useEffect(() => {
     refreshPlatformSettings();
-    // Initial banner fetch
-    apiService.getActivePlatformBanners().then(setPlatformBanners).catch(console.error);
+    apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
+        console.error("Failed to fetch platform banners:", err);
+    });
   }, [refreshPlatformSettings]);
 
  const refreshUser = useCallback(async () => {
@@ -376,44 +257,10 @@ const App: React.FC = () => {
     }
 }, []);
 
-  const handleToggleFollow = useCallback(async (targetUserId: string) => {
-      if (!user) return;
-      
-      const isFollowing = user.following?.includes(targetUserId) || false;
-      const currentFollowing = user.following || [];
-      
-      let newFollowing: string[];
-      if (isFollowing) {
-          newFollowing = currentFollowing.filter(id => id !== targetUserId);
-      } else {
-          newFollowing = [...currentFollowing, targetUserId];
-      }
-      
-      // Optimistic Update
-      const updatedUser = { ...user, following: newFollowing };
-      setUser(updatedUser);
-
-      try {
-          if (isFollowing) {
-              await apiService.unfollowUser(user.id, targetUserId);
-          } else {
-              await apiService.followUser(user.id, targetUserId);
-          }
-      } catch (error) {
-          console.error("Follow action failed:", error);
-          // Revert
-          setUser(user);
-          alert("Failed to update follow status.");
-      }
-  }, [user]);
-
   const refreshAllData = useCallback(async () => {
       if (user && platformSettings) {
         await apiService.initializeFirestoreData();
         
-        // Refresh banners on any update
-        apiService.getActivePlatformBanners().then(setPlatformBanners).catch(console.error);
-
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
           const influencerResult = await apiService.getInfluencersPaginated(platformSettings, { limit: INFLUENCER_PAGE_LIMIT });
           setInfluencers(influencerResult.influencers);
@@ -486,23 +333,8 @@ const App: React.FC = () => {
                 sessionStorage.setItem('hasSeenWelcome', 'true');
             }
         }
-        switch (firebaseUser.role) {
-            case 'staff': 
-                setAppMode('dashboard');
-                setActiveView(View.ADMIN); 
-                break;
-            case 'brand': 
-                setAppMode('dashboard');
-                setActiveView(View.INFLUENCERS); 
-                break;
-            default: 
-                setAppMode('dashboard');
-                setActiveView(View.DASHBOARD); 
-                break;
-        }
       } else {
         sessionStorage.removeItem('hasSeenWelcome');
-        setAppMode('dashboard');
         setActiveView(View.DASHBOARD);
         setActiveChat(null);
       }
@@ -510,6 +342,21 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("order_id");
+    
+    if (orderId) {
+        setActiveView(View.PAYMENT_SUCCESS);
+    } else if (user && activeView !== View.PAYMENT_SUCCESS) {
+        switch (user.role) {
+            case 'staff': setActiveView(View.ADMIN); break;
+            case 'brand': setActiveView(View.INFLUENCERS); break;
+            default: setActiveView(View.DASHBOARD); break;
+        }
+    }
+  }, [user]);
 
   useEffect(() => {
       refreshAllData();
@@ -555,21 +402,29 @@ const App: React.FC = () => {
     setUser(updatedUser);
   };
   
-  const handleAiSearch = async () => {
-      if (!searchQuery.trim()) {
-        setFilteredInfluencers(influencers);
-        return;
+  const handleSearch = () => {
+      const lowercasedQuery = searchQuery.toLowerCase().trim();
+      
+      if (!lowercasedQuery) {
+          setFilteredInfluencers(influencers);
+          return;
       }
-      setIsAiSearching(true);
-      try {
-        const matchingIds = await findInfluencersWithAI(searchQuery, influencers);
-        const matches = influencers.filter(inf => matchingIds.includes(inf.id));
-        setFilteredInfluencers(matches);
-      } catch (error) {
-        console.error("AI Search failed:", error);
-      } finally {
-        setIsAiSearching(false);
-      }
+  
+      setIsSearching(true);
+      setTimeout(() => {
+          const results = influencers.filter(inf => {
+              return (
+                  inf.name.toLowerCase().includes(lowercasedQuery) ||
+                  inf.handle.toLowerCase().includes(lowercasedQuery) ||
+                  inf.bio.toLowerCase().includes(lowercasedQuery) ||
+                  inf.niche.toLowerCase().includes(lowercasedQuery) ||
+                  (inf.location && inf.location.toLowerCase().includes(lowercasedQuery))
+              );
+          });
+  
+          setFilteredInfluencers(results);
+          setIsSearching(false);
+      }, 300); 
   };
 
   const handleViewProfileClick = (profile: ProfileData) => {
@@ -632,6 +487,22 @@ const App: React.FC = () => {
   
   const handleStartLiveHelp = (sessionId: string) => {
     setLiveHelpSessionId(sessionId);
+  };
+
+  const handleToggleFollow = async (targetId: string) => {
+    if (!user) return;
+    const isFollowing = user.following?.includes(targetId);
+    
+    // Optimistic update
+    let updatedUser = { ...user };
+    if (isFollowing) {
+        updatedUser.following = (user.following || []).filter(id => id !== targetId);
+        await apiService.unfollowUser(user.id, targetId);
+    } else {
+        updatedUser.following = [...(user.following || []), targetId];
+        await apiService.followUser(user.id, targetId);
+    }
+    setUser(updatedUser);
   };
 
   if (configError) {
@@ -725,8 +596,7 @@ const App: React.FC = () => {
                   platformSettings={platformSettings}
                />;
       case View.PAYMENT_SUCCESS:
-        return <PaymentSuccessPage user={user} onComplete={async () => {
-            await refreshUser();
+        return <PaymentSuccessPage user={user} onComplete={() => {
             window.history.replaceState({}, document.title, window.location.pathname);
             refreshAllData();
             setActiveView(View.DASHBOARD);
@@ -741,16 +611,16 @@ const App: React.FC = () => {
                 placeholder="Search by name, niche, location, or keywords in bio..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAiSearch()}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 className="w-full p-4 pr-28 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
               />
               <button
-                onClick={handleAiSearch}
-                disabled={isAiSearching}
+                onClick={handleSearch}
+                disabled={isSearching}
                 className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 disabled:opacity-50"
               >
-                <SparklesIcon className={`w-5 h-5 mr-2 ${isAiSearching ? 'animate-spin' : ''}`} />
-                {isAiSearching ? 'Searching...' : 'AI Search'}
+                <SearchIcon className={`w-5 h-5 mr-2`} />
+                {isSearching ? 'Searching...' : 'Search'}
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -783,7 +653,7 @@ const App: React.FC = () => {
                     allUsers={allUsers} 
                     allTransactions={allTransactions} 
                     allPayouts={allPayouts} 
-                    allCollabs={allCollabs} 
+                    allCollabs={allCollabs}
                     allRefunds={allRefunds}
                     allDailyPayouts={allDailyPayouts}
                     platformSettings={platformSettings} 
@@ -834,8 +704,7 @@ const App: React.FC = () => {
   };
 
   return (
-    // Use h-[100dvh] for mobile support to prevent body scroll
-    <div className="h-[100dvh] w-full overflow-hidden flex bg-gray-50 dark:bg-gray-950">
+    <div className="h-screen overflow-hidden flex bg-gray-50 dark:bg-gray-950">
       <Sidebar 
         user={user}
         activeView={activeView}
@@ -846,6 +715,8 @@ const App: React.FC = () => {
         communityFeedFilter={communityFeedFilter}
         setCommunityFeedFilter={setCommunityFeedFilter}
         onToggleFollow={handleToggleFollow}
+        theme={theme}
+        setTheme={setTheme}
       />
       <Sidebar 
         isMobile
@@ -860,27 +731,27 @@ const App: React.FC = () => {
         communityFeedFilter={communityFeedFilter}
         setCommunityFeedFilter={setCommunityFeedFilter}
         onToggleFollow={handleToggleFollow}
+        theme={theme}
+        setTheme={setTheme}
       />
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Wrap top elements in a shrink-0 container to ensure they remain fixed */}
-        <div className="flex-shrink-0 z-20 bg-gray-50 dark:bg-gray-950">
-            <NotificationManager user={user} />
-            {user.kycStatus === 'rejected' && (
-                <KycRejectedBanner onResubmit={() => setActiveView(View.KYC)} reason={user.kycDetails?.rejectionReason} />
-            )}
-            {platformSettings.isNotificationBannerEnabled && platformSettings.notificationBannerText && (
-                <NotificationBanner text={platformSettings.notificationBannerText} />
-            )}
-            {showMembershipBanner && <MembershipInactiveBanner onUpgrade={() => setActiveView(View.MEMBERSHIP)} />}
-            {showCreatorVerificationBanner && (
-                <CreatorVerificationBanner
-                    status={user.creatorVerificationStatus!}
-                    role={user.role}
-                    onVerify={() => setActiveView(View.CREATOR_VERIFICATION)}
-                    reason={user.creatorVerificationDetails?.rejectionReason}
-                />
-            )}
-            
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <NotificationManager user={user} />
+        {user.kycStatus === 'rejected' && (
+            <KycRejectedBanner onResubmit={() => setActiveView(View.KYC)} reason={user.kycDetails?.rejectionReason} />
+        )}
+        {platformSettings.isNotificationBannerEnabled && platformSettings.notificationBannerText && (
+            <NotificationBanner text={platformSettings.notificationBannerText} />
+        )}
+        {showMembershipBanner && <MembershipInactiveBanner onUpgrade={() => setActiveView(View.MEMBERSHIP)} />}
+        {showCreatorVerificationBanner && (
+            <CreatorVerificationBanner
+                status={user.creatorVerificationStatus!}
+                onVerify={() => setActiveView(View.CREATOR_VERIFICATION)}
+                reason={user.creatorVerificationDetails?.rejectionReason}
+            />
+        )}
+        
+        <div className="flex-shrink-0 z-20">
             <Header 
                 user={user} 
                 activeView={activeView}
@@ -897,8 +768,12 @@ const App: React.FC = () => {
             />
         </div>
         
-        {/* Main content area scrolls independently */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto scroll-smooth">
+          {platformBanners.length > 0 && (
+              <div className="mb-6">
+                  <ClickableImageBanner banners={platformBanners} />
+              </div>
+          )}
           {renderContent()}
         </main>
       </div>

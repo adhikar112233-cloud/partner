@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LogoIcon, MessagesIcon, YoutubeIcon, MenuIcon, SunIcon, MoonIcon, NotificationIcon, DashboardIcon, CommunityIcon, LoanRecharge3DIcon, EllipsisVerticalIcon } from './Icons';
+import { LogoIcon, MessagesIcon, YoutubeIcon, MenuIcon, NotificationIcon, DashboardIcon, CommunityIcon, LoanRecharge3DIcon, EllipsisVerticalIcon } from './Icons';
 import { User, View, PlatformSettings, ConversationParticipant, Conversation } from '../types';
 import ConversationsPanel from './ConversationsPanel';
 import { apiService } from '../services/apiService';
@@ -110,6 +110,9 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
       </>
   );
 
+  // If no items are in the more menu, don't render the button
+  const hasMoreMenuItems = false; // Currently theme was moved, YouTube moved to main bar. If empty, hide it.
+
   return (
     <header className="bg-white border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700 relative z-20 flex flex-col w-full shadow-sm">
       {/* Top Row: Navigation & Actions */}
@@ -144,17 +147,30 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
           {/* RIGHT: Actions (Visible on Top Bar) */}
           <div className="flex justify-end items-center gap-1">
              
-             {/* Loan & Recharge (Always Visible) */}
+             {/* 1. YouTube (Desktop: Left of Loan, Mobile: Left of Three Dot) */}
+             {platformSettings.youtubeTutorialUrl && (
+                <a 
+                    href={platformSettings.youtubeTutorialUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="order-4 md:order-none p-2 rounded-full text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-red-400 transition-colors"
+                    title="Tutorials"
+                >
+                    <YoutubeIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                </a>
+             )}
+
+             {/* 2. Loan & Recharge (Desktop: After YouTube, Mobile: First) */}
              <button 
                 onClick={handleLoanRechargeClick}
-                className="p-1 sm:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                className="order-1 md:order-none p-1 sm:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
                 title="Loan & Recharge"
              >
                  <LoanRecharge3DIcon className="h-8 w-auto sm:h-10 transform group-hover:scale-105 transition-transform" />
              </button>
 
-             {/* Messages (Always Visible) */}
-             <div className="relative" ref={conversationsRef}>
+             {/* 3. Messages (Desktop: After Loan, Mobile: Second) */}
+             <div className="relative order-2 md:order-none" ref={conversationsRef}>
                 <button 
                     onClick={toggleConversations} 
                     className={`p-2 rounded-full transition-colors relative ${isConversationsOpen ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}
@@ -173,10 +189,10 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
                 )}
              </div>
 
-             {/* Activity Feed (Always Visible) */}
+             {/* 4. Activity Feed (Desktop: After Messages, Mobile: Third) */}
              <button 
                 onClick={onActivityFeedToggle} 
-                className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors relative"
+                className="order-3 md:order-none p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors relative"
                 title="Activity Feed"
              >
                 <NotificationIcon className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -185,48 +201,23 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
                 )}
              </button>
 
-             {/* Three Dot Menu (Always Visible) - Contains YouTube & Theme */}
-             <div className="relative" ref={moreMenuRef}>
-                 <button
-                    onClick={() => setIsMoreMenuOpen(prev => !prev)}
-                    className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors"
-                 >
-                     <EllipsisVerticalIcon className="w-6 h-6" />
-                 </button>
-                 
-                 {isMoreMenuOpen && (
-                     <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden z-50 animate-fade-in-down">
-                         {/* YouTube */}
-                         {platformSettings.youtubeTutorialUrl && (
-                            <a 
-                                href={platformSettings.youtubeTutorialUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-                                onClick={() => setIsMoreMenuOpen(false)}
-                            >
-                                <YoutubeIcon className="w-5 h-5 mr-3 text-red-600" />
-                                Tutorials
-                            </a>
-                         )}
-                         {/* Theme */}
-                         <button 
-                            onClick={() => { setTheme(theme === 'light' ? 'dark' : 'light'); setIsMoreMenuOpen(false); }}
-                            className="w-full flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
-                         >
-                            {theme === 'light' ? (
-                                <>
-                                    <MoonIcon className="w-5 h-5 mr-3 text-gray-600" /> Dark Mode
-                                </>
-                            ) : (
-                                <>
-                                    <SunIcon className="w-5 h-5 mr-3 text-yellow-500" /> Light Mode
-                                </>
-                            )}
-                         </button>
-                     </div>
-                 )}
-             </div>
+             {/* 5. Three Dot Menu (Always Last) - Hidden if empty */}
+             {hasMoreMenuItems && (
+                 <div className="relative order-5 md:order-none" ref={moreMenuRef}>
+                     <button
+                        onClick={() => setIsMoreMenuOpen(prev => !prev)}
+                        className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors"
+                     >
+                         <EllipsisVerticalIcon className="w-6 h-6" />
+                     </button>
+                     
+                     {isMoreMenuOpen && (
+                         <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden z-50 animate-fade-in-down">
+                             {/* Items removed */}
+                         </div>
+                     )}
+                 </div>
+             )}
 
           </div>
       </div>

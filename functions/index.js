@@ -1,3 +1,4 @@
+
 const functions = require("firebase-functions");
 const express = require("express");
 const cors = require("cors");
@@ -40,6 +41,46 @@ async function getCashfreeConfig(type = 'verification') {
         };
     }
 }
+
+// --- TRIGGER: Send Push Notification ---
+// Listens for new notifications created in Firestore and sends them via FCM
+exports.sendPushNotification = functions.firestore
+    .document('users/{userId}/notifications/{notificationId}')
+    .onCreate(async (snap, context) => {
+        const notification = snap.data();
+        const userId = context.params.userId;
+
+        try {
+            // Get user's FCM token
+            const userDoc = await db.collection('users').doc(userId).get();
+            const userData = userDoc.data();
+
+            if (!userData || !userData.fcmToken) {
+                console.log(`No FCM token found for user ${userId}`);
+                return;
+            }
+
+            const payload = {
+                notification: {
+                    title: notification.title,
+                    body: notification.body,
+                    // Optional: Add icon or image if available
+                },
+                data: {
+                    url: notification.relatedId || '/', // Can be used by client to navigate
+                    view: notification.view || 'dashboard'
+                },
+                token: userData.fcmToken
+            };
+
+            // Send via FCM
+            await admin.messaging().send(payload);
+            console.log(`Push notification sent to ${userId}`);
+
+        } catch (error) {
+            console.error(`Error sending push notification to ${userId}:`, error);
+        }
+    });
 
 // --- ENDPOINT: Admin Change Password ---
 app.post('/admin-change-password', async (req, res) => {

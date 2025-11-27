@@ -15,7 +15,7 @@ import {
     PayoutRequest, RefundRequest, DailyPayoutRequest,
     Transaction, Dispute, KycDetails, CreatorVerificationDetails,
     UserRole, AppNotification, QuickReply, MembershipPlan, StaffPermission,
-    PlatformBanner, Agreements
+    PlatformBanner, Agreements, View
 } from '../types';
 
 // Helper to upload file
@@ -204,9 +204,35 @@ export const apiService = {
             attachments,
             timestamp: serverTimestamp()
         });
+        
+        // Notify recipient about new message
+        const senderDoc = await getDoc(doc(db, 'users', senderId));
+        const senderName = senderDoc.exists() ? senderDoc.data().name : 'User';
+        
+        await apiService.createNotification(recipientId, {
+            userId: recipientId,
+            title: `New Message from ${senderName}`,
+            body: text || 'Sent an attachment',
+            type: 'new_message',
+            view: View.MESSAGES,
+            isRead: false,
+            relatedId: chatId
+        });
     },
     uploadMessageAttachment: async (messageId: string, file: File): Promise<string> => {
         return uploadFile(`attachments/${messageId}/${file.name}`, file);
+    },
+
+    // ... Notifications Helper ...
+    createNotification: async (userId: string, notification: Omit<AppNotification, 'id' | 'timestamp'>) => {
+        try {
+            await addDoc(collection(db, `users/${userId}/notifications`), {
+                ...notification,
+                timestamp: serverTimestamp()
+            });
+        } catch (error) {
+            console.error("Failed to create notification:", error);
+        }
     },
 
     // ... Collaborations ...
@@ -239,10 +265,57 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
     },
     sendCollabRequest: async (request: any) => {
-        await addDoc(collection(db, 'collaboration_requests'), { ...request, status: 'pending', timestamp: serverTimestamp() });
+        const ref = await addDoc(collection(db, 'collaboration_requests'), { ...request, status: 'pending', timestamp: serverTimestamp() });
+        // Notify Influencer
+        await apiService.createNotification(request.influencerId, {
+            userId: request.influencerId,
+            title: "New Collaboration Request",
+            body: `${request.brandName} sent you a proposal: ${request.title}`,
+            type: 'new_collab_request',
+            view: View.COLLAB_REQUESTS,
+            relatedId: ref.id,
+            isRead: false
+        });
     },
-    updateCollaborationRequest: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, 'collaboration_requests', id), data);
+    updateCollaborationRequest: async (id: string, data: any, actorId: string) => {
+        const docRef = doc(db, 'collaboration_requests', id);
+        const snapshot = await getDoc(docRef);
+        const currentData = snapshot.data() as CollaborationRequest;
+        
+        await updateDoc(docRef, data);
+
+        if (!currentData) return;
+
+        // Notify the other party
+        const targetId = actorId === currentData.brandId ? currentData.influencerId : currentData.brandId;
+        const targetRole = actorId === currentData.brandId ? 'influencer' : 'brand';
+        
+        let title = "Collaboration Update";
+        let body = `Update on ${currentData.title}`;
+        
+        if (data.status === 'rejected') {
+             title = "Request Rejected";
+             body = `The collaboration request "${currentData.title}" was rejected.`;
+        } else if (data.status === 'agreement_reached') {
+             title = "Agreement Reached!";
+             body = `Terms have been accepted for "${currentData.title}".`;
+        } else if (data.status && data.status.includes('offer')) {
+             title = "New Offer Received";
+             body = `A new offer of ${data.currentOffer?.amount} has been made for "${currentData.title}".`;
+        } else if (data.status === 'completed') {
+             title = "Collaboration Completed";
+             body = `The collaboration "${currentData.title}" has been marked as complete.`;
+        }
+
+        await apiService.createNotification(targetId, {
+            userId: targetId,
+            title,
+            body,
+            type: 'collab_update',
+            view: targetRole === 'brand' ? View.MY_COLLABORATIONS : View.COLLAB_REQUESTS,
+            relatedId: id,
+            isRead: false
+        });
     },
 
     // ... Campaigns ...
@@ -264,9 +337,20 @@ export const apiService = {
         return campaigns;
     },
     applyToCampaign: async (application: any) => {
-        await addDoc(collection(db, 'campaign_applications'), { ...application, status: 'pending_brand_review', timestamp: serverTimestamp() });
+        const ref = await addDoc(collection(db, 'campaign_applications'), { ...application, status: 'pending_brand_review', timestamp: serverTimestamp() });
         await updateDoc(doc(db, 'campaigns', application.campaignId), {
             applicantIds: arrayUnion(application.influencerId)
+        });
+        
+        // Notify Brand
+        await apiService.createNotification(application.brandId, {
+            userId: application.brandId,
+            title: "New Campaign Application",
+            body: `${application.influencerName} applied to "${application.campaignTitle}".`,
+            type: 'new_campaign_applicant',
+            view: View.CAMPAIGNS,
+            relatedId: ref.id,
+            isRead: false
         });
     },
     getApplicationsForCampaign: async (campaignId: string): Promise<CampaignApplication[]> => {
@@ -283,13 +367,56 @@ export const apiService = {
         const snapshot = await getDocs(collection(db, 'campaign_applications'));
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CampaignApplication));
     },
-    updateCampaignApplication: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, 'campaign_applications', id), data);
+    updateCampaignApplication: async (id: string, data: any, actorId: string) => {
+        const docRef = doc(db, 'campaign_applications', id);
+        const snapshot = await getDoc(docRef);
+        const currentData = snapshot.data() as CampaignApplication;
+        
+        await updateDoc(docRef, data);
+        
+        if (!currentData) return;
+
+        // Determine who to notify
+        const isActorBrand = actorId === currentData.brandId;
+        const targetId = isActorBrand ? currentData.influencerId : currentData.brandId;
+        const targetView = isActorBrand ? View.MY_APPLICATIONS : View.CAMPAIGNS;
+
+        let title = "Application Update";
+        let body = `Update on application for "${currentData.campaignTitle}"`;
+
+        if (data.status === 'agreement_reached') {
+            title = "Application Accepted";
+            body = `Congrats! Your application for "${currentData.campaignTitle}" was accepted.`;
+        } else if (data.status === 'rejected') {
+            title = "Application Rejected";
+            body = `Your application for "${currentData.campaignTitle}" was not selected.`;
+        }
+
+        await apiService.createNotification(targetId, {
+            userId: targetId,
+            title,
+            body,
+            type: 'application_update',
+            view: targetView,
+            relatedId: id,
+            isRead: false
+        });
     },
 
     // ... Ad Slots ...
     sendAdSlotRequest: async (request: any) => {
-        await addDoc(collection(db, 'ad_slot_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
+        const ref = await addDoc(collection(db, 'ad_slot_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
+        
+        // Notify Live TV Channel
+        await apiService.createNotification(request.liveTvId, {
+            userId: request.liveTvId,
+            title: "New Ad Slot Request",
+            body: `${request.brandName} requested an ad slot for "${request.campaignName}".`,
+            type: 'new_collab_request',
+            view: View.LIVETV,
+            relatedId: ref.id,
+            isRead: false
+        });
     },
     getAdSlotRequestsForBrand: async (brandId: string): Promise<AdSlotRequest[]> => {
         const q = query(collection(db, 'ad_slot_requests'), where('brandId', '==', brandId));
@@ -306,7 +433,27 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdSlotRequest));
     },
     updateAdSlotRequest: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, 'ad_slot_requests', id), data);
+        const docRef = doc(db, 'ad_slot_requests', id);
+        const snapshot = await getDoc(docRef);
+        const currentData = snapshot.data() as AdSlotRequest;
+        
+        await updateDoc(docRef, data);
+        
+        if (!currentData) return;
+
+        const isActorBrand = userId === currentData.brandId;
+        const targetId = isActorBrand ? currentData.liveTvId : currentData.brandId;
+        const targetView = isActorBrand ? View.LIVETV : View.AD_BOOKINGS;
+
+        await apiService.createNotification(targetId, {
+            userId: targetId,
+            title: "Ad Request Update",
+            body: `Status updated for ad campaign "${currentData.campaignName}".`,
+            type: 'collab_update',
+            view: targetView,
+            relatedId: id,
+            isRead: false
+        });
     },
 
     // ... Banner Ads ...
@@ -331,7 +478,18 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAd));
     },
     sendBannerAdBookingRequest: async (request: any) => {
-        await addDoc(collection(db, 'banner_ad_booking_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
+        const ref = await addDoc(collection(db, 'banner_ad_booking_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
+        
+        // Notify Agency
+        await apiService.createNotification(request.agencyId, {
+            userId: request.agencyId,
+            title: "New Banner Booking",
+            body: `${request.brandName} requested to book a banner for "${request.campaignName}".`,
+            type: 'new_collab_request',
+            view: View.BANNERADS,
+            relatedId: ref.id,
+            isRead: false
+        });
     },
     getBannerAdBookingRequestsForBrand: async (brandId: string): Promise<BannerAdBookingRequest[]> => {
         const q = query(collection(db, 'banner_ad_booking_requests'), where('brandId', '==', brandId));
@@ -348,7 +506,27 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAdBookingRequest));
     },
     updateBannerAdBookingRequest: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, 'banner_ad_booking_requests', id), data);
+        const docRef = doc(db, 'banner_ad_booking_requests', id);
+        const snapshot = await getDoc(docRef);
+        const currentData = snapshot.data() as BannerAdBookingRequest;
+        
+        await updateDoc(docRef, data);
+        
+        if (!currentData) return;
+
+        const isActorBrand = userId === currentData.brandId;
+        const targetId = isActorBrand ? currentData.agencyId : currentData.brandId;
+        const targetView = isActorBrand ? View.BANNERADS : View.AD_BOOKINGS;
+
+        await apiService.createNotification(targetId, {
+            userId: targetId,
+            title: "Banner Booking Update",
+            body: `Status updated for banner campaign "${currentData.campaignName}".`,
+            type: 'collab_update',
+            view: targetView,
+            relatedId: id,
+            isRead: false
+        });
     },
 
     // ... Daily Payouts ...
@@ -764,7 +942,26 @@ export const apiService = {
         await new Promise(resolve => setTimeout(resolve, 1000));
     },
     sendPushNotification: async (title: string, body: string, targetRole: UserRole | 'all', url?: string) => {
-        console.log(`Sending push notification to ${targetRole}: ${title}`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); 
+        // Fetch users
+        let q = query(collection(db, 'users'));
+        if (targetRole !== 'all') {
+            q = query(collection(db, 'users'), where('role', '==', targetRole));
+        }
+        const snapshot = await getDocs(q);
+        
+        // Loop through all users and create a notification doc for each
+        // In a real production app, this should be done via a batch job or PubSub 
+        // to avoid timeout on large user bases.
+        for (const doc of snapshot.docs) {
+            await apiService.createNotification(doc.id, {
+                userId: doc.id,
+                title,
+                body,
+                type: 'system',
+                view: View.DASHBOARD, // Default View
+                isRead: false,
+                relatedId: url
+            });
+        }
     },
 };

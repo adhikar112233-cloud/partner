@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
-import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon } from './Icons';
+import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon } from './Icons';
 import { authService } from '../services/authService';
 import FollowListModal from './FollowListModal';
 
@@ -18,6 +18,8 @@ interface SidebarProps {
   communityFeedFilter?: 'global' | 'my_posts' | 'following';
   setCommunityFeedFilter?: (filter: 'global' | 'my_posts' | 'following') => void;
   onToggleFollow?: (targetId: string) => void;
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
 }
 
 const MembershipStatusCard: React.FC<{ user: User; onClick: () => void }> = ({ user, onClick }) => {
@@ -50,7 +52,7 @@ const MembershipStatusCard: React.FC<{ user: User; onClick: () => void }> = ({ u
     );
   };
 
-const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isMobile = false, isOpen = false, onClose = () => {}, appMode = 'dashboard', communityFeedFilter, setCommunityFeedFilter, onToggleFollow }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, userRole, platformSettings, isMobile = false, isOpen = false, onClose = () => {}, appMode = 'dashboard', communityFeedFilter, setCommunityFeedFilter, onToggleFollow, theme, setTheme }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [followModalType, setFollowModalType] = useState<'followers' | 'following' | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -242,6 +244,22 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
         )}
 
         <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+            {/* Theme Toggle (Moved from My Account dropdown to Top Level) */}
+            <button 
+                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
+                className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white transition-colors duration-200"
+            >
+                {theme === 'light' ? (
+                    <>
+                        <MoonIcon className="w-6 h-6 mr-3" /> <span>Dark Mode</span>
+                    </>
+                ) : (
+                    <>
+                        <SunIcon className="w-6 h-6 mr-3 text-yellow-500" /> <span>Light Mode</span>
+                    </>
+                )}
+            </button>
+
             {navButtons}
         </nav>
         {showMembershipCard && <MembershipStatusCard user={user} onClick={() => handleItemClick(View.MEMBERSHIP)} />}

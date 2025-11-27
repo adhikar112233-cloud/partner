@@ -139,6 +139,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 <SettingRow label="Loan & Recharge URL" helpText="Link for the Loan & Recharge icon in the header. If empty, it shows 'Coming Soon'.">
                     <input type="url" value={settings.loanAndRechargeUrl || ''} onChange={e => handleSettingChange('loanAndRechargeUrl', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="https://example.com" />
                 </SettingRow>
+                <SettingRow label="YouTube Tutorial Link" helpText="Link for the YouTube tutorial icon in the header.">
+                    <input type="url" value={settings.youtubeTutorialUrl || ''} onChange={e => handleSettingChange('youtubeTutorialUrl', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="https://youtube.com/..." />
+                </SettingRow>
                 
                 {/* Authentication */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Authentication</h4></div>

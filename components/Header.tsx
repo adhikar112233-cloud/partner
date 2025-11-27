@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LogoIcon, MessagesIcon, SupportIcon, YoutubeIcon, MenuIcon, SunIcon, MoonIcon, NotificationIcon, DashboardIcon, CommunityIcon, LoanRecharge3DIcon } from './Icons';
+import { LogoIcon, MessagesIcon, YoutubeIcon, MenuIcon, SunIcon, MoonIcon, NotificationIcon, DashboardIcon, CommunityIcon, LoanRecharge3DIcon, EllipsisVerticalIcon } from './Icons';
 import { User, View, PlatformSettings, ConversationParticipant, Conversation } from '../types';
 import ConversationsPanel from './ConversationsPanel';
 import { apiService } from '../services/apiService';
@@ -22,16 +22,22 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platformSettings, onConversationSelected, onMobileNavToggle, theme, setTheme, unreadCount, onActivityFeedToggle, appMode, setAppMode }) => {
   const [isConversationsOpen, setIsConversationsOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
 
   const conversationsRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       // Close Conversations Panel if clicked outside
       if (conversationsRef.current && !conversationsRef.current.contains(event.target as Node)) {
         setIsConversationsOpen(false);
+      }
+      // Close More Menu if clicked outside
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setIsMoreMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -110,7 +116,7 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
       <div className="h-16 md:h-20 flex items-center justify-between px-2 sm:px-4 w-full relative">
           
           {/* LEFT: Menu & Logo */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             <button
               onClick={onMobileNavToggle}
               className="p-2 rounded-md text-gray-500 hover:bg-gray-100 md:hidden dark:text-gray-400 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -119,9 +125,14 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
               <MenuIcon className="w-6 h-6" />
             </button>
             
-            {/* Logo is now static, no longer a link to Partners */}
+            {/* Logo: Compact on Mobile, Full on Desktop */}
             <div className="flex items-center rounded-lg">
-               <LogoIcon className="h-8 sm:h-10 w-auto" />
+                <div className="block sm:hidden">
+                    <LogoIcon iconOnly={true} className="h-8 w-auto" />
+                </div>
+                <div className="hidden sm:block">
+                    <LogoIcon className="h-8 sm:h-10 w-auto" />
+                </div>
             </div>
           </div>
 
@@ -131,50 +142,18 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
           </div>
 
           {/* RIGHT: Actions (Visible on Top Bar) */}
-          <div className="flex justify-end items-center gap-1 sm:gap-2">
+          <div className="flex justify-end items-center gap-1">
              
-             {/* Loan & Recharge (New Button) */}
+             {/* Loan & Recharge (Always Visible) */}
              <button 
                 onClick={handleLoanRechargeClick}
                 className="p-1 sm:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
                 title="Loan & Recharge"
              >
-                 {/* w-auto allows width to scale based on aspect ratio of SVG, while height is fixed to match Logo */}
                  <LoanRecharge3DIcon className="h-8 w-auto sm:h-10 transform group-hover:scale-105 transition-transform" />
              </button>
 
-             {/* YouTube Tutorials */}
-             {platformSettings.youtubeTutorialUrl && (
-                <a 
-                    href={platformSettings.youtubeTutorialUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="p-2 rounded-full text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-red-400 transition-colors"
-                    title="Tutorials"
-                >
-                    <YoutubeIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                </a>
-             )}
-
-             {/* Theme Toggle */}
-             <button 
-                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
-                className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors"
-                title="Toggle Dark Mode"
-             >
-                {theme === 'light' ? <MoonIcon className="w-5 h-5 sm:w-6 sm:h-6" /> : <SunIcon className="w-5 h-5 sm:w-6 sm:h-6" />}
-             </button>
-
-             {/* Help & Support */}
-             <button 
-                onClick={() => setActiveView(View.SUPPORT)} 
-                className={`p-2 rounded-full transition-colors ${activeView === View.SUPPORT ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}
-                title="Help & Support"
-             >
-                <SupportIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-             </button>
-
-             {/* Messages */}
+             {/* Messages (Always Visible) */}
              <div className="relative" ref={conversationsRef}>
                 <button 
                     onClick={toggleConversations} 
@@ -194,7 +173,7 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
                 )}
              </div>
 
-             {/* Activity Feed */}
+             {/* Activity Feed (Always Visible) */}
              <button 
                 onClick={onActivityFeedToggle} 
                 className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors relative"
@@ -205,6 +184,49 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
                     <span className="absolute top-1.5 right-1.5 h-2.5 w-2.5 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse"></span>
                 )}
              </button>
+
+             {/* Three Dot Menu (Always Visible) - Contains YouTube & Theme */}
+             <div className="relative" ref={moreMenuRef}>
+                 <button
+                    onClick={() => setIsMoreMenuOpen(prev => !prev)}
+                    className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors"
+                 >
+                     <EllipsisVerticalIcon className="w-6 h-6" />
+                 </button>
+                 
+                 {isMoreMenuOpen && (
+                     <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden z-50 animate-fade-in-down">
+                         {/* YouTube */}
+                         {platformSettings.youtubeTutorialUrl && (
+                            <a 
+                                href={platformSettings.youtubeTutorialUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                onClick={() => setIsMoreMenuOpen(false)}
+                            >
+                                <YoutubeIcon className="w-5 h-5 mr-3 text-red-600" />
+                                Tutorials
+                            </a>
+                         )}
+                         {/* Theme */}
+                         <button 
+                            onClick={() => { setTheme(theme === 'light' ? 'dark' : 'light'); setIsMoreMenuOpen(false); }}
+                            className="w-full flex items-center px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
+                         >
+                            {theme === 'light' ? (
+                                <>
+                                    <MoonIcon className="w-5 h-5 mr-3 text-gray-600" /> Dark Mode
+                                </>
+                            ) : (
+                                <>
+                                    <SunIcon className="w-5 h-5 mr-3 text-yellow-500" /> Light Mode
+                                </>
+                            )}
+                         </button>
+                     </div>
+                 )}
+             </div>
 
           </div>
       </div>

@@ -108,7 +108,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     // Staff
     { view: View.ADMIN, label: 'Admin Panel', icon: AdminIcon, roles: ['staff'] },
     { view: View.SETTINGS, label: 'Settings', icon: SettingsIcon, roles: ['staff'], requiredPermission: 'super_admin' },
-    { view: View.SUPPORT, label: 'Support Center', icon: SupportIcon, roles: ['staff'] },
 
     // ITEMS MOVED TO BOTTOM FOR BRAND ROLE
     { view: View.PAYMENT_HISTORY, label: 'Payment History', icon: PaymentIcon, roles: ['brand']},
@@ -117,6 +116,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     // ITEMS MOVED TO BOTTOM FOR INFLUENCER ROLE
     { view: View.PAYMENT_HISTORY, label: 'Payment History', icon: PaymentIcon, roles: ['influencer']},
     ...(platformSettings.isCommunityFeedEnabled ? [{ view: View.COMMUNITY, label: 'Community', icon: CommunityIcon, roles: ['influencer'] }] : []),
+
+    // Help & Support (Moved from Header to Sidebar for ALL roles)
+    { view: View.SUPPORT, label: 'Help & Support', icon: SupportIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency', 'staff'] },
   ];
 
   const hasPermission = (permission: string) => {
@@ -131,7 +133,8 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
           { view: View.PROFILE, label: 'My Account', icon: ProfileIcon },
           { view: View.COMMUNITY, label: 'Global Feed', icon: GlobeIcon, filter: 'global' },
           { view: View.COMMUNITY, label: 'Following', icon: UserGroupIcon, filter: 'following' },
-          { view: View.COMMUNITY, label: 'My Posts', icon: DocumentIcon, filter: 'my_posts' }
+          { view: View.COMMUNITY, label: 'My Posts', icon: DocumentIcon, filter: 'my_posts' },
+          { view: View.SUPPORT, label: 'Help & Support', icon: SupportIcon } // Also add Help here
       ];
   } else {
       displayNavItems = allNavItems.filter(item => {

@@ -1,4 +1,3 @@
-
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -106,6 +105,9 @@ export interface User {
     coins?: number;
     fcmToken?: string | null;
     
+    // Financial Penalty
+    pendingPenalty?: number;
+
     // Stats for Leaderboard
     totalEarnings?: number;
     completedCollabCount?: number;
@@ -225,6 +227,7 @@ export interface PlatformSettings {
     paymentProcessingChargeRate: number;
     isGstEnabled: boolean; // Deprecated: replaced by specific flags
     gstRate: number;
+    cancellationPenaltyAmount: number; // Penalty for creators cancelling collabs
 
     // Granular Financial Controls
     isBrandGstEnabled: boolean;
@@ -371,6 +374,7 @@ export interface PayoutRequest {
     userName: string;
     userAvatar: string;
     amount: number;
+    deductedPenalty?: number; // Amount deducted from this payout due to penalties
     status: 'pending' | 'approved' | 'rejected' | 'processing' | 'completed' | 'on_hold';
     collaborationId: string;
     collaborationType: 'direct' | 'campaign' | 'ad_slot' | 'banner_booking';
@@ -497,11 +501,11 @@ export interface AdSlotRequest {
     currentOffer?: { amount: string; offeredBy: 'brand' | 'agency' };
     finalAmount?: string;
     paymentStatus?: 'paid' | 'payout_requested' | 'payout_complete';
-    workStatus?: 'started';
+    workStatus?: 'started' | 'submitted'; // or boolean? Usage implies strings.
+    dailyPayoutsReceived?: number;
     rejectionReason?: string;
     timestamp: any;
     collabId?: string;
-    dailyPayoutsReceived?: number;
 }
 
 export interface BannerAdBookingRequest {
@@ -521,11 +525,11 @@ export interface BannerAdBookingRequest {
     currentOffer?: { amount: string; offeredBy: 'brand' | 'agency' };
     finalAmount?: string;
     paymentStatus?: 'paid' | 'payout_requested' | 'payout_complete';
-    workStatus?: 'started';
+    workStatus?: 'started' | 'submitted';
+    dailyPayoutsReceived?: number;
     rejectionReason?: string;
     timestamp: any;
     collabId?: string;
-    dailyPayoutsReceived?: number;
 }
 
 export type AnyCollaboration = CollaborationRequest | CampaignApplication | AdSlotRequest | BannerAdBookingRequest;
@@ -543,46 +547,15 @@ export interface AppNotification {
     userId: string;
     title: string;
     body: string;
-    type: 'new_collab_request' | 'collab_update' | 'new_message' | 'work_submitted' | 'collab_completed' | 'new_campaign_applicant' | 'application_update' | 'system';
-    isRead: boolean;
-    timestamp: any;
+    type: 'new_collab_request' | 'collab_update' | 'work_submitted' | 'collab_completed' | 'new_campaign_applicant' | 'application_update' | 'new_message' | 'system';
     view: View;
     relatedId?: string;
-}
-
-export interface Post {
-    id: string;
-    userId: string;
-    userName: string;
-    userAvatar: string;
-    userRole: UserRole;
-    text: string;
-    imageUrl?: string;
-    likes: string[];
-    commentCount: number;
-    timestamp: any;
-    isBlocked?: boolean;
-    visibility?: 'public' | 'private';
-}
-
-export interface Comment {
-    id: string;
-    postId: string;
-    userId: string;
-    userName: string;
-    userAvatar: string;
-    text: string;
+    isRead: boolean;
     timestamp: any;
 }
 
-export interface Partner {
-    id: string;
-    name: string;
-    logoUrl: string;
-}
-
-export type SupportTicketPriority = 'Low' | 'Medium' | 'High';
 export type SupportTicketStatus = 'open' | 'in_progress' | 'closed';
+export type SupportTicketPriority = 'Low' | 'Medium' | 'High';
 
 export interface SupportTicket {
     id: string;
@@ -602,7 +575,7 @@ export interface TicketReply {
     senderId: string;
     senderName: string;
     senderAvatar: string;
-    senderRole: string;
+    senderRole: UserRole;
     text: string;
     attachments: Attachment[];
     timestamp: any;
@@ -613,7 +586,7 @@ export interface LiveHelpSession {
     userId: string;
     userName: string;
     userAvatar: string;
-    status: 'unassigned' | 'open' | 'closed';
+    status: 'open' | 'closed' | 'unassigned';
     assignedStaffId?: string;
     assignedStaffName?: string;
     assignedStaffAvatar?: string;
@@ -627,7 +600,6 @@ export interface LiveHelpMessage {
     senderName: string;
     text: string;
     timestamp: any;
-    updatedAt?: any;
 }
 
 export interface QuickReply {
@@ -635,10 +607,71 @@ export interface QuickReply {
     text: string;
 }
 
+export interface Post {
+    id: string;
+    userId: string;
+    userName: string;
+    userAvatar: string;
+    userRole: UserRole;
+    text: string;
+    imageUrl?: string | null;
+    likes: string[];
+    commentCount: number;
+    timestamp: any;
+    isBlocked: boolean;
+    visibility: 'public' | 'private';
+}
+
+export interface Comment {
+    id: string;
+    postId: string;
+    userId: string;
+    userName: string;
+    userAvatar: string;
+    text: string;
+    timestamp: any;
+}
+
+export interface Partner {
+    id: string;
+    name: string;
+    logoUrl: string;
+}
+
+export interface LeaderboardEntry {
+    userId: string;
+    userName: string;
+    userAvatar: string;
+    userRole: UserRole;
+    score: number;
+    rank: number;
+}
+
+export interface Leaderboard {
+    id: string;
+    title: string;
+    year: number;
+    type: 'earnings' | 'collabs';
+    isActive: boolean;
+    entries: LeaderboardEntry[];
+    createdAt?: any;
+}
+
+export type BoostType = 'profile' | 'campaign' | 'banner';
+
+export interface Boost {
+    id: string;
+    userId: string;
+    targetId: string;
+    targetType: BoostType;
+    expiresAt: any;
+    createdAt: any;
+}
+
 export interface Dispute {
     id: string;
     collaborationId: string;
-    collaborationType: string;
+    collaborationType: 'direct' | 'campaign' | 'ad_slot' | 'banner_booking';
     collaborationTitle: string;
     disputedById: string;
     disputedByName: string;
@@ -651,18 +684,6 @@ export interface Dispute {
     status: 'open' | 'resolved';
     timestamp: any;
     collabId?: string;
-}
-
-export type BoostType = 'profile' | 'campaign' | 'banner';
-
-export interface Boost {
-    id: string;
-    userId: string;
-    targetId: string;
-    targetType: BoostType;
-    plan: string; // e.g. '7days'
-    createdAt: any;
-    expiresAt: any;
 }
 
 export interface CollaborationStatusItem {
@@ -683,36 +704,17 @@ export interface CombinedCollabItem {
     customerName: string;
     customerAvatar: string;
     customerPiNumber?: string;
+    customerId?: string;
     providerName: string;
     providerAvatar: string;
     providerPiNumber?: string;
-    date?: Date;
+    providerId?: string;
+    date: Date | undefined;
     status: string;
     paymentStatus: string;
     payoutStatus: string;
-    originalData: any;
+    originalData: AnyCollaboration;
     visibleCollabId?: string;
-    customerId?: string;
-    providerId?: string;
     transactionRef?: string;
     disputeStatus?: string;
-}
-
-export interface LeaderboardEntry {
-    userId: string;
-    userName: string;
-    userAvatar: string;
-    userRole: UserRole;
-    score: number; // Earnings or Collab count
-    rank: number;
-}
-
-export interface Leaderboard {
-    id: string;
-    title: string; // e.g., "Top 10 Earners 2024"
-    year: number;
-    type: 'earnings' | 'collabs';
-    isActive: boolean;
-    entries: LeaderboardEntry[];
-    createdAt: any;
 }

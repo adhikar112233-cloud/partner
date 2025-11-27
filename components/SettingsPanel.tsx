@@ -180,6 +180,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 <SettingRow label="GST Rate (%)" helpText="Applicable tax rate.">
                     <input type="number" value={settings.gstRate} onChange={e => handleSettingChange('gstRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
+                <SettingRow label="Cancellation Penalty Amount (₹)" helpText="Amount to be deducted from creator's next payout if they cancel a collaboration.">
+                    <input type="number" value={settings.cancellationPenaltyAmount || 0} onChange={e => handleSettingChange('cancellationPenaltyAmount', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
 
                 {/* Integration */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Backend Integration</h4></div>

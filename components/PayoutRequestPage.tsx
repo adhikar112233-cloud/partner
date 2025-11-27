@@ -60,8 +60,11 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     // GST applied on Commission amount only
     const gstOnCommission = platformSettings.isCreatorGstEnabled ? commission * (platformSettings.gstRate / 100) : 0;
     
-    const totalDeductions = commission + gstOnCommission + dailyPayoutsReceived;
-    const finalPayoutAmount = finalAmount - totalDeductions;
+    // Penalty Calculation
+    const pendingPenalty = user.pendingPenalty || 0;
+    
+    const totalDeductions = commission + gstOnCommission + dailyPayoutsReceived + pendingPenalty;
+    const finalPayoutAmount = Math.max(0, finalAmount - totalDeductions);
 
     // --- Helper to convert Data URL to File ---
     const dataURLtoFile = (dataurl: string, filename: string): File => {
@@ -206,6 +209,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                 collabId: collaboration.collabId,
                 isAccountVerified: isVerificationEnforced, // Mark based on setting
                 accountVerifiedName: payoutMethod === 'bank' ? bankDetails.accountHolderName : user.name,
+                deductedPenalty: pendingPenalty // Store the deducted penalty
             };
 
             if (selfieUrl) {
@@ -266,6 +270,14 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                                  <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) GST on Commission ({platformSettings.gstRate}%):</span> <span>- ₹{gstOnCommission.toFixed(2)}</span></div>
                             )}
                             {dailyPayoutsReceived > 0 && <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Daily Payouts Received:</span> <span>- ₹{dailyPayoutsReceived.toFixed(2)}</span></div>}
+                            
+                            {pendingPenalty > 0 && (
+                                <div className="flex justify-between text-red-600 dark:text-red-400 font-bold">
+                                    <span>(-) Cancellation Penalty:</span>
+                                    <span>- ₹{pendingPenalty.toFixed(2)}</span>
+                                </div>
+                            )}
+
                             <div className="flex justify-between font-bold text-lg border-t dark:border-gray-700 pt-2 mt-2 text-gray-900 dark:text-white"><span>Final Payout Amount:</span> <span>₹{finalPayoutAmount.toFixed(2)}</span></div>
                         </div>
                     </div>

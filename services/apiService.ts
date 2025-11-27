@@ -98,6 +98,11 @@ export const apiService = {
             throw error; 
         }
     },
+    applyPenalty: async (userId: string, amount: number) => {
+        await updateDoc(doc(db, 'users', userId), {
+            pendingPenalty: increment(amount)
+        });
+    },
 
     // ... Platform Settings ...
     getPlatformSettings: async (): Promise<PlatformSettings> => {
@@ -624,6 +629,12 @@ export const apiService = {
     // ... Payouts & Refunds ...
     submitPayoutRequest: async (data: any) => {
         await addDoc(collection(db, 'payout_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });
+        // Reset the user's pending penalty since it is now attached to this request
+        if (data.userId) {
+            await updateDoc(doc(db, 'users', data.userId), {
+                pendingPenalty: 0
+            });
+        }
     },
     createRefundRequest: async (data: any) => {
         await addDoc(collection(db, 'refund_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });

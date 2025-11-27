@@ -115,8 +115,15 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                  handleUpdate(app.id, { status: 'agreement_reached', finalAmount: app.currentOffer?.amount });
                  break;
             case 'cancel':
-                if (window.confirm("Are you sure you want to cancel this application?")) {
+                const penalty = platformSettings.cancellationPenaltyAmount || 0;
+                if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
                     handleUpdate(app.id, { status: 'rejected', rejectionReason: 'Cancelled by influencer.' });
+                    if (penalty > 0) {
+                        apiService.applyPenalty(user.id, penalty).then(() => {
+                            // Optionally refresh user or notify parent
+                            console.log("Penalty applied");
+                        });
+                    }
                 }
                 break;
             case 'start_work':

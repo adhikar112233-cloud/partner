@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, View, CollaborationStatusItem, CollabRequestStatus, CampaignApplication, CollaborationRequest, PlatformSettings, PlatformBanner, AdSlotRequest, BannerAdBookingRequest } from '../types';
-import { InfluencersIcon, SparklesIcon, CollabIcon, SettingsIcon, AdminIcon as CompletedIcon } from './Icons';
+import { InfluencersIcon, SparklesIcon, CollabIcon, SettingsIcon, AdminIcon as CompletedIcon, ExclamationTriangleIcon } from './Icons';
 import { generateDashboardTip } from '../services/geminiService';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
@@ -14,14 +14,14 @@ interface DashboardProps {
   banners: PlatformBanner[];
 }
 
-const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-lg flex flex-col items-center text-center space-y-2">
-        <div className="bg-indigo-100 dark:bg-gray-700 p-3 rounded-full">
+const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode; color?: string }> = ({ title, value, icon, color }) => (
+    <div className={`bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-lg flex flex-col items-center text-center space-y-2 ${color ? 'border-2 ' + color : ''}`}>
+        <div className={`p-3 rounded-full ${color ? 'bg-red-100 dark:bg-red-900/50' : 'bg-indigo-100 dark:bg-gray-700'}`}>
             {icon}
         </div>
         <div>
-            <p className="text-gray-500 dark:text-gray-400 text-xs font-medium">{title}</p>
-            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{value}</p>
+            <p className={`text-xs font-medium ${color ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'}`}>{title}</p>
+            <p className={`text-2xl font-bold ${color ? 'text-red-800 dark:text-red-400' : 'text-gray-800 dark:text-gray-100'}`}>{value}</p>
         </div>
     </div>
 );
@@ -252,10 +252,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, setActiveView, platformSett
                 <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm sm:text-base">Here's a snapshot of your BIGYAPON dashboard.</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 sm:gap-6">
-                <StatCard title="Pending Actions" value={pendingCollabs.length.toString()} icon={<CollabIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />
-                <StatCard title="Work In Progress" value={inProgressCollabs.length.toString()} icon={<SettingsIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />
-                <StatCard title="Completed Collabs" value={completedCollabs.length.toString()} icon={<CompletedIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
+                <StatCard title="Pending" value={pendingCollabs.length.toString()} icon={<CollabIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />
+                <StatCard title="In Progress" value={inProgressCollabs.length.toString()} icon={<SettingsIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />
+                <StatCard title="Completed" value={completedCollabs.length.toString()} icon={<CompletedIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />
+                {user.pendingPenalty && user.pendingPenalty > 0 ? (
+                    <StatCard 
+                        title="Penalty" 
+                        value={`₹${user.pendingPenalty}`} 
+                        icon={<ExclamationTriangleIcon className="w-6 h-6 text-red-600" />} 
+                        color="border-red-500"
+                    />
+                ) : (
+                    <StatCard title="Total Earnings" value={`₹${user.totalEarnings?.toLocaleString() || 0}`} icon={<SparklesIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />
+                )}
             </div>
 
             <CollabListSection

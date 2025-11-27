@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { PlatformSettings } from '../types';
+import { PlatformSettings, CompanyInfo } from '../types';
 import { apiService } from '../services/apiService';
 import { BACKEND_URL } from '../services/firebase';
 
@@ -56,6 +56,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
         }
     };
 
+    const handleCompanyInfoChange = (field: keyof CompanyInfo, value: string) => {
+        if (settings) {
+            setSettings({
+                ...settings,
+                companyInfo: {
+                    name: '',
+                    address: '',
+                    email: '',
+                    phone: '',
+                    gstIn: '',
+                    ...settings.companyInfo,
+                    [field]: value
+                }
+            });
+        }
+    };
+
     const handleSave = async () => {
         if (settings) {
             setIsSaving(true);
@@ -84,6 +101,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
             </div>
             
             <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-200px)] overflow-y-auto">
+                {/* Company Information (New Section) */}
+                <div className="px-6 py-3 bg-purple-50 dark:bg-purple-900/20"><h4 className="font-semibold text-purple-800 dark:text-purple-200">Company Information (For Agreements)</h4></div>
+                <SettingRow label="Company Name" helpText="The official name of your company displayed in user agreements.">
+                    <input type="text" value={settings.companyInfo?.name || ''} onChange={e => handleCompanyInfoChange('name', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="Address" helpText="Official registered address.">
+                    <textarea value={settings.companyInfo?.address || ''} onChange={e => handleCompanyInfoChange('address', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" rows={2} />
+                </SettingRow>
+                <SettingRow label="Contact Email" helpText="Support or legal contact email.">
+                    <input type="email" value={settings.companyInfo?.email || ''} onChange={e => handleCompanyInfoChange('email', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="Contact Phone" helpText="Support or legal contact phone number.">
+                    <input type="text" value={settings.companyInfo?.phone || ''} onChange={e => handleCompanyInfoChange('phone', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="GSTIN" helpText="GST Identification Number (Optional).">
+                    <input type="text" value={settings.companyInfo?.gstIn || ''} onChange={e => handleCompanyInfoChange('gstIn', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+
                 {/* General */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">General Configuration</h4></div>
                 <SettingRow label="Community Feed" helpText="Enable/Disable the public social feed for users.">
@@ -101,6 +136,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 <SettingRow label="Welcome Message">
                     <textarea value={settings.welcomeMessage || ''} onChange={e => handleSettingChange('welcomeMessage', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" rows={2} />
                 </SettingRow>
+                <SettingRow label="Loan & Recharge URL" helpText="Link for the Loan & Recharge icon in the header. If empty, it shows 'Coming Soon'.">
+                    <input type="url" value={settings.loanAndRechargeUrl || ''} onChange={e => handleSettingChange('loanAndRechargeUrl', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="https://example.com" />
+                </SettingRow>
                 
                 {/* Authentication */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Authentication</h4></div>
@@ -111,7 +149,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                     </div>
                 </SettingRow>
 
-                {/* Financial Controls (New Section) */}
+                {/* Financial Controls */}
                 <div className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20"><h4 className="font-semibold text-blue-800 dark:text-blue-200">Financial Controls (On/Off)</h4></div>
                 
                 <SettingRow label="Brand: Platform Fees" helpText="Apply processing charges/platform fees to Brands during payment checkout.">

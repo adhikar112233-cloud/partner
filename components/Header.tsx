@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LogoIcon, MessagesIcon, SupportIcon, YoutubeIcon, MenuIcon, SunIcon, MoonIcon, NotificationIcon, DashboardIcon, CommunityIcon } from './Icons';
+import { LogoIcon, MessagesIcon, SupportIcon, YoutubeIcon, MenuIcon, SunIcon, MoonIcon, NotificationIcon, DashboardIcon, CommunityIcon, LoanRecharge3DIcon } from './Icons';
 import { User, View, PlatformSettings, ConversationParticipant, Conversation } from '../types';
 import ConversationsPanel from './ConversationsPanel';
 import { apiService } from '../services/apiService';
@@ -62,6 +62,14 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
     }
   };
 
+  const handleLoanRechargeClick = () => {
+      if (platformSettings.loanAndRechargeUrl) {
+          window.open(platformSettings.loanAndRechargeUrl, '_blank');
+      } else {
+          alert("Coming Soon");
+      }
+  };
+
   // Reusable toggle buttons component
   const ToggleButtons = ({ mobile = false }) => (
       <>
@@ -111,9 +119,10 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
               <MenuIcon className="w-6 h-6" />
             </button>
             
-            <button onClick={() => setActiveView(View.PARTNERS)} className="flex items-center focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg">
+            {/* Logo is now static, no longer a link to Partners */}
+            <div className="flex items-center rounded-lg">
                <LogoIcon className="h-8 sm:h-10 w-auto" />
-            </button>
+            </div>
           </div>
 
           {/* CENTER: Toggle (Desktop Only) - Absolutely positioned to stay centered */}
@@ -124,6 +133,16 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
           {/* RIGHT: Actions (Visible on Top Bar) */}
           <div className="flex justify-end items-center gap-1 sm:gap-2">
              
+             {/* Loan & Recharge (New Button) */}
+             <button 
+                onClick={handleLoanRechargeClick}
+                className="p-1 sm:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                title="Loan & Recharge"
+             >
+                 {/* w-auto allows width to scale based on aspect ratio of SVG, while height is fixed to match Logo */}
+                 <LoanRecharge3DIcon className="h-8 w-auto sm:h-10 transform group-hover:scale-105 transition-transform" />
+             </button>
+
              {/* YouTube Tutorials */}
              {platformSettings.youtubeTutorialUrl && (
                 <a 

@@ -3,10 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { User, Transaction, PayoutRequest, AnyCollaboration, MembershipPlan, UserRole } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
-import { ProfileIcon, PaymentIcon, MembershipIcon, CollabIcon, CheckBadgeIcon, DocumentIcon, LogoIcon } from './Icons';
+import { ProfileIcon, PaymentIcon, MembershipIcon, CollabIcon, CheckBadgeIcon, DocumentIcon, LogoIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons';
 
 interface UserDetailViewProps {
     user: User;
+    users?: User[]; // List of users for navigation
+    onSelectUser?: (user: User) => void; // Callback to switch user
     onClose: () => void;
     onUpdateUser: (userId: string, data: Partial<User>) => void;
     transactions: Transaction[];
@@ -24,7 +26,7 @@ const toJsDate = (ts: any): Date | undefined => {
     return undefined;
 };
 
-const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdateUser, transactions, payouts, collabs }) => {
+const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUser, onClose, onUpdateUser, transactions, payouts, collabs }) => {
     const [activeTab, setActiveTab] = useState<Tab>('profile');
     const [editProfile, setEditProfile] = useState({
         name: user.name,
@@ -38,7 +40,49 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
         expiryDate: toJsDate(user.membership?.expiresAt)?.toISOString().split('T')[0] || ''
     });
 
+    // Determine navigation state
+    const currentIndex = users ? users.findIndex(u => u.id === user.id) : -1;
+    const hasPrev = currentIndex > 0;
+    const hasNext = users && currentIndex < users.length - 1;
+
+    const handlePrev = () => {
+        if (hasPrev && users && onSelectUser) onSelectUser(users[currentIndex - 1]);
+    };
+
+    const handleNext = () => {
+        if (hasNext && users && onSelectUser) onSelectUser(users[currentIndex + 1]);
+    };
+
+    // Keyboard navigation support
     useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Avoid conflict if user is typing in an input
+            const target = e.target as HTMLElement;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+
+            if (e.key === 'ArrowLeft') handlePrev();
+            if (e.key === 'ArrowRight') handleNext();
+            if (e.key === 'Escape') onClose();
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handlePrev, handleNext, onClose]);
+
+    useEffect(() => {
+        // Reset edit state when user changes
+        setEditProfile({
+            name: user.name,
+            email: user.email,
+            mobileNumber: user.mobileNumber || '',
+            role: user.role,
+            socialMediaLinks: ''
+        });
+        setMembershipEdit({
+            plan: user.membership?.plan || 'free',
+            expiryDate: toJsDate(user.membership?.expiresAt)?.toISOString().split('T')[0] || ''
+        });
+
         if (user.role === 'influencer') {
             apiService.getInfluencerProfile(user.id).then((data) => {
                 if (data) {
@@ -46,7 +90,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                 }
             });
         }
-    }, [user.id, user.role]);
+    }, [user.id]); // Trigger on user ID change
 
     const userTransactions = transactions.filter(t => t.userId === user.id);
     const userPayouts = payouts.filter(p => p.userId === user.id);
@@ -115,7 +159,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
             <div className="w-full max-w-6xl bg-white dark:bg-gray-800 h-full overflow-y-auto shadow-2xl flex flex-col transition-all duration-300" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="p-6 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-center">
                         <div className="flex items-center gap-4">
                             <img src={user.avatar} alt={user.name} className="w-16 h-16 rounded-full object-cover border-2 border-white shadow" />
                             <div>
@@ -127,9 +171,29 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                                 </div>
                             </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                             <LogoIcon className="h-8 w-auto opacity-50 hidden sm:block" />
-                             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                        <div className="flex items-center gap-3">
+                             {/* Navigation Controls */}
+                             <div className="flex items-center bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-1 mr-4 shadow-sm">
+                                <button 
+                                    onClick={handlePrev} 
+                                    disabled={!hasPrev}
+                                    title="Previous User (Left Arrow)"
+                                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-30 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300"
+                                >
+                                    <ChevronLeftIcon className="w-5 h-5" />
+                                </button>
+                                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+                                <button 
+                                    onClick={handleNext} 
+                                    disabled={!hasNext}
+                                    title="Next User (Right Arrow)"
+                                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-30 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300"
+                                >
+                                    <ChevronRightIcon className="w-5 h-5" />
+                                </button>
+                             </div>
+
+                             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-3xl leading-none" title="Close (Esc)">&times;</button>
                         </div>
                     </div>
                 </div>
@@ -189,69 +253,142 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                     )}
 
                     {activeTab === 'financials' && (
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                            <div>
-                                <h3 className="font-bold text-lg mb-3 text-gray-800 dark:text-white">Payments Made (Transactions)</h3>
-                                <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                                                <tr>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Date</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Tx Ref ID</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Collab ID</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Amount</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                                {userTransactions.map(t => (
-                                                    <tr key={t.transactionId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                                        <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-400">{toJsDate(t.timestamp)?.toLocaleDateString()}</td>
-                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{t.transactionId}</td>
-                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{t.collabId || '-'}</td>
-                                                        <td className="p-3 font-bold text-red-600 dark:text-red-400 whitespace-nowrap">-₹{t.amount.toLocaleString()}</td>
-                                                        <td className="p-3">
-                                                            <span className={`px-2 py-0.5 rounded-full text-xs capitalize ${t.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{t.status}</span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                        <div className="space-y-6">
+                            {/* Saved Payment Details */}
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border dark:border-gray-700 shadow-sm">
+                                <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white border-b dark:border-gray-700 pb-2">Saved Payment Methods</h3>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Bank Details */}
+                                    <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-md border dark:border-gray-600">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h4 className="font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                                                Bank Account
+                                            </h4>
+                                            {user.savedBankDetails?.isVerified ? (
+                                                <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full flex items-center gap-1">
+                                                    <CheckBadgeIcon className="w-3 h-3" /> Verified
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full">Unverified</span>
+                                            )}
+                                        </div>
+                                        
+                                        {user.savedBankDetails ? (
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500 dark:text-gray-400">Holder Name:</span>
+                                                    <span className="font-medium dark:text-gray-200">{user.savedBankDetails.accountHolderName}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500 dark:text-gray-400">Account No:</span>
+                                                    <span className="font-mono font-medium dark:text-gray-200">{user.savedBankDetails.accountNumber}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500 dark:text-gray-400">IFSC:</span>
+                                                    <span className="font-mono font-medium dark:text-gray-200">{user.savedBankDetails.ifscCode}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500 dark:text-gray-400">Bank:</span>
+                                                    <span className="font-medium dark:text-gray-200">{user.savedBankDetails.bankName}</span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-gray-500 italic">No bank details saved.</p>
+                                        )}
                                     </div>
-                                    {userTransactions.length === 0 && <p className="p-4 text-center text-gray-500 italic">No payments made.</p>}
+
+                                    {/* UPI Details */}
+                                    <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-md border dark:border-gray-600">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h4 className="font-semibold text-gray-700 dark:text-gray-200">UPI Details</h4>
+                                            {user.isUpiVerified ? (
+                                                <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full flex items-center gap-1">
+                                                    <CheckBadgeIcon className="w-3 h-3" /> Verified
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full">Unverified</span>
+                                            )}
+                                        </div>
+
+                                        {user.savedUpiId ? (
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-gray-500 dark:text-gray-400">UPI ID:</span>
+                                                    <span className="font-mono font-medium text-lg dark:text-gray-200">{user.savedUpiId}</span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-gray-500 italic">No UPI ID saved.</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                            <div>
-                                <h3 className="font-bold text-lg mb-3 text-gray-800 dark:text-white">Payouts Received</h3>
-                                <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                                                <tr>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Date</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Payout ID</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Collab ID</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Amount</th>
-                                                    <th className="p-3 font-semibold whitespace-nowrap">Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                                {userPayouts.map(p => (
-                                                    <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                                        <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-400">{toJsDate(p.timestamp)?.toLocaleDateString()}</td>
-                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{p.id}</td>
-                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{p.collabId || '-'}</td>
-                                                        <td className="p-3 font-bold text-green-600 dark:text-green-400 whitespace-nowrap">+₹{p.amount.toLocaleString()}</td>
-                                                        <td className="p-3">
-                                                            <span className={`px-2 py-0.5 rounded-full text-xs capitalize ${p.status === 'completed' ? 'bg-green-100 text-green-800' : p.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'}`}>{p.status.replace('_', ' ')}</span>
-                                                        </td>
+
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                <div>
+                                    <h3 className="font-bold text-lg mb-3 text-gray-800 dark:text-white">Payments Made (Transactions)</h3>
+                                    <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                                    <tr>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Date</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Tx Ref ID</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Collab ID</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Amount</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Status</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                                    {userTransactions.map(t => (
+                                                        <tr key={t.transactionId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                            <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-400">{toJsDate(t.timestamp)?.toLocaleDateString()}</td>
+                                                            <td className="p-3 font-mono text-xs text-gray-500 select-all">{t.transactionId}</td>
+                                                            <td className="p-3 font-mono text-xs text-gray-500 select-all">{t.collabId || '-'}</td>
+                                                            <td className="p-3 font-bold text-red-600 dark:text-red-400 whitespace-nowrap">-₹{t.amount.toLocaleString()}</td>
+                                                            <td className="p-3">
+                                                                <span className={`px-2 py-0.5 rounded-full text-xs capitalize ${t.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{t.status}</span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {userTransactions.length === 0 && <p className="p-4 text-center text-gray-500 italic">No payments made.</p>}
                                     </div>
-                                    {userPayouts.length === 0 && <p className="p-4 text-center text-gray-500 italic">No payouts found.</p>}
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-lg mb-3 text-gray-800 dark:text-white">Payouts Received</h3>
+                                    <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                                    <tr>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Date</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Payout ID</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Collab ID</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Amount</th>
+                                                        <th className="p-3 font-semibold whitespace-nowrap">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                                    {userPayouts.map(p => (
+                                                        <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                            <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-400">{toJsDate(p.timestamp)?.toLocaleDateString()}</td>
+                                                            <td className="p-3 font-mono text-xs text-gray-500 select-all">{p.id}</td>
+                                                            <td className="p-3 font-mono text-xs text-gray-500 select-all">{p.collabId || '-'}</td>
+                                                            <td className="p-3 font-bold text-green-600 dark:text-green-400 whitespace-nowrap">+₹{p.amount.toLocaleString()}</td>
+                                                            <td className="p-3">
+                                                                <span className={`px-2 py-0.5 rounded-full text-xs capitalize ${p.status === 'completed' ? 'bg-green-100 text-green-800' : p.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'}`}>{p.status.replace('_', ' ')}</span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {userPayouts.length === 0 && <p className="p-4 text-center text-gray-500 italic">No payouts found.</p>}
+                                    </div>
                                 </div>
                             </div>
                         </div>

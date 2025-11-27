@@ -150,6 +150,14 @@ export interface SocialMediaLink {
     url: string;
 }
 
+export interface CompanyInfo {
+    name: string;
+    address: string;
+    email: string;
+    phone: string;
+    gstIn?: string;
+}
+
 export interface PlatformSettings {
     isCommunityFeedEnabled: boolean;
     isCreatorMembershipEnabled: boolean;
@@ -159,6 +167,7 @@ export interface PlatformSettings {
     isNotificationBannerEnabled: boolean;
     notificationBannerText?: string;
     youtubeTutorialUrl?: string;
+    loanAndRechargeUrl?: string; // New field for Loan & Recharge redirection
     socialMediaLinks: SocialMediaLink[];
     isSocialMediaFabEnabled: boolean;
     isStaffRegistrationEnabled: boolean;
@@ -236,6 +245,9 @@ export interface PlatformSettings {
         brandCampaignBoost: DiscountSetting;
         brandBannerBoost: DiscountSetting;
     };
+
+    // Admin Configurable Company Details
+    companyInfo?: CompanyInfo;
 }
 
 export enum View {

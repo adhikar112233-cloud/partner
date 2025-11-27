@@ -395,7 +395,7 @@ export const CheckBadgeIcon = ({ className }: { className?: string }) => (
 
 export const TrophyIcon = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
-        <path fillRule="evenodd" d="M5.166 2.621v.858c-1.035.148-2.059.33-3.071.543a.75.75 0 00-.584.859 6.753 6.753 0 006.138 5.626c.3.03.59.052.877.074v1.217c-1.605.493-2.75 1.986-2.75 3.702v1.05h-4.8c-.621 0-1.125.504-1.125 1.125v1.125c0 .621.504 1.125 1.125 1.125h11.25c.621 0 1.125-.504 1.125-1.125v-1.125c0-.621-.504-1.125-1.125-1.125h-4.8v-1.05c0-1.716-1.145-3.21-2.75-3.702v-1.217c.288-.022.577-.044.877-.074a6.753 6.753 0 006.138-5.626.75.75 0 00-.584-.859c-1.012-.213-2.036-.395-3.071-.543V2.62a3 3 0 10-6 0zM15.668 18.75H8.332v1.125h7.336v-1.125z" clipRule="evenodd" />
+        <path fillRule="evenodd" d="M5.166 2.621v.858c-1.035.148-2.059.33-3.071.543a.75.75 0 00-.584.859 6.753 6.753 0 006.138 5.626c.3.03.59.052.877.074v1.217c-1.605.493-2.75 1.986-2.75 3.702v1.05h-4.8c-.621 0-1.125.504-1.125 1.125v1.125c0 .621.504 1.125 1.125 1.125h11.25c.621 0 1.125-.504 1.125-1.125v-1.125c0-.621-.504-1.125-1.125-1.125h-4.8v-1.05c0-1.716-1.145-3.21-2.75-3.702v-1.217c.288-.022.577-.044.877-.074a6.753 6.753 0 006.138-5.626.75.75 0 00-.584-.859c-1.012-.213-2.09 1.022-.213-2.036-.395-3.071-.543V2.62a3 3 0 10-6 0zM15.668 18.75H8.332v1.125h7.336v-1.125z" clipRule="evenodd" />
     </svg>
 );
 
@@ -403,5 +403,44 @@ export const DocumentTextIcon = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
         <path fillRule="evenodd" d="M5.625 1.5H9a.375.375 0 01.375.375v1.875c0 1.036.84 1.875 1.875 1.875H12.975a.375.375 0 01.375.375v16.5c0 1.035-.84 1.875-1.875 1.875H5.625A1.875 1.875 0 013.75 22.5V3.375c0-1.036.84-1.875 1.875-1.875zm5.845 17.03a.75.75 0 00-1.06 1.06l1.875 1.875a.75.75 0 001.06 0l4.5-4.5a.75.75 0 00-1.06-1.06l-3.97 3.97-1.34-1.34z" clipRule="evenodd" />
         <path d="M14.25 5.25a5.23 5.23 0 00-1.279-3.434 9.768 9.768 0 016.963 6.963A5.23 5.23 0 0016.5 7.5h-1.875a.375.375 0 01-.375-.375V5.25z" />
+    </svg>
+);
+
+export const ChevronLeftIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+    </svg>
+);
+
+export const ChevronRightIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+    </svg>
+);
+
+export const LoanRecharge3DIcon = ({ className }: { className?: string }) => (
+    <svg viewBox="0 0 320 64" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+        <defs>
+            <linearGradient id="loan-grad" x1="0" y1="0" x2="320" y2="64" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#4F46E5" />
+                <stop offset="100%" stopColor="#06B6D4" />
+            </linearGradient>
+            <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="2" dy="4" stdDeviation="3" floodColor="#000000" floodOpacity="0.3" />
+            </filter>
+        </defs>
+        <g filter="url(#shadow)">
+            {/* Wide Pill Background */}
+            <rect x="4" y="8" width="312" height="48" rx="24" fill="url(#loan-grad)" stroke="#FFFFFF" strokeWidth="2" />
+            
+            {/* Icon Graphic on Left */}
+            <circle cx="40" cy="32" r="14" fill="#FFFFFF" fillOpacity="0.2" />
+            <path d="M30 32L36 26M36 26L42 32M36 26V38" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M48 26V38" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M48 29H54" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+
+            {/* Text */}
+            <text x="80" y="40" fill="white" fontSize="24" fontWeight="bold" fontFamily="Arial, sans-serif" letterSpacing="1">LOAN & RECHARGE</text>
+        </g>
     </svg>
 );

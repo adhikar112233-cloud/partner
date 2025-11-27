@@ -346,7 +346,7 @@ const DiscountSettingsPanel: React.FC<{
             </div>
             
             <div className="space-y-6">
-                {Object.entries(localSettings.discountSettings || {}).map(([key, setting]) => (
+                {(Object.entries(localSettings.discountSettings || {}) as [string, DiscountSetting][]).map(([key, setting]) => (
                     <div key={key} className="bg-white dark:bg-gray-800 p-4 rounded shadow">
                         <h3 className="font-bold mb-2 capitalize dark:text-gray-200">{key.replace(/([A-Z])/g, ' $1').trim()}</h3>
                         <div className="flex items-center gap-4">

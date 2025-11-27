@@ -306,6 +306,8 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onU
             {selectedUser && (
                 <UserDetailView 
                     user={selectedUser} 
+                    users={filteredUsers} // Pass the filtered list for navigation
+                    onSelectUser={setSelectedUser} // Pass the handler to update selected user
                     onClose={() => setSelectedUser(null)} 
                     onUpdateUser={onUpdate}
                     transactions={transactions}

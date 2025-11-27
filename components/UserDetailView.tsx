@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Transaction, PayoutRequest, AnyCollaboration, MembershipPlan, UserRole } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
@@ -30,12 +30,23 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
         name: user.name,
         email: user.email,
         mobileNumber: user.mobileNumber || '',
-        role: user.role
+        role: user.role,
+        socialMediaLinks: ''
     });
     const [membershipEdit, setMembershipEdit] = useState({
         plan: user.membership?.plan || 'free',
         expiryDate: toJsDate(user.membership?.expiresAt)?.toISOString().split('T')[0] || ''
     });
+
+    useEffect(() => {
+        if (user.role === 'influencer') {
+            apiService.getInfluencerProfile(user.id).then((data) => {
+                if (data) {
+                    setEditProfile(prev => ({ ...prev, socialMediaLinks: data.socialMediaLinks || '' }));
+                }
+            });
+        }
+    }, [user.id, user.role]);
 
     const userTransactions = transactions.filter(t => t.userId === user.id);
     const userPayouts = payouts.filter(p => p.userId === user.id);
@@ -48,9 +59,31 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
     });
 
     const handleSaveProfile = async () => {
-        await apiService.updateUserProfile(user.id, editProfile);
-        onUpdateUser(user.id, editProfile);
-        alert('Profile updated!');
+        try {
+            await apiService.updateUserProfile(user.id, {
+                name: editProfile.name,
+                email: editProfile.email,
+                mobileNumber: editProfile.mobileNumber,
+                role: editProfile.role
+            });
+
+            if (editProfile.role === 'influencer') {
+                await apiService.updateInfluencerProfile(user.id, {
+                    socialMediaLinks: editProfile.socialMediaLinks
+                });
+            }
+
+            onUpdateUser(user.id, {
+                name: editProfile.name,
+                email: editProfile.email,
+                mobileNumber: editProfile.mobileNumber,
+                role: editProfile.role
+            });
+            alert('Profile updated!');
+        } catch (error) {
+            console.error("Error updating profile:", error);
+            alert("Failed to update profile.");
+        }
     };
 
     const handleSaveMembership = async () => {
@@ -133,6 +166,21 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                                     <option value="staff">Staff</option>
                                 </select>
                             </div>
+                            
+                            {editProfile.role === 'influencer' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Social Media Links</label>
+                                    <textarea 
+                                        value={editProfile.socialMediaLinks} 
+                                        onChange={e => setEditProfile({ ...editProfile, socialMediaLinks: e.target.value })} 
+                                        className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:text-white"
+                                        rows={3}
+                                        placeholder="Instagram: ..., YouTube: ..."
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Comma separated or new lines.</p>
+                                </div>
+                            )}
+
                             <button onClick={handleSaveProfile} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Save Profile</button>
                         </div>
                     )}

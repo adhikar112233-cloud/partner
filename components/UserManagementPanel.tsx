@@ -1,10 +1,9 @@
-
 import React, { useState } from 'react';
 import { User, Transaction, PayoutRequest, AnyCollaboration, UserRole, MembershipPlan } from '../types';
 import { apiService } from '../services/apiService';
 import { authService } from '../services/authService';
 import UserDetailView from './UserDetailView';
-import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon, CheckBadgeIcon, ExclamationTriangleIcon } from './Icons';
+import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon, CheckBadgeIcon, ExclamationTriangleIcon, KeyIcon, EnvelopeIcon } from './Icons';
 
 interface UserManagementPanelProps {
     allUsers: User[];
@@ -14,6 +13,124 @@ interface UserManagementPanelProps {
     collabs: AnyCollaboration[];
 }
 
+const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = ({ user, onClose }) => {
+    const [activeTab, setActiveTab] = useState<'reset' | 'manual'>('reset');
+    const [newPassword, setNewPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+    const handleSendReset = async () => {
+        setIsLoading(true);
+        setMessage(null);
+        try {
+            await authService.sendPasswordResetEmail(user.email);
+            setMessage({ type: 'success', text: `Password reset email sent to ${user.email}` });
+        } catch (err: any) {
+            setMessage({ type: 'error', text: err.message || 'Failed to send reset email.' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleManualUpdate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newPassword.length < 6) {
+            setMessage({ type: 'error', text: 'Password must be at least 6 characters.' });
+            return;
+        }
+        
+        setIsLoading(true);
+        setMessage(null);
+        try {
+            await apiService.adminChangePassword(user.id, newPassword);
+            setMessage({ type: 'success', text: 'Password updated successfully.' });
+            setNewPassword('');
+        } catch (err: any) {
+            setMessage({ type: 'error', text: err.message || 'Failed to update password.' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[70] p-4" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold dark:text-white">Manage Password</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xl">&times;</button>
+                </div>
+                
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">For user: <span className="font-semibold text-gray-800 dark:text-gray-200">{user.name}</span></p>
+
+                <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+                    <button 
+                        onClick={() => { setActiveTab('reset'); setMessage(null); }}
+                        className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'reset' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                    >
+                        Send Reset Link
+                    </button>
+                    <button 
+                        onClick={() => { setActiveTab('manual'); setMessage(null); }}
+                        className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'manual' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                    >
+                        Set Manually
+                    </button>
+                </div>
+
+                {message && (
+                    <div className={`p-3 rounded-lg mb-4 text-sm ${message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {message.text}
+                    </div>
+                )}
+
+                {activeTab === 'reset' && (
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Send a system-generated password reset email to <strong>{user.email}</strong>. This is the safest method.
+                        </p>
+                        <button 
+                            onClick={handleSendReset}
+                            disabled={isLoading}
+                            className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            <EnvelopeIcon className="w-4 h-4" />
+                            {isLoading ? 'Sending...' : 'Send Email'}
+                        </button>
+                    </div>
+                )}
+
+                {activeTab === 'manual' && (
+                    <form onSubmit={handleManualUpdate} className="space-y-4">
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Manually override the user's password. Use this only if the user cannot access their email.
+                        </p>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">New Password</label>
+                            <input 
+                                type="text" 
+                                value={newPassword}
+                                onChange={e => setNewPassword(e.target.value)}
+                                placeholder="Enter new password"
+                                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                required
+                                minLength={6}
+                            />
+                        </div>
+                        <button 
+                            type="submit"
+                            disabled={isLoading || newPassword.length < 6}
+                            className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            <KeyIcon className="w-4 h-4" />
+                            {isLoading ? 'Updating...' : 'Update Password'}
+                        </button>
+                    </form>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onUpdate, transactions, payouts, collabs }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -22,6 +139,9 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onU
     
     // Confirmation Modal State
     const [confirmation, setConfirmation] = useState<{ type: 'block' | 'delete', user: User } | null>(null);
+    
+    // Password Modal State
+    const [passwordModalUser, setPasswordModalUser] = useState<User | null>(null);
 
     // Create User State
     const [newUser, setNewUser] = useState({
@@ -124,7 +244,7 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onU
                                 <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-48">Email ID</th>
                                 <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-32">Mobile Number</th>
                                 <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-32">Membership</th>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap text-center w-40">Action</th>
+                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap text-center w-48">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -156,6 +276,13 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onU
                                     </td>
                                     <td className="p-4 text-center whitespace-nowrap">
                                         <div className="flex items-center justify-center gap-2">
+                                            <button 
+                                                onClick={() => setPasswordModalUser(user)} 
+                                                className="p-1.5 bg-yellow-50 text-yellow-600 rounded-md hover:bg-yellow-100 transition-colors" 
+                                                title="Manage Password"
+                                            >
+                                                <KeyIcon className="w-4 h-4" />
+                                            </button>
                                             <button 
                                                 onClick={() => requestToggleBlock(user)} 
                                                 className={`p-1.5 rounded-md transition-colors ${user.isBlocked ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-green-100 text-green-600 hover:bg-green-200'}`} 
@@ -194,6 +321,14 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onU
                     transactions={transactions}
                     payouts={payouts}
                     collabs={collabs}
+                />
+            )}
+
+            {/* Password Management Modal */}
+            {passwordModalUser && (
+                <PasswordManagementModal 
+                    user={passwordModalUser}
+                    onClose={() => setPasswordModalUser(null)}
                 />
             )}
 

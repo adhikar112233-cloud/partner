@@ -18,6 +18,26 @@ const SettingRow: React.FC<{ label: string; children: React.ReactNode; helpText?
     </div>
 );
 
+// Reusable Toggle Switch Component
+const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void }> = ({ enabled, onChange }) => (
+    <button
+        type="button"
+        className={`${
+            enabled ? 'bg-indigo-600' : 'bg-gray-200'
+        } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
+        role="switch"
+        aria-checked={enabled}
+        onClick={() => onChange(!enabled)}
+    >
+        <span
+            aria-hidden="true"
+            className={`${
+                enabled ? 'translate-x-5' : 'translate-x-0'
+            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+        />
+    </button>
+);
+
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
     const [settings, setSettings] = useState<PlatformSettings | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -33,18 +53,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
     const handleSettingChange = (key: keyof PlatformSettings, value: any) => {
         if (settings) {
             setSettings({ ...settings, [key]: value });
-        }
-    };
-
-    const handleNestedChange = (parent: keyof PlatformSettings, key: string, value: any) => {
-        if (settings) {
-            setSettings({
-                ...settings,
-                [parent]: {
-                    ...(settings[parent] as any),
-                    [key]: value
-                }
-            });
         }
     };
 
@@ -80,14 +88,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">General Configuration</h4></div>
                 <SettingRow label="Community Feed" helpText="Enable/Disable the public social feed for users.">
                     <div className="flex items-center">
-                        <input type="checkbox" id="community" checked={settings.isCommunityFeedEnabled} onChange={e => handleSettingChange('isCommunityFeedEnabled', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
-                        <label htmlFor="community" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Feed</label>
+                        <ToggleSwitch enabled={settings.isCommunityFeedEnabled} onChange={val => handleSettingChange('isCommunityFeedEnabled', val)} />
+                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Feed</label>
                     </div>
                 </SettingRow>
                 <SettingRow label="Maintenance Mode" helpText="Restricts access to the platform for non-admin users.">
                     <div className="flex items-center">
-                        <input type="checkbox" id="maint" checked={settings.isMaintenanceModeEnabled} onChange={e => handleSettingChange('isMaintenanceModeEnabled', e.target.checked)} className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded" />
-                        <label htmlFor="maint" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Maintenance</label>
+                        <ToggleSwitch enabled={settings.isMaintenanceModeEnabled} onChange={val => handleSettingChange('isMaintenanceModeEnabled', val)} />
+                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Maintenance</label>
                     </div>
                 </SettingRow>
                 <SettingRow label="Welcome Message">
@@ -98,9 +106,38 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Authentication</h4></div>
                 <SettingRow label="Google Login" helpText="Allow users to sign up/login using their Google account.">
                     <div className="flex items-center">
-                        <input type="checkbox" id="googleLogin" checked={settings.isGoogleLoginEnabled} onChange={e => handleSettingChange('isGoogleLoginEnabled', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
-                        <label htmlFor="googleLogin" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Google Login</label>
+                        <ToggleSwitch enabled={settings.isGoogleLoginEnabled} onChange={val => handleSettingChange('isGoogleLoginEnabled', val)} />
+                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable Google Login</label>
                     </div>
+                </SettingRow>
+
+                {/* Financial Controls (New Section) */}
+                <div className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20"><h4 className="font-semibold text-blue-800 dark:text-blue-200">Financial Controls (On/Off)</h4></div>
+                
+                <SettingRow label="Brand: Platform Fees" helpText="Apply processing charges/platform fees to Brands during payment checkout.">
+                     <ToggleSwitch enabled={settings.isBrandPlatformFeeEnabled} onChange={val => handleSettingChange('isBrandPlatformFeeEnabled', val)} />
+                </SettingRow>
+                <SettingRow label="Brand: GST" helpText="Apply GST on top of fees to Brands during payment checkout.">
+                     <ToggleSwitch enabled={settings.isBrandGstEnabled} onChange={val => handleSettingChange('isBrandGstEnabled', val)} />
+                </SettingRow>
+                
+                <SettingRow label="Creator: Platform Fees (Commission)" helpText="Deduct platform commission from Creator payouts.">
+                     <ToggleSwitch enabled={settings.isPlatformCommissionEnabled} onChange={val => handleSettingChange('isPlatformCommissionEnabled', val)} />
+                </SettingRow>
+                <SettingRow label="Creator: GST" helpText="Deduct GST on the commission amount from Creator payouts.">
+                     <ToggleSwitch enabled={settings.isCreatorGstEnabled} onChange={val => handleSettingChange('isCreatorGstEnabled', val)} />
+                </SettingRow>
+
+                {/* Financial Rates */}
+                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Financial Rates</h4></div>
+                <SettingRow label="Platform Commission Rate (%)" helpText="Percentage deducted from creator earnings.">
+                    <input type="number" value={settings.platformCommissionRate} onChange={e => handleSettingChange('platformCommissionRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="Brand Processing Fee Rate (%)" helpText="Percentage added to brand payments.">
+                    <input type="number" value={settings.paymentProcessingChargeRate} onChange={e => handleSettingChange('paymentProcessingChargeRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="GST Rate (%)" helpText="Applicable tax rate.">
+                    <input type="number" value={settings.gstRate} onChange={e => handleSettingChange('gstRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
 
                 {/* Integration */}
@@ -145,22 +182,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                     <input type="password" value={settings.payoutClientSecret || ''} onChange={e => handleSettingChange('payoutClientSecret', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm" />
                 </SettingRow>
 
-                {/* Fees */}
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Financials</h4></div>
-                <SettingRow label="Platform Commission (%)">
-                    <input type="number" value={settings.platformCommissionRate} onChange={e => handleSettingChange('platformCommissionRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                </SettingRow>
-                <SettingRow label="GST Rate (%)">
-                    <input type="number" value={settings.gstRate} onChange={e => handleSettingChange('gstRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                </SettingRow>
-
                 {/* KYC Settings */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">KYC & Verification Rules</h4></div>
                 <SettingRow label="Enable Instant KYC" helpText="Uses Cashfree API to verify Aadhaar, PAN, DL instantly.">
-                    <input type="checkbox" checked={settings.isInstantKycEnabled} onChange={e => handleSettingChange('isInstantKycEnabled', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
+                    <div className="flex items-center">
+                        <ToggleSwitch enabled={settings.isInstantKycEnabled} onChange={val => handleSettingChange('isInstantKycEnabled', val)} />
+                    </div>
                 </SettingRow>
                 <SettingRow label="Require Live Selfie" helpText="For both KYC and Payouts to prevent fraud.">
-                    <input type="checkbox" checked={settings.isKycSelfieRequired} onChange={e => handleSettingChange('isKycSelfieRequired', e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
+                    <div className="flex items-center">
+                        <ToggleSwitch enabled={settings.isKycSelfieRequired} onChange={val => handleSettingChange('isKycSelfieRequired', val)} />
+                    </div>
                 </SettingRow>
             </div>
         </div>

@@ -202,12 +202,17 @@ export interface PlatformSettings {
     };
     
     // Commission & Taxes
-    isPlatformCommissionEnabled: boolean;
+    isPlatformCommissionEnabled: boolean; // Affects Creators
     platformCommissionRate: number;
-    isPaymentProcessingChargeEnabled: boolean;
+    isPaymentProcessingChargeEnabled: boolean; // Deprecated: replaced by isBrandPlatformFeeEnabled
     paymentProcessingChargeRate: number;
-    isGstEnabled: boolean;
+    isGstEnabled: boolean; // Deprecated: replaced by specific flags
     gstRate: number;
+
+    // Granular Financial Controls
+    isBrandGstEnabled: boolean;
+    isBrandPlatformFeeEnabled: boolean;
+    isCreatorGstEnabled: boolean;
     
     // Payouts
     isPayoutInstantVerificationEnabled: boolean; // Controls Bank/UPI API availability

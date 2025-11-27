@@ -41,6 +41,30 @@ async function getCashfreeConfig(type = 'verification') {
     }
 }
 
+// --- ENDPOINT: Admin Change Password ---
+app.post('/admin-change-password', async (req, res) => {
+    try {
+        const { userId, newPassword } = req.body;
+        
+        if (!userId || !newPassword) {
+            return res.status(400).json({ message: "Missing userId or newPassword" });
+        }
+        
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters" });
+        }
+
+        await admin.auth().updateUser(userId, {
+            password: newPassword
+        });
+        
+        return res.json({ success: true, message: "Password updated successfully" });
+    } catch (error) {
+        console.error("Password update error:", error);
+        return res.status(500).json({ message: error.message || "Failed to update password" });
+    }
+});
+
 // --- ENDPOINT: Verify PAN ---
 app.post('/verify-pan', async (req, res) => {
     try {

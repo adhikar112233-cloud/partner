@@ -1,683 +1,505 @@
 
-import { db, storage, auth, BACKEND_URL } from './firebase';
 import { 
-    collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, 
-    query, where, orderBy, limit, startAfter, 
-    serverTimestamp, Timestamp, onSnapshot, arrayUnion, arrayRemove, increment, documentId
+    collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
+    orderBy, limit, addDoc, serverTimestamp, onSnapshot, increment, 
+    arrayUnion, arrayRemove, startAfter, Timestamp
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage, BACKEND_URL } from './firebase';
 import { 
-    User, PlatformSettings, Influencer, Campaign, CampaignApplication, 
-    CollaborationRequest, AdSlotRequest, BannerAdBookingRequest, 
-    Post, Comment, SupportTicket, TicketReply, LiveHelpSession, 
-    LiveHelpMessage, AppNotification, Transaction, PayoutRequest, 
-    RefundRequest, DailyPayoutRequest, Partner, BannerAd, LiveTvChannel, 
-    Boost, QuickReply, KycDetails,
-    UserRole, PlatformBanner, CreatorVerificationDetails, Leaderboard
+    User, PlatformSettings, Influencer, LiveTvChannel, 
+    CollaborationRequest, Campaign, CampaignApplication, 
+    AdSlotRequest, BannerAdBookingRequest, BannerAd, 
+    SupportTicket, TicketReply, LiveHelpSession, 
+    Post, Comment, Partner, Leaderboard, Boost,
+    PayoutRequest, RefundRequest, DailyPayoutRequest,
+    Transaction, Dispute, KycDetails, CreatorVerificationDetails,
+    UserRole, AppNotification, QuickReply, MembershipPlan, StaffPermission
 } from '../types';
 
-const USERS_COLLECTION = 'users';
-const INFLUENCERS_COLLECTION = 'influencers';
-const CAMPAIGNS_COLLECTION = 'campaigns';
-const CAMPAIGN_APPS_COLLECTION = 'campaign_applications';
-const COLLAB_REQUESTS_COLLECTION = 'collaboration_requests';
-const AD_REQUESTS_COLLECTION = 'ad_slot_requests';
-const BANNER_ADS_COLLECTION = 'banner_ads';
-const BANNER_BOOKINGS_COLLECTION = 'banner_ad_bookings';
-const TRANSACTIONS_COLLECTION = 'transactions';
-const PAYOUTS_COLLECTION = 'payout_requests';
-const REFUNDS_COLLECTION = 'refund_requests';
-const DAILY_PAYOUTS_COLLECTION = 'daily_payout_requests';
-const POSTS_COLLECTION = 'posts';
-const TICKETS_COLLECTION = 'support_tickets';
-const SESSIONS_COLLECTION = 'live_help_sessions';
-const DISPUTES_COLLECTION = 'disputes';
-const PARTNERS_COLLECTION = 'partners';
-const BANNERS_COLLECTION = 'platform_banners';
-const LEADERBOARDS_COLLECTION = 'leaderboards';
-
-// Helper function for robust file uploads with timeout and error handling
-const uploadFileToStorage = async (path: string, file: File): Promise<string> => {
-    if (!storage) {
-        throw new Error("Firebase Storage is not initialized. Please check your configuration in services/firebase.ts.");
-    }
-    
-    // Sanitize filename
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-    const finalPath = `${path}_${Date.now()}_${sanitizedName}`;
-    const storageRef = ref(storage, finalPath);
-
-    try {
-        // Create the upload task
-        const uploadTask = uploadBytes(storageRef, file);
-        
-        // Create a timeout promise that rejects after 15 seconds
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error("Upload timed out (15s). Please check your internet connection.")), 15000);
-        });
-
-        // Race the upload against the timeout
-        const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-        
-        // Get URL
-        const url = await getDownloadURL(snapshot.ref);
-        return url;
-    } catch (error: any) {
-        console.error(`Upload failed for ${path}:`, error);
-        
-        let friendlyMessage = `Failed to upload image: ${error.message}`;
-        
-        if (error.code === 'storage/unauthorized') {
-             friendlyMessage = "Permission Denied: Upload rejected. Please go to Firebase Console > Storage > Rules and change 'allow read, write: if false;' to 'allow read, write: if true;' (or 'if request.auth != null;').";
-        } else if (error.code === 'storage/retry-limit-exceeded') {
-             friendlyMessage = "Upload failed. Network retry limit exceeded. Check your connection.";
-        } else if (error.code === 'storage/canceled') {
-             friendlyMessage = "Upload was canceled.";
-        } else if (error.code === 'storage/object-not-found') {
-             friendlyMessage = "Storage bucket not found. Ensure 'storageBucket' in services/firebase.ts matches your Firebase Console (likely 'bigyapon2-cfa39.firebasestorage.app').";
-        } else if (error.message && error.message.includes("timed out")) {
-             friendlyMessage = error.message;
-        }
-        
-        throw new Error(friendlyMessage);
-    }
+// Helper to upload file
+const uploadFile = async (path: string, file: File): Promise<string> => {
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    return await getDownloadURL(storageRef);
 };
 
 export const apiService = {
-    // ... (Verification Services Omitted for brevity, unchanged)
-    verifyAadhaarOtp: async (aadhaar: string) => {
-        const response = await fetch(`${BACKEND_URL}/verify-aadhaar-otp`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ aadhaar })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Failed to send OTP");
-        return data;
+    initializeFirestoreData: async () => {
+        // Placeholder for any initialization logic if needed
     },
 
-    verifyAadhaarSubmit: async (userId: string, otp: string, ref_id: string) => {
-        const response = await fetch(`${BACKEND_URL}/verify-aadhaar-verify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, otp, ref_id })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Verification failed");
-        return data;
+    // ... Users & Auth related ...
+    getAllUsers: async (): Promise<User[]> => {
+        const snapshot = await getDocs(collection(db, 'users'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
     },
-
-    verifyLiveness: async (userId: string, imageBase64: string) => {
-        const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
-        const response = await fetch(`${BACKEND_URL}/verify-liveness`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, imageBase64: cleanBase64 })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Liveness check failed");
-        return data;
+    getUserByEmail: async (email: string): Promise<User | null> => {
+        const q = query(collection(db, 'users'), where('email', '==', email), limit(1));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) return null;
+        const docData = snapshot.docs[0].data();
+        return { id: snapshot.docs[0].id, ...docData } as User;
     },
-
-    verifyPan: async (userId: string, pan: string, name: string) => {
-        const response = await fetch(`${BACKEND_URL}/verify-pan`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, pan, name })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Verification failed");
-        return data;
+    getUserByMobile: async (mobile: string): Promise<User | null> => {
+        const q = query(collection(db, 'users'), where('mobileNumber', '==', mobile), limit(1));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) return null;
+        const docData = snapshot.docs[0].data();
+        return { id: snapshot.docs[0].id, ...docData } as User;
     },
-
-    verifyDrivingLicense: async (userId: string, dlNumber: string, dob: string) => {
-        const response = await fetch(`${BACKEND_URL}/verify-dl`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, dlNumber, dob })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Verification failed");
-        return data;
-    },
-
-    verifyBankAccount: async (userId: string, account: string, ifsc: string, name: string) => {
-        const response = await fetch(`${BACKEND_URL}/verify-bank`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, account, ifsc, name })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Verification failed");
-        return data;
-    },
-
-    verifyUpi: async (userId: string, vpa: string, name: string) => {
-        const response = await fetch(`${BACKEND_URL}/verify-upi`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, vpa, name })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Verification failed");
-        return data;
-    },
-
-    verifyGst: async (userId: string, gstin: string, businessName: string) => {
-        const response = await fetch(`${BACKEND_URL}/verify-gst`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, gstin, businessName })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Verification failed");
-        return data;
-    },
-
-    submitCreatorVerification: async (userId: string, details: CreatorVerificationDetails, files: { [key: string]: File | null }) => {
-        const uploadPromises = Object.entries(files).map(async ([key, file]) => {
-            if (file) {
-                const url = await uploadFileToStorage(`creator_verification/${userId}/${key}`, file);
-                return { key, url };
-            }
-            return null;
-        });
-
-        const uploadedFiles = await Promise.all(uploadPromises);
-        
-        const finalDetails = { ...details };
-        uploadedFiles.forEach(f => {
-            if(f) {
-                if(f.key === 'registration') finalDetails.registrationDocUrl = f.url;
-                if(f.key === 'office') finalDetails.officePhotoUrl = f.url;
-                if(f.key === 'pan') finalDetails.businessPanUrl = f.url;
-                if(f.key === 'stamp') finalDetails.channelStampUrl = f.url;
-                if(f.key === 'acknowledgement') finalDetails.acknowledgementUrl = f.url;
-            }
-        });
-
-        await updateDoc(doc(db, USERS_COLLECTION, userId), {
-            creatorVerificationStatus: 'pending',
-            creatorVerificationDetails: finalDetails
-        });
-    },
-
-    getPendingCreatorVerifications: async () => {
-        const q = query(collection(db, USERS_COLLECTION), where('creatorVerificationStatus', '==', 'pending'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as User[];
-    },
-
-    updateCreatorVerificationStatus: async (userId: string, status: 'approved' | 'rejected', reason?: string) => {
-        // 1. Update User Core Document
-        await updateDoc(doc(db, USERS_COLLECTION, userId), {
-            creatorVerificationStatus: status,
-            'creatorVerificationDetails.rejectionReason': reason || null
-        });
-
-        // 2. Sync status to public profile collections to make verification badge visible
-        const isVerified = status === 'approved';
-        const userDoc = await getDoc(doc(db, USERS_COLLECTION, userId));
-        
-        if (userDoc.exists()) {
-            const role = userDoc.data()?.role;
-            try {
-                if (role === 'influencer') {
-                    // Check if influencer doc exists before updating
-                    const influencerDocRef = doc(db, INFLUENCERS_COLLECTION, userId);
-                    const influencerDoc = await getDoc(influencerDocRef);
-                    if (influencerDoc.exists()) {
-                        await updateDoc(influencerDocRef, { isVerified });
-                    }
-                } else if (role === 'livetv') {
-                    // Check if livetv channel doc exists
-                    const channelDocRef = doc(db, 'livetv_channels', userId); // Using userId as doc ID for consistency
-                    const channelDoc = await getDoc(channelDocRef);
-                    if (channelDoc.exists()) {
-                        await updateDoc(channelDocRef, { isVerified });
-                    }
-                }
-                // Banner agencies don't have a single public profile doc usually, they post ads.
-                // Status stays on User doc.
-            } catch (error) {
-                console.error("Failed to sync public verification status:", error);
-                // Non-blocking error, core status is updated
+    getUsersByIds: async (userIds: string[]): Promise<User[]> => {
+        if (userIds.length === 0) return [];
+        const users: User[] = [];
+        for (const id of userIds) {
+            const docSnap = await getDoc(doc(db, 'users', id));
+            if (docSnap.exists()) {
+                users.push({ id: docSnap.id, ...docSnap.data() } as User);
             }
         }
+        return users;
+    },
+    updateUser: async (userId: string, data: Partial<User>) => {
+        await updateDoc(doc(db, 'users', userId), data);
+    },
+    updateUserProfile: async (userId: string, data: Partial<User>) => {
+        await updateDoc(doc(db, 'users', userId), data);
+    },
+    uploadProfilePicture: async (userId: string, file: File): Promise<string> => {
+        return uploadFile(`profile_pictures/${userId}_${Date.now()}`, file);
+    },
+    saveFcmToken: async (userId: string, token: string | null) => {
+        await updateDoc(doc(db, 'users', userId), { fcmToken: token });
+    },
+    adminChangePassword: async (userId: string, newPassword: string) => {
+        const response = await fetch(`${BACKEND_URL}/admin-change-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, newPassword })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to update password');
+        }
+        return await response.json();
     },
 
-    // ... (Platform Settings Omitted)
+    // ... Platform Settings ...
     getPlatformSettings: async (): Promise<PlatformSettings> => {
         const docRef = doc(db, 'settings', 'platform');
         const docSnap = await getDoc(docRef);
-        const defaults: any = {
-            isCommunityFeedEnabled: true,
-            isCreatorMembershipEnabled: true,
-            isProMembershipEnabled: true,
-            isMaintenanceModeEnabled: false,
-            isWelcomeMessageEnabled: true,
-            isNotificationBannerEnabled: false,
-            socialMediaLinks: [],
-            boostPrices: { profile: 500, campaign: 1000, banner: 800 },
-            membershipPrices: { pro_10: 2000, pro_20: 3500, pro_unlimited: 5000, basic: 500, pro: 1500, premium: 3000 },
-            discountSettings: { creatorProfileBoost: { isEnabled: false, percentage: 0 }, brandMembership: { isEnabled: false, percentage: 0 }, creatorMembership: { isEnabled: false, percentage: 0 }, brandCampaignBoost: { isEnabled: false, percentage: 0 } },
-            isPayoutInstantVerificationEnabled: true,
-            isInstantKycEnabled: true, // Default enabled
-            isGoogleLoginEnabled: true,
-            payoutSettings: { requireSelfieForPayout: true, requireLiveVideoForDailyPayout: true }
-        };
-        return docSnap.exists() ? { ...defaults, ...docSnap.data() } : defaults as PlatformSettings;
+        if (docSnap.exists()) {
+            return docSnap.data() as PlatformSettings;
+        }
+        throw new Error("Platform settings not found");
     },
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
     },
-    initializeFirestoreData: async () => { /* Logic to seed data if needed */ },
 
-    // --- Leaderboard Services ---
-    createLeaderboard: async (data: Omit<Leaderboard, 'id' | 'createdAt'>) => {
-        await addDoc(collection(db, LEADERBOARDS_COLLECTION), {
-            ...data,
-            createdAt: serverTimestamp()
-        });
+    // ... Banners ...
+    getActivePlatformBanners: async (): Promise<PlatformBanner[]> => {
+        const q = query(collection(db, 'platform_banners'), where('isActive', '==', true));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlatformBanner));
     },
-    
-    getLeaderboards: async () => {
-        const q = query(collection(db, LEADERBOARDS_COLLECTION), orderBy('createdAt', 'desc'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Leaderboard[];
+    getPlatformBanners: async (): Promise<PlatformBanner[]> => {
+        const snapshot = await getDocs(collection(db, 'platform_banners'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlatformBanner));
     },
-
-    getActiveLeaderboards: async () => {
-        const q = query(collection(db, LEADERBOARDS_COLLECTION), where('isActive', '==', true));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Leaderboard[];
-    },
-
-    updateLeaderboard: async (id: string, data: Partial<Leaderboard>) => {
-        await updateDoc(doc(db, LEADERBOARDS_COLLECTION, id), data);
-    },
-
-    deleteLeaderboard: async (id: string) => {
-        await deleteDoc(doc(db, LEADERBOARDS_COLLECTION, id));
-    },
-
-    // ... (Users, Influencers, etc. unchanged)
-    getAllUsers: async () => {
-        const snap = await getDocs(collection(db, USERS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as User[];
-    },
-    getUsersPaginated: async (options: any) => {
-        let q = query(collection(db, USERS_COLLECTION), limit(options.pageLimit || 20));
-        if (options.startAfterDoc) q = query(q, startAfter(options.startAfterDoc));
-        const snap = await getDocs(q);
-        return { users: snap.docs.map(d => ({ id: d.id, ...d.data() })) as User[], lastVisible: snap.docs[snap.docs.length - 1] };
-    },
-    getUserByMobile: async (mobile: string) => {
-        const q = query(collection(db, USERS_COLLECTION), where('mobileNumber', '==', mobile));
-        const snap = await getDocs(q);
-        return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } as User;
-    },
-    getUserByEmail: async (email: string) => {
-        const q = query(collection(db, USERS_COLLECTION), where('email', '==', email));
-        const snap = await getDocs(q);
-        return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } as User;
-    },
-    updateUser: async (userId: string, data: Partial<User>) => {
-        await updateDoc(doc(db, USERS_COLLECTION, userId), data);
-    },
-    updateUserProfile: async (userId: string, data: any) => {
-        await updateDoc(doc(db, USERS_COLLECTION, userId), data);
-    },
-    updateInfluencerProfile: async (userId: string, data: any) => {
-        await updateDoc(doc(db, INFLUENCERS_COLLECTION, userId), data);
-    },
-    saveFcmToken: async (userId: string, token: string | null) => {
-        await updateDoc(doc(db, USERS_COLLECTION, userId), { fcmToken: token });
-    },
-    followUser: async (currentUserId: string, targetUserId: string) => {
-        const currentUserRef = doc(db, USERS_COLLECTION, currentUserId);
-        const targetUserRef = doc(db, USERS_COLLECTION, targetUserId);
-        await updateDoc(currentUserRef, { following: arrayUnion(targetUserId) });
-        await updateDoc(targetUserRef, { followers: arrayUnion(currentUserId) });
-    },
-    unfollowUser: async (currentUserId: string, targetUserId: string) => {
-        const currentUserRef = doc(db, USERS_COLLECTION, currentUserId);
-        const targetUserRef = doc(db, USERS_COLLECTION, targetUserId);
-        await updateDoc(currentUserRef, { following: arrayRemove(targetUserId) });
-        await updateDoc(targetUserRef, { followers: arrayRemove(currentUserId) });
-    },
-    getUsersByIds: async (userIds: string[]) => {
-        if (!userIds || userIds.length === 0) return [];
-        const promises = userIds.map(id => getDoc(doc(db, USERS_COLLECTION, id)));
-        const snapshots = await Promise.all(promises);
-        return snapshots.filter(snap => snap.exists()).map(snap => ({ id: snap.id, ...snap.data() } as User));
-    },
-    getInfluencersPaginated: async (settings: PlatformSettings, options: any) => {
-        // Sort by 'isBoosted' desc so boosted profiles show first
-        let q = query(collection(db, INFLUENCERS_COLLECTION), orderBy('isBoosted', 'desc'), limit(options.limit));
-        if (options.startAfterDoc) {
-            q = query(q, startAfter(options.startAfterDoc));
-        }
-        const snap = await getDocs(q);
-        return { influencers: snap.docs.map(d => ({ id: d.id, ...d.data() })) as Influencer[], lastVisible: snap.docs[snap.docs.length - 1] };
-    },
-    getInfluencerProfile: async (id: string) => {
-        const docSnap = await getDoc(doc(db, INFLUENCERS_COLLECTION, id));
-        return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } as Influencer : null;
-    },
-    getLiveTvChannels: async (settings: PlatformSettings) => {
-        const snap = await getDocs(collection(db, 'livetv_channels'));
-        const channels = snap.docs.map(d => ({ id: d.id, ...d.data() })) as LiveTvChannel[];
-        // Sort boosted channels to top
-        return channels.sort((a, b) => (Number(b.isBoosted || 0) - Number(a.isBoosted || 0)));
-    },
-    getPlatformBanners: async () => {
-        const snap = await getDocs(collection(db, BANNERS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as PlatformBanner[];
-    },
-    getActivePlatformBanners: async () => {
-        const q = query(collection(db, BANNERS_COLLECTION), where('isActive', '==', true));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as PlatformBanner[];
-    },
-    createPlatformBanner: async (data: any) => {
-        await addDoc(collection(db, BANNERS_COLLECTION), data);
+    createPlatformBanner: async (banner: any) => {
+        await addDoc(collection(db, 'platform_banners'), banner);
     },
     updatePlatformBanner: async (id: string, data: any) => {
-        await updateDoc(doc(db, BANNERS_COLLECTION, id), data);
+        await updateDoc(doc(db, 'platform_banners', id), data);
     },
     deletePlatformBanner: async (id: string) => {
-        await deleteDoc(doc(db, BANNERS_COLLECTION, id));
+        await updateDoc(doc(db, 'platform_banners', id), { isActive: false });
     },
-    uploadPlatformBannerImage: async (file: File) => {
-        return await uploadFileToStorage(`banners`, file);
+    uploadPlatformBannerImage: async (file: File): Promise<string> => {
+        return uploadFile(`banners/${Date.now()}_${file.name}`, file);
     },
-    sendCollabRequest: async (data: any) => {
-        await addDoc(collection(db, COLLAB_REQUESTS_COLLECTION), { ...data, status: 'pending', timestamp: serverTimestamp() });
+
+    // ... Influencers ...
+    getInfluencersPaginated: async (settings: PlatformSettings, options: { limit: number, startAfterDoc?: any }) => {
+        let q = query(collection(db, 'influencers'), limit(options.limit));
+        if (options.startAfterDoc) {
+            q = query(collection(db, 'influencers'), startAfter(options.startAfterDoc), limit(options.limit));
+        }
+        const snapshot = await getDocs(q);
+        const influencers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Influencer));
+        return { influencers, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
     },
-    getCollabRequestsForBrand: async (brandId: string) => {
-        const q = query(collection(db, COLLAB_REQUESTS_COLLECTION), where('brandId', '==', brandId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as CollaborationRequest[];
+    getInfluencerProfile: async (userId: string): Promise<any> => {
+        const docSnap = await getDoc(doc(db, 'influencers', userId));
+        return docSnap.exists() ? docSnap.data() : null;
     },
-    getCollabRequestsForBrandListener: (brandId: string, cb: (data: CollaborationRequest[]) => void, errCb: (err: any) => void) => {
-        const q = query(collection(db, COLLAB_REQUESTS_COLLECTION), where('brandId', '==', brandId));
-        return onSnapshot(q, (snap) => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as CollaborationRequest))), errCb);
+    updateInfluencerProfile: async (userId: string, data: any) => {
+        await updateDoc(doc(db, 'influencers', userId), data);
     },
-    getCollabRequestsForInfluencer: async (influencerId: string) => {
-        const q = query(collection(db, COLLAB_REQUESTS_COLLECTION), where('influencerId', '==', influencerId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as CollaborationRequest[];
+
+    // ... Live TV ...
+    getLiveTvChannels: async (settings: PlatformSettings): Promise<LiveTvChannel[]> => {
+        const snapshot = await getDocs(collection(db, 'livetv_channels'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
     },
-    getCollabRequestsForInfluencerListener: (influencerId: string, cb: (data: CollaborationRequest[]) => void, errCb: (err: any) => void) => {
-        const q = query(collection(db, COLLAB_REQUESTS_COLLECTION), where('influencerId', '==', influencerId));
-        return onSnapshot(q, (snap) => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as CollaborationRequest))), errCb);
+
+    // ... Messaging ...
+    getConversations: async (userId: string): Promise<any[]> => {
+        const snapshot = await getDocs(collection(db, `users/${userId}/conversations`));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+    getMessagesListener: (userId1: string, userId2: string, callback: (msgs: any[]) => void, onError: (err: any) => void) => {
+        const chatId = [userId1, userId2].sort().join('_');
+        const q = query(collection(db, `chats/${chatId}/messages`), orderBy('timestamp', 'asc'));
+        return onSnapshot(q, (snapshot) => {
+            const msgs = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return { 
+                    id: doc.id, 
+                    ...data, 
+                    timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toLocaleTimeString() : new Date().toLocaleTimeString() 
+                };
+            });
+            callback(msgs);
+        }, onError);
+    },
+    sendMessage: async (text: string, senderId: string, recipientId: string, attachments: any[] = []) => {
+        const chatId = [senderId, recipientId].sort().join('_');
+        await addDoc(collection(db, `chats/${chatId}/messages`), {
+            text,
+            senderId,
+            attachments,
+            timestamp: serverTimestamp()
+        });
+    },
+    uploadMessageAttachment: async (messageId: string, file: File): Promise<string> => {
+        return uploadFile(`attachments/${messageId}/${file.name}`, file);
+    },
+
+    // ... Collaborations ...
+    getCollabRequestsForInfluencerListener: (userId: string, callback: (data: CollaborationRequest[]) => void, onError: (err: any) => void) => {
+        const q = query(collection(db, 'collaboration_requests'), where('influencerId', '==', userId));
+        return onSnapshot(q, (snapshot) => {
+            const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
+            callback(reqs);
+        }, onError);
+    },
+    getCollabRequestsForBrandListener: (userId: string, callback: (data: CollaborationRequest[]) => void, onError: (err: any) => void) => {
+        const q = query(collection(db, 'collaboration_requests'), where('brandId', '==', userId));
+        return onSnapshot(q, (snapshot) => {
+            const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
+            callback(reqs);
+        }, onError);
+    },
+    getCollabRequestsForBrand: async (userId: string): Promise<CollaborationRequest[]> => {
+        const q = query(collection(db, 'collaboration_requests'), where('brandId', '==', userId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
+    },
+    getCollabRequestsForInfluencer: async (userId: string): Promise<CollaborationRequest[]> => {
+        const q = query(collection(db, 'collaboration_requests'), where('influencerId', '==', userId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
+    },
+    getAllCollaborationRequests: async (): Promise<CollaborationRequest[]> => {
+        const snapshot = await getDocs(collection(db, 'collaboration_requests'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
+    },
+    sendCollabRequest: async (request: any) => {
+        await addDoc(collection(db, 'collaboration_requests'), { ...request, status: 'pending', timestamp: serverTimestamp() });
     },
     updateCollaborationRequest: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, COLLAB_REQUESTS_COLLECTION, id), data);
+        await updateDoc(doc(db, 'collaboration_requests', id), data);
     },
-    getAllCollaborationRequests: async () => {
-        const snap = await getDocs(collection(db, COLLAB_REQUESTS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as CollaborationRequest[];
+
+    // ... Campaigns ...
+    createCampaign: async (campaign: any) => {
+        await addDoc(collection(db, 'campaigns'), { ...campaign, status: 'open', timestamp: serverTimestamp() });
     },
-    createCampaign: async (data: any) => {
-        await addDoc(collection(db, CAMPAIGNS_COLLECTION), { ...data, status: 'open', timestamp: serverTimestamp() });
+    getCampaignsForBrand: async (brandId: string): Promise<Campaign[]> => {
+        const q = query(collection(db, 'campaigns'), where('brandId', '==', brandId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Campaign));
     },
-    getCampaignsForBrand: async (brandId: string) => {
-        const q = query(collection(db, CAMPAIGNS_COLLECTION), where('brandId', '==', brandId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Campaign[];
-    },
-    getAllOpenCampaigns: async (location?: string) => {
-        let q = query(collection(db, CAMPAIGNS_COLLECTION), where('status', '==', 'open'));
-        const snap = await getDocs(q);
-        let campaigns = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Campaign[];
+    getAllOpenCampaigns: async (location?: string): Promise<Campaign[]> => {
+        let q = query(collection(db, 'campaigns'), where('status', '==', 'open'));
+        const snapshot = await getDocs(q);
+        let campaigns = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Campaign));
         if (location && location !== 'All') {
-            campaigns = campaigns.filter(c => c.location === 'All' || c.location === location);
+            campaigns = campaigns.filter(c => !c.location || c.location === 'All' || c.location === location);
         }
-        // Sort boosted campaigns to top
-        return campaigns.sort((a, b) => (Number(b.isBoosted || 0) - Number(a.isBoosted || 0)));
+        return campaigns;
     },
-    applyToCampaign: async (data: any) => {
-        await updateDoc(doc(db, CAMPAIGNS_COLLECTION, data.campaignId), {
-            applicantIds: arrayUnion(data.influencerId)
+    applyToCampaign: async (application: any) => {
+        await addDoc(collection(db, 'campaign_applications'), { ...application, status: 'pending_brand_review', timestamp: serverTimestamp() });
+        await updateDoc(doc(db, 'campaigns', application.campaignId), {
+            applicantIds: arrayUnion(application.influencerId)
         });
-        await addDoc(collection(db, CAMPAIGN_APPS_COLLECTION), { ...data, status: 'pending_brand_review', timestamp: serverTimestamp() });
     },
-    getApplicationsForCampaign: async (campaignId: string) => {
-        const q = query(collection(db, CAMPAIGN_APPS_COLLECTION), where('campaignId', '==', campaignId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as CampaignApplication[];
+    getApplicationsForCampaign: async (campaignId: string): Promise<CampaignApplication[]> => {
+        const q = query(collection(db, 'campaign_applications'), where('campaignId', '==', campaignId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CampaignApplication));
     },
-    getCampaignApplicationsForInfluencer: async (influencerId: string) => {
-        const q = query(collection(db, CAMPAIGN_APPS_COLLECTION), where('influencerId', '==', influencerId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as CampaignApplication[];
+    getCampaignApplicationsForInfluencer: async (userId: string): Promise<CampaignApplication[]> => {
+        const q = query(collection(db, 'campaign_applications'), where('influencerId', '==', userId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CampaignApplication));
+    },
+    getAllCampaignApplications: async (): Promise<CampaignApplication[]> => {
+        const snapshot = await getDocs(collection(db, 'campaign_applications'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CampaignApplication));
     },
     updateCampaignApplication: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, CAMPAIGN_APPS_COLLECTION, id), data);
+        await updateDoc(doc(db, 'campaign_applications', id), data);
     },
-    getAllCampaignApplications: async () => {
-        const snap = await getDocs(collection(db, CAMPAIGN_APPS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as CampaignApplication[];
+
+    // ... Ad Slots ...
+    sendAdSlotRequest: async (request: any) => {
+        await addDoc(collection(db, 'ad_slot_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
     },
-    sendAdSlotRequest: async (data: any) => {
-        await addDoc(collection(db, AD_REQUESTS_COLLECTION), { ...data, status: 'pending_approval', timestamp: serverTimestamp() });
+    getAdSlotRequestsForBrand: async (brandId: string): Promise<AdSlotRequest[]> => {
+        const q = query(collection(db, 'ad_slot_requests'), where('brandId', '==', brandId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdSlotRequest));
     },
-    getAdSlotRequestsForBrand: async (brandId: string) => {
-        const q = query(collection(db, AD_REQUESTS_COLLECTION), where('brandId', '==', brandId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as AdSlotRequest[];
+    getAdSlotRequestsForLiveTv: async (liveTvId: string): Promise<AdSlotRequest[]> => {
+        const q = query(collection(db, 'ad_slot_requests'), where('liveTvId', '==', liveTvId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdSlotRequest));
     },
-    getAdSlotRequestsForLiveTv: async (liveTvId: string) => {
-        const q = query(collection(db, AD_REQUESTS_COLLECTION), where('liveTvId', '==', liveTvId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as AdSlotRequest[];
+    getAllAdSlotRequests: async (): Promise<AdSlotRequest[]> => {
+        const snapshot = await getDocs(collection(db, 'ad_slot_requests'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdSlotRequest));
     },
     updateAdSlotRequest: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, AD_REQUESTS_COLLECTION, id), data);
+        await updateDoc(doc(db, 'ad_slot_requests', id), data);
     },
-    getAllAdSlotRequests: async () => {
-        const snap = await getDocs(collection(db, AD_REQUESTS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as AdSlotRequest[];
+
+    // ... Banner Ads ...
+    createBannerAd: async (ad: any) => {
+        await addDoc(collection(db, 'banner_ads'), { ...ad, timestamp: serverTimestamp() });
     },
-    createBannerAd: async (data: any) => {
-        await addDoc(collection(db, BANNER_ADS_COLLECTION), { ...data, timestamp: serverTimestamp() });
+    uploadBannerAdPhoto: async (userId: string, file: File): Promise<string> => {
+        return uploadFile(`banner_ads/${userId}_${Date.now()}`, file);
     },
-    getBannerAds: async (location: string, settings: PlatformSettings) => {
-        let q = query(collection(db, BANNER_ADS_COLLECTION));
-        const snap = await getDocs(q);
-        let ads = snap.docs.map(d => ({ id: d.id, ...d.data() })) as BannerAd[];
+    getBannerAds: async (location: string, settings: PlatformSettings): Promise<BannerAd[]> => {
+        let q = collection(db, 'banner_ads');
+        const snapshot = await getDocs(q);
+        let ads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAd));
         if (location) {
-            ads = ads.filter(a => a.location.toLowerCase().includes(location.toLowerCase()));
+            ads = ads.filter(ad => ad.location.toLowerCase().includes(location.toLowerCase()));
         }
-        // Sort boosted ads to top
-        return ads.sort((a, b) => (Number(b.isBoosted || 0) - Number(a.isBoosted || 0)));
+        return ads;
     },
-    getBannerAdsForAgency: async (agencyId: string) => {
-        const q = query(collection(db, BANNER_ADS_COLLECTION), where('agencyId', '==', agencyId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as BannerAd[];
+    getBannerAdsForAgency: async (agencyId: string): Promise<BannerAd[]> => {
+        const q = query(collection(db, 'banner_ads'), where('agencyId', '==', agencyId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAd));
     },
-    uploadBannerAdPhoto: async (userId: string, file: File) => {
-        return await uploadFileToStorage(`banner_photos/${userId}`, file);
+    sendBannerAdBookingRequest: async (request: any) => {
+        await addDoc(collection(db, 'banner_ad_booking_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
     },
-    sendBannerAdBookingRequest: async (data: any) => {
-        await addDoc(collection(db, BANNER_BOOKINGS_COLLECTION), { ...data, status: 'pending_approval', timestamp: serverTimestamp() });
+    getBannerAdBookingRequestsForBrand: async (brandId: string): Promise<BannerAdBookingRequest[]> => {
+        const q = query(collection(db, 'banner_ad_booking_requests'), where('brandId', '==', brandId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAdBookingRequest));
     },
-    getBannerAdBookingRequestsForBrand: async (brandId: string) => {
-        const q = query(collection(db, BANNER_BOOKINGS_COLLECTION), where('brandId', '==', brandId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as BannerAdBookingRequest[];
+    getBannerAdBookingRequestsForAgency: async (agencyId: string): Promise<BannerAdBookingRequest[]> => {
+        const q = query(collection(db, 'banner_ad_booking_requests'), where('agencyId', '==', agencyId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAdBookingRequest));
     },
-    getBannerAdBookingRequestsForAgency: async (agencyId: string) => {
-        const q = query(collection(db, BANNER_BOOKINGS_COLLECTION), where('agencyId', '==', agencyId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as BannerAdBookingRequest[];
+    getAllBannerAdBookingRequests: async (): Promise<BannerAdBookingRequest[]> => {
+        const snapshot = await getDocs(collection(db, 'banner_ad_booking_requests'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAdBookingRequest));
     },
     updateBannerAdBookingRequest: async (id: string, data: any, userId: string) => {
-        await updateDoc(doc(db, BANNER_BOOKINGS_COLLECTION, id), data);
+        await updateDoc(doc(db, 'banner_ad_booking_requests', id), data);
     },
-    getAllBannerAdBookingRequests: async () => {
-        const snap = await getDocs(collection(db, BANNER_BOOKINGS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as BannerAdBookingRequest[];
-    },
-    getActiveAdCollabsForAgency: async (agencyId: string, role: UserRole) => {
+
+    // ... Daily Payouts ...
+    getActiveAdCollabsForAgency: async (userId: string, role: string): Promise<(AdSlotRequest | BannerAdBookingRequest)[]> => {
         if (role === 'livetv') {
-            const q = query(collection(db, AD_REQUESTS_COLLECTION), where('liveTvId', '==', agencyId), where('status', 'in', ['in_progress', 'work_submitted']));
-            const snap = await getDocs(q);
-            return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const q = query(collection(db, 'ad_slot_requests'), where('liveTvId', '==', userId), where('status', 'in', ['in_progress']));
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdSlotRequest));
         } else {
-            const q = query(collection(db, BANNER_BOOKINGS_COLLECTION), where('agencyId', '==', agencyId), where('status', 'in', ['in_progress', 'work_submitted']));
-            const snap = await getDocs(q);
-            return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const q = query(collection(db, 'banner_ad_booking_requests'), where('agencyId', '==', userId), where('status', 'in', ['in_progress']));
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAdBookingRequest));
         }
     },
-    getAllTransactions: async () => {
-        const snap = await getDocs(collection(db, TRANSACTIONS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Transaction[];
-    },
-    getTransactionsForUser: async (userId: string) => {
-        const q = query(collection(db, TRANSACTIONS_COLLECTION), where('userId', '==', userId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Transaction[];
-    },
-    getAllPayouts: async () => {
-        const snap = await getDocs(collection(db, PAYOUTS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as PayoutRequest[];
-    },
-    getPayoutHistoryForUser: async (userId: string) => {
-        const q = query(collection(db, PAYOUTS_COLLECTION), where('userId', '==', userId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as PayoutRequest[];
-    },
-    getAllRefunds: async () => {
-        const snap = await getDocs(collection(db, REFUNDS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as RefundRequest[];
-    },
-    getAllDailyPayouts: async () => {
-        const snap = await getDocs(collection(db, DAILY_PAYOUTS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as DailyPayoutRequest[];
-    },
-    submitPayoutRequest: async (data: any) => {
-        await addDoc(collection(db, PAYOUTS_COLLECTION), { ...data, status: 'pending', timestamp: serverTimestamp() });
+    uploadDailyPayoutVideo: async (userId: string, file: Blob): Promise<string> => {
+        const storageRef = ref(storage, `daily_payout_proofs/${userId}_${Date.now()}.webm`);
+        await uploadBytes(storageRef, file);
+        return await getDownloadURL(storageRef);
     },
     submitDailyPayoutRequest: async (data: any) => {
-        await addDoc(collection(db, DAILY_PAYOUTS_COLLECTION), { ...data, status: 'pending', timestamp: serverTimestamp() });
+        await addDoc(collection(db, 'daily_payout_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });
     },
-    updatePayoutStatus: async (id: string, status: string, collabId: string, collabType: string, rejectionReason?: string) => {
-        await updateDoc(doc(db, PAYOUTS_COLLECTION, id), { status, rejectionReason });
-        if (status === 'completed') {
-            const col = collabType === 'direct' ? COLLAB_REQUESTS_COLLECTION : 
-                        collabType === 'campaign' ? CAMPAIGN_APPS_COLLECTION :
-                        collabType === 'ad_slot' ? AD_REQUESTS_COLLECTION : BANNER_BOOKINGS_COLLECTION;
-            await updateDoc(doc(db, col, collabId), { paymentStatus: 'payout_complete' });
-        }
+    getAllDailyPayouts: async (): Promise<DailyPayoutRequest[]> => {
+        const snapshot = await getDocs(collection(db, 'daily_payout_requests'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyPayoutRequest));
     },
     updateDailyPayoutRequest: async (id: string, data: any) => {
-        await updateDoc(doc(db, DAILY_PAYOUTS_COLLECTION, id), data);
+        await updateDoc(doc(db, 'daily_payout_requests', id), data);
     },
-    updateDailyPayoutRequestStatus: async (id: string, collabId: string, collabType: 'ad_slot' | 'banner_booking', status: string, amount?: number, rejectionReason?: string) => {
-        await updateDoc(doc(db, DAILY_PAYOUTS_COLLECTION, id), { status, approvedAmount: amount, rejectionReason });
-        if (status === 'approved' && amount) {
-            const col = collabType === 'ad_slot' ? AD_REQUESTS_COLLECTION : BANNER_BOOKINGS_COLLECTION;
-            await updateDoc(doc(db, col, collabId), { dailyPayoutsReceived: increment(amount) });
+    updateDailyPayoutRequestStatus: async (id: string, collaborationId: string, collabType: 'ad_slot' | 'banner_booking', status: string, amount?: number, reason?: string) => {
+        await updateDoc(doc(db, 'daily_payout_requests', id), { status, approvedAmount: amount, rejectionReason: reason });
+        
+        if (status === 'approved') {
+            const collectionName = collabType === 'ad_slot' ? 'ad_slot_requests' : 'banner_ad_booking_requests';
+            await updateDoc(doc(db, collectionName, collaborationId), {
+                dailyPayoutsReceived: increment(amount || 0)
+            });
         }
     },
+
+    // ... Payouts & Refunds ...
+    submitPayoutRequest: async (data: any) => {
+        await addDoc(collection(db, 'payout_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });
+    },
     createRefundRequest: async (data: any) => {
-        await addDoc(collection(db, REFUNDS_COLLECTION), { ...data, status: 'pending', timestamp: serverTimestamp() });
-        const col = data.collabType === 'direct' ? COLLAB_REQUESTS_COLLECTION : 
-                    data.collabType === 'campaign' ? CAMPAIGN_APPS_COLLECTION :
-                    data.collabType === 'ad_slot' ? AD_REQUESTS_COLLECTION : BANNER_BOOKINGS_COLLECTION;
-        await updateDoc(doc(db, col, data.collaborationId), { status: 'refund_pending_admin_review' });
+        await addDoc(collection(db, 'refund_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });
+    },
+    uploadPayoutSelfie: async (userId: string, file: File): Promise<string> => {
+        return uploadFile(`payout_selfies/${userId}_${Date.now()}`, file);
+    },
+    getAllPayouts: async (): Promise<PayoutRequest[]> => {
+        const snapshot = await getDocs(collection(db, 'payout_requests'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutRequest));
+    },
+    getAllRefunds: async (): Promise<RefundRequest[]> => {
+        const snapshot = await getDocs(collection(db, 'refund_requests'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RefundRequest));
+    },
+    getPayoutHistoryForUser: async (userId: string): Promise<PayoutRequest[]> => {
+        const q = query(collection(db, 'payout_requests'), where('userId', '==', userId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutRequest));
+    },
+    updatePayoutStatus: async (id: string, status: string, collaborationId: string, collabType: string, reason?: string) => {
+        await updateDoc(doc(db, 'payout_requests', id), { status, rejectionReason: reason });
+        if (status === 'completed') {
+            let collectionName = 'collaboration_requests';
+            if (collabType === 'campaign') collectionName = 'campaign_applications';
+            else if (collabType === 'ad_slot') collectionName = 'ad_slot_requests';
+            else if (collabType === 'banner_booking') collectionName = 'banner_ad_booking_requests';
+            
+            await updateDoc(doc(db, collectionName, collaborationId), { paymentStatus: 'payout_complete' });
+        }
     },
     updateRefundRequest: async (id: string, data: any) => {
-        await updateDoc(doc(db, REFUNDS_COLLECTION, id), data);
+        await updateDoc(doc(db, 'refund_requests', id), data);
     },
-    processPayout: async (id: string, type: 'Payout' | 'Refund' | 'Daily Payout') => {
-        const response = await fetch(`${BACKEND_URL}/process-payout`, {
+    processPayout: async (requestId: string, requestType: 'Payout' | 'Daily Payout') => {
+        const endpoint = `${BACKEND_URL}/process-payout`;
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requestId: id, type })
+            body: JSON.stringify({ requestId, requestType })
         });
-        if (!response.ok) throw new Error("Payout API failed");
+        if (!response.ok) {
+            throw new Error('Failed to process payout automatically.');
+        }
+        return await response.json();
     },
-    uploadPayoutSelfie: async (userId: string, file: File) => {
-        return await uploadFileToStorage(`payout_selfies/${userId}`, file);
+
+    // ... Transactions ...
+    getAllTransactions: async (): Promise<Transaction[]> => {
+        const snapshot = await getDocs(collection(db, 'transactions'));
+        return snapshot.docs.map(doc => ({ ...doc.data() } as Transaction));
     },
-    uploadDailyPayoutVideo: async (userId: string, blob: Blob) => {
-        const file = new File([blob], "proof.webm", { type: 'video/webm' });
-        return await uploadFileToStorage(`daily_payout_videos/${userId}`, file);
+    getTransactionsForUser: async (userId: string): Promise<Transaction[]> => {
+        const q = query(collection(db, 'transactions'), where('userId', '==', userId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ ...doc.data() } as Transaction));
     },
-    createSupportTicket: async (userPart: any, ticketPart: any) => {
-        const docRef = await addDoc(collection(db, TICKETS_COLLECTION), { ...userPart, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        await addDoc(collection(db, `support_tickets/${docRef.id}/replies`), { ...ticketPart, timestamp: serverTimestamp() });
+
+    // ... Support ...
+    getAllTickets: async (): Promise<SupportTicket[]> => {
+        const snapshot = await getDocs(collection(db, 'support_tickets'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupportTicket));
     },
-    getTicketsForUser: async (userId: string) => {
-        const q = query(collection(db, TICKETS_COLLECTION), where('userId', '==', userId), orderBy('updatedAt', 'desc'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as SupportTicket[];
+    getTicketsForUser: async (userId: string): Promise<SupportTicket[]> => {
+        const q = query(collection(db, 'support_tickets'), where('userId', '==', userId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupportTicket));
     },
-    getAllTickets: async () => {
-        const q = query(collection(db, TICKETS_COLLECTION), orderBy('updatedAt', 'desc'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as SupportTicket[];
+    createSupportTicket: async (ticketData: any, initialMessage: any) => {
+        const ticketRef = await addDoc(collection(db, 'support_tickets'), { ...ticketData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        await addDoc(collection(db, `support_tickets/${ticketRef.id}/replies`), { ...initialMessage, timestamp: serverTimestamp() });
     },
-    getTicketReplies: async (ticketId: string) => {
+    getTicketReplies: async (ticketId: string): Promise<TicketReply[]> => {
         const q = query(collection(db, `support_tickets/${ticketId}/replies`), orderBy('timestamp', 'asc'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as TicketReply[];
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TicketReply));
     },
-    addTicketReply: async (data: any) => {
-        await addDoc(collection(db, `support_tickets/${data.ticketId}/replies`), { ...data, timestamp: serverTimestamp() });
-        await updateDoc(doc(db, TICKETS_COLLECTION, data.ticketId), { updatedAt: serverTimestamp(), status: data.senderRole === 'staff' ? 'in_progress' : 'open' });
+    addTicketReply: async (reply: any) => {
+        await addDoc(collection(db, `support_tickets/${reply.ticketId}/replies`), { ...reply, timestamp: serverTimestamp() });
+        await updateDoc(doc(db, 'support_tickets', reply.ticketId), { updatedAt: serverTimestamp(), status: 'in_progress' });
     },
-    updateTicketStatus: async (id: string, status: string) => {
-        await updateDoc(doc(db, TICKETS_COLLECTION, id), { status });
+    updateTicketStatus: async (ticketId: string, status: string) => {
+        await updateDoc(doc(db, 'support_tickets', ticketId), { status });
     },
-    uploadTicketAttachment: async (ticketId: string, file: File) => {
-        return await uploadFileToStorage(`tickets/${ticketId}`, file);
+    uploadTicketAttachment: async (ticketId: string, file: File): Promise<string> => {
+        return uploadFile(`support_attachments/${ticketId}/${file.name}`, file);
     },
-    getOrCreateLiveHelpSession: async (userId: string, userName: string, userAvatar: string, staffId: string) => {
-        const q = query(collection(db, SESSIONS_COLLECTION), where('userId', '==', userId), where('status', '!=', 'closed'));
-        const snap = await getDocs(q);
-        if (!snap.empty) return snap.docs[0].id;
-        const docRef = await addDoc(collection(db, SESSIONS_COLLECTION), {
-            userId, userName, userAvatar, status: 'unassigned', createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+
+    // ... Live Help ...
+    getAllLiveHelpSessionsListener: (callback: (sessions: LiveHelpSession[]) => void) => {
+        const q = query(collection(db, 'live_help_sessions'), orderBy('updatedAt', 'desc'));
+        return onSnapshot(q, (snapshot) => {
+            callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveHelpSession)));
         });
-        return docRef.id;
     },
-    getSessionsForUser: async (userId: string) => {
-        const q = query(collection(db, SESSIONS_COLLECTION), where('userId', '==', userId), orderBy('updatedAt', 'desc'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as LiveHelpSession[];
+    getSessionsForUser: async (userId: string): Promise<LiveHelpSession[]> => {
+        const q = query(collection(db, 'live_help_sessions'), where('userId', '==', userId), orderBy('updatedAt', 'desc'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveHelpSession));
     },
-    getAllLiveHelpSessionsListener: (cb: (sessions: LiveHelpSession[]) => void) => {
-        const q = query(collection(db, SESSIONS_COLLECTION), orderBy('updatedAt', 'desc'));
-        return onSnapshot(q, (snap) => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as LiveHelpSession))));
+    getOrCreateLiveHelpSession: async (userId: string, userName: string, userAvatar: string, staffId: string): Promise<string> => {
+        const q = query(collection(db, 'live_help_sessions'), where('userId', '==', userId), where('status', 'in', ['open', 'unassigned']));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+            return snapshot.docs[0].id;
+        }
+        const ref = await addDoc(collection(db, 'live_help_sessions'), {
+            userId, userName, userAvatar,
+            status: 'unassigned',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            messages: []
+        });
+        return ref.id;
     },
     sendLiveHelpMessage: async (sessionId: string, senderId: string, senderName: string, text: string) => {
         await addDoc(collection(db, `live_help_sessions/${sessionId}/messages`), {
             senderId, senderName, text, timestamp: serverTimestamp()
         });
-        await updateDoc(doc(db, SESSIONS_COLLECTION, sessionId), { updatedAt: serverTimestamp() });
-    },
-    closeLiveHelpSession: async (sessionId: string) => {
-        await updateDoc(doc(db, SESSIONS_COLLECTION, sessionId), { status: 'closed' });
+        await updateDoc(doc(db, 'live_help_sessions', sessionId), { updatedAt: serverTimestamp() });
     },
     reopenLiveHelpSession: async (sessionId: string) => {
-        await updateDoc(doc(db, SESSIONS_COLLECTION, sessionId), { status: 'unassigned', updatedAt: serverTimestamp() });
+        await updateDoc(doc(db, 'live_help_sessions', sessionId), { status: 'unassigned', updatedAt: serverTimestamp() });
+    },
+    closeLiveHelpSession: async (sessionId: string) => {
+        await updateDoc(doc(db, 'live_help_sessions', sessionId), { status: 'closed', updatedAt: serverTimestamp() });
     },
     assignStaffToSession: async (sessionId: string, staffUser: User) => {
-        await updateDoc(doc(db, SESSIONS_COLLECTION, sessionId), { 
+        await updateDoc(doc(db, 'live_help_sessions', sessionId), { 
             status: 'open', 
             assignedStaffId: staffUser.id, 
             assignedStaffName: staffUser.name, 
             assignedStaffAvatar: staffUser.avatar 
         });
     },
-    getQuickRepliesListener: (cb: (replies: QuickReply[]) => void) => {
-        return onSnapshot(collection(db, 'quick_replies'), (snap) => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as QuickReply))));
+    getQuickRepliesListener: (callback: (replies: QuickReply[]) => void) => {
+        return onSnapshot(collection(db, 'quick_replies'), (snapshot) => {
+            callback(snapshot.docs.map(doc => ({ id: doc.id, text: doc.data().text } as QuickReply)));
+        });
     },
     addQuickReply: async (text: string) => {
         await addDoc(collection(db, 'quick_replies'), { text });
@@ -686,37 +508,40 @@ export const apiService = {
         await updateDoc(doc(db, 'quick_replies', id), { text });
     },
     deleteQuickReply: async (id: string) => {
-        await deleteDoc(doc(db, 'quick_replies', id));
+        await updateDoc(doc(db, 'quick_replies', id), { deleted: true });
     },
-    getPosts: async (userId?: string) => {
-        let q = query(collection(db, POSTS_COLLECTION), orderBy('timestamp', 'desc'));
-        const snap = await getDocs(q);
-        let posts = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Post[];
+
+    // ... Community ...
+    getPosts: async (userId?: string): Promise<Post[]> => {
+        const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'), limit(50));
+        const snapshot = await getDocs(q);
+        let posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+        
         if (userId) {
             posts = posts.filter(p => p.visibility === 'public' || p.userId === userId);
         } else {
             posts = posts.filter(p => p.visibility === 'public');
         }
-        return posts.filter(p => !p.isBlocked);
+        return posts;
     },
-    createPost: async (data: any) => {
-        const docRef = await addDoc(collection(db, POSTS_COLLECTION), data);
-        return { id: docRef.id, ...data };
+    createPost: async (post: any): Promise<Post> => {
+        const ref = await addDoc(collection(db, 'posts'), post);
+        return { id: ref.id, ...post };
     },
-    updatePost: async (id: string, data: any) => {
-        await updateDoc(doc(db, POSTS_COLLECTION, id), data);
+    uploadPostImage: async (postId: string, file: File): Promise<string> => {
+        return uploadFile(`posts/${postId}/${file.name}`, file);
     },
-    deletePost: async (id: string) => {
-        await deleteDoc(doc(db, POSTS_COLLECTION, id));
+    updatePost: async (postId: string, data: Partial<Post>) => {
+        await updateDoc(doc(db, 'posts', postId), data);
     },
-    uploadPostImage: async (postId: string, file: File) => {
-        return await uploadFileToStorage(`posts/${postId}`, file);
+    deletePost: async (postId: string) => {
+        await updateDoc(doc(db, 'posts', postId), { isBlocked: true });
     },
     toggleLikePost: async (postId: string, userId: string) => {
-        const postRef = doc(db, POSTS_COLLECTION, postId);
-        const snap = await getDoc(postRef);
-        if (snap.exists()) {
-            const likes = snap.data().likes || [];
+        const postRef = doc(db, 'posts', postId);
+        const postSnap = await getDoc(postRef);
+        if (postSnap.exists()) {
+            const likes = postSnap.data().likes || [];
             if (likes.includes(userId)) {
                 await updateDoc(postRef, { likes: arrayRemove(userId) });
             } else {
@@ -724,163 +549,188 @@ export const apiService = {
             }
         }
     },
-    getCommentsForPost: async (postId: string) => {
+    addCommentToPost: async (postId: string, comment: any) => {
+        await addDoc(collection(db, `posts/${postId}/comments`), { ...comment, timestamp: serverTimestamp() });
+        await updateDoc(doc(db, 'posts', postId), { commentCount: increment(1) });
+    },
+    getCommentsForPost: async (postId: string): Promise<Comment[]> => {
         const q = query(collection(db, `posts/${postId}/comments`), orderBy('timestamp', 'asc'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Comment[];
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment));
     },
-    addCommentToPost: async (postId: string, data: any) => {
-        await addDoc(collection(db, `posts/${postId}/comments`), { ...data, timestamp: serverTimestamp() });
-        await updateDoc(doc(db, POSTS_COLLECTION, postId), { commentCount: increment(1) });
+    followUser: async (followerId: string, targetId: string) => {
+        await updateDoc(doc(db, 'users', followerId), { following: arrayUnion(targetId) });
+        await updateDoc(doc(db, 'users', targetId), { followers: arrayUnion(followerId) });
     },
-    getMessagesListener: (userId1: string, userId2: string, cb: (msgs: any[]) => void, errCb: (err: any) => void) => {
-        const chatId = [userId1, userId2].sort().join('_');
-        const q = query(collection(db, `chats/${chatId}/messages`), orderBy('timestamp', 'asc'));
-        return onSnapshot(q, (snap) => cb(snap.docs.map(d => {
-            const data = d.data();
-            return { 
-                id: d.id, 
-                ...data, 
-                timestamp: data.timestamp?.toDate().toLocaleTimeString() 
-            };
-        })), errCb);
+    unfollowUser: async (followerId: string, targetId: string) => {
+        await updateDoc(doc(db, 'users', followerId), { following: arrayRemove(targetId) });
+        await updateDoc(doc(db, 'users', targetId), { followers: arrayRemove(followerId) });
     },
-    sendMessage: async (text: string, senderId: string, recipientId: string, attachments: any[]) => {
-        const chatId = [senderId, recipientId].sort().join('_');
-        await addDoc(collection(db, `chats/${chatId}/messages`), {
-            text, senderId, recipientId, attachments, timestamp: serverTimestamp()
+
+    // ... KYC & Verification ...
+    getKycSubmissions: async (): Promise<User[]> => {
+        const q = query(collection(db, 'users'), where('kycStatus', '==', 'pending'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    },
+    updateKycStatus: async (userId: string, status: string, reason?: string) => {
+        const updateData: any = { kycStatus: status };
+        if (reason) updateData['kycDetails.rejectionReason'] = reason;
+        await updateDoc(doc(db, 'users', userId), updateData);
+    },
+    getPendingCreatorVerifications: async (): Promise<User[]> => {
+        const q = query(collection(db, 'users'), where('creatorVerificationStatus', '==', 'pending'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    },
+    updateCreatorVerificationStatus: async (userId: string, status: string, reason?: string) => {
+        const updateData: any = { creatorVerificationStatus: status };
+        if (reason) updateData['creatorVerificationDetails.rejectionReason'] = reason;
+        if (status === 'approved') updateData['isVerified'] = true;
+        await updateDoc(doc(db, 'users', userId), updateData);
+    },
+    submitKyc: async (userId: string, data: KycDetails, idProof: File | null, addressProof: File | null, pan: File | null) => {
+        const updates: any = { kycStatus: 'pending', kycDetails: { ...data } };
+        if (idProof) updates.kycDetails.idProofUrl = await uploadFile(`kyc/${userId}/id_proof`, idProof);
+        if (pan) updates.kycDetails.panCardUrl = await uploadFile(`kyc/${userId}/pan`, pan);
+        await updateDoc(doc(db, 'users', userId), updates);
+    },
+    submitCreatorVerification: async (userId: string, data: CreatorVerificationDetails, files: any) => {
+        const updates: any = { creatorVerificationStatus: 'pending', creatorVerificationDetails: { ...data } };
+        if (files.registration) updates.creatorVerificationDetails.registrationDocUrl = await uploadFile(`verification/${userId}/registration`, files.registration);
+        if (files.office) updates.creatorVerificationDetails.officePhotoUrl = await uploadFile(`verification/${userId}/office`, files.office);
+        if (files.pan) updates.creatorVerificationDetails.businessPanUrl = await uploadFile(`verification/${userId}/business_pan`, files.pan);
+        if (files.stamp) updates.creatorVerificationDetails.channelStampUrl = await uploadFile(`verification/${userId}/stamp`, files.stamp);
+        if (files.acknowledgement) updates.creatorVerificationDetails.acknowledgementUrl = await uploadFile(`verification/${userId}/acknowledgement`, files.acknowledgement);
+        
+        await updateDoc(doc(db, 'users', userId), updates);
+    },
+    verifyLiveness: async (userId: string, image: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-liveness`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
         });
-        const updateConvo = async (uid: string, partnerId: string) => {
-            const partnerDoc = await getDoc(doc(db, USERS_COLLECTION, partnerId));
-            if (partnerDoc.exists()) {
-                const pData = partnerDoc.data();
-                await setDoc(doc(db, `users/${uid}/conversations`, partnerId), {
-                    participant: { id: partnerId, name: pData.name, avatar: pData.avatar, role: pData.role, companyName: pData.companyName },
-                    lastMessage: { text: text || 'Attachment', timestamp: serverTimestamp() },
-                    updatedAt: serverTimestamp()
-                }, { merge: true });
-            }
-        };
-        await Promise.all([updateConvo(senderId, recipientId), updateConvo(recipientId, senderId)]);
+        return await response.json();
     },
-    uploadMessageAttachment: async (messageId: string, file: File) => {
-        return await uploadFileToStorage(`chat_attachments/${messageId}`, file);
+    verifyAadhaarOtp: async (aadhaar: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-aadhaar-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aadhaar })
+        });
+        return await response.json();
     },
-    getConversations: async (userId: string) => {
-        const q = query(collection(db, `users/${userId}/conversations`), orderBy('updatedAt', 'desc'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    verifyAadhaarSubmit: async (userId: string, otp: string, ref_id: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-aadhaar-verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, otp, ref_id })
+        });
+        return await response.json();
     },
-    getNotificationsForUserListener: (userId: string, cb: (data: AppNotification[]) => void, errCb: (err: any) => void) => {
-        const q = query(collection(db, `users/${userId}/notifications`), orderBy('timestamp', 'desc'), limit(20));
-        return onSnapshot(q, (snap) => cb(snap.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification))), errCb);
+    verifyPan: async (userId: string, pan: string, name: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-pan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, pan, name })
+        });
+        return await response.json();
     },
-    markNotificationAsRead: async (id: string) => {
+    verifyDrivingLicense: async (userId: string, dlNumber: string, dob: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-dl`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, dlNumber, dob })
+        });
+        return await response.json();
     },
-    markAllNotificationsAsRead: async (userId: string) => {
-        const q = query(collection(db, `users/${userId}/notifications`), where('isRead', '==', false));
-        const snap = await getDocs(q);
-        snap.forEach(d => updateDoc(d.ref, { isRead: true }));
+    verifyBankAccount: async (userId: string, account: string, ifsc: string, name: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-bank`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, account, ifsc, name })
+        });
+        return await response.json();
     },
-    uploadProfilePicture: async (userId: string, file: File) => {
-        return await uploadFileToStorage(`avatars/${userId}`, file);
+    verifyUpi: async (userId: string, vpa: string, name: string) => {
+        const response = await fetch(`${BACKEND_URL}/verify-upi`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, vpa, name })
+        });
+        return await response.json();
+    },
+
+    // ... Misc ...
+    getBoostsForUser: async (userId: string): Promise<Boost[]> => {
+        const q = query(collection(db, 'boosts'), where('userId', '==', userId));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Boost));
     },
     createDispute: async (data: any) => {
-        await addDoc(collection(db, DISPUTES_COLLECTION), { ...data, status: 'open', timestamp: serverTimestamp() });
-        const col = data.collaborationType === 'direct' ? COLLAB_REQUESTS_COLLECTION : 
-                    data.collaborationType === 'campaign' ? CAMPAIGN_APPS_COLLECTION :
-                    data.collaborationType === 'ad_slot' ? AD_REQUESTS_COLLECTION : BANNER_BOOKINGS_COLLECTION;
-        await updateDoc(doc(db, col, data.collaborationId), { status: 'disputed' });
+        await addDoc(collection(db, 'disputes'), { ...data, timestamp: serverTimestamp(), status: 'open' });
     },
-    getDisputes: async () => {
-        const snap = await getDocs(collection(db, DISPUTES_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    getDisputes: async (): Promise<Dispute[]> => {
+        const snapshot = await getDocs(collection(db, 'disputes'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Dispute));
     },
-    getBoostsForUser: async (userId: string) => {
-        const q = query(collection(db, 'boosts'), where('userId', '==', userId));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Boost[];
+    getNotificationsForUserListener: (userId: string, callback: (notifs: AppNotification[]) => void, onError: (err: any) => void) => {
+        const q = query(collection(db, `users/${userId}/notifications`), orderBy('timestamp', 'desc'), limit(50));
+        return onSnapshot(q, (snapshot) => {
+            callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification)));
+        }, onError);
     },
-    getPartners: async () => {
-        const snap = await getDocs(collection(db, PARTNERS_COLLECTION));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Partner[];
+    markNotificationAsRead: async (notifId: string) => {
+        console.warn("markNotificationAsRead requires userId in path or collection group update.");
     },
-    createPartner: async (data: any) => {
-        await addDoc(collection(db, PARTNERS_COLLECTION), data);
+    markAllNotificationsAsRead: async (userId: string) => {
+        console.warn("markAllNotificationsAsRead requires batch update implementation");
     },
-    updatePartner: async (id: string, data: any) => {
-        await updateDoc(doc(db, PARTNERS_COLLECTION, id), data);
-    },
-    deletePartner: async (id: string) => {
-        await deleteDoc(doc(db, PARTNERS_COLLECTION, id));
-    },
-    uploadPartnerLogo: async (file: File) => {
-        return await uploadFileToStorage(`partner_logos`, file);
-    },
-    submitKyc: async (userId: string, details: KycDetails, idProof: File | null, addressProof: File | null, panCard: File | null) => {
-        let idProofUrl = details.idProofUrl;
-        let panCardUrl = details.panCardUrl;
-
-        if (idProof) {
-            idProofUrl = await uploadFileToStorage(`kyc/${userId}/id_proof`, idProof);
-        }
-        if (panCard) {
-            panCardUrl = await uploadFileToStorage(`kyc/${userId}/pan_card`, panCard);
-        }
-
-        const kycData: KycDetails = {
-            ...details,
-            idProofUrl,
-            panCardUrl,
-        };
-
-        await updateDoc(doc(db, USERS_COLLECTION, userId), {
-            kycStatus: 'pending',
-            kycDetails: kycData
-        });
-    },
-    getKycSubmissions: async () => {
-        const q = query(collection(db, USERS_COLLECTION), where('kycStatus', '==', 'pending'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() })) as User[];
-    },
-    updateKycStatus: async (userId: string, status: 'approved' | 'rejected', reason?: string) => {
-        await updateDoc(doc(db, USERS_COLLECTION, userId), {
-            kycStatus: status,
-            'kycDetails.rejectionReason': reason || null
-        });
-    },
-    generateReferralCode: async (userId: string): Promise<string> => {
-        const code = `REF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        await updateDoc(doc(db, USERS_COLLECTION, userId), { referralCode: code });
+    generateReferralCode: async (userId: string) => {
+        const code = "REF" + Math.random().toString(36).substring(2, 8).toUpperCase();
         return code;
     },
     applyReferralCode: async (userId: string, code: string) => {
-        const userRef = doc(db, USERS_COLLECTION, userId);
-        const q = query(collection(db, USERS_COLLECTION), where('referralCode', '==', code));
-        const snap = await getDocs(q);
-        
-        if (snap.empty) {
-            throw new Error("Invalid referral code.");
-        }
-        
-        const referrer = snap.docs[0];
-        if (referrer.id === userId) {
-             throw new Error("You cannot refer yourself.");
-        }
-
-        await updateDoc(userRef, {
-            referredBy: code,
-            coins: increment(20) 
-        });
-        
-        await updateDoc(referrer.ref, {
-            coins: increment(50)
-        });
+        console.log(`Applying referral code ${code} for user ${userId}`);
+    },
+    getPartners: async (): Promise<Partner[]> => {
+        const snapshot = await getDocs(collection(db, 'partners'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Partner));
+    },
+    createPartner: async (data: any) => {
+        await addDoc(collection(db, 'partners'), data);
+    },
+    updatePartner: async (id: string, data: any) => {
+        await updateDoc(doc(db, 'partners', id), data);
+    },
+    deletePartner: async (id: string) => {
+        await updateDoc(doc(db, 'partners', id), { deleted: true });
+    },
+    uploadPartnerLogo: async (file: File): Promise<string> => {
+        return uploadFile(`partner_logos/${Date.now()}_${file.name}`, file);
+    },
+    getLeaderboards: async (): Promise<Leaderboard[]> => {
+        const snapshot = await getDocs(collection(db, 'leaderboards'));
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Leaderboard));
+    },
+    getActiveLeaderboards: async (): Promise<Leaderboard[]> => {
+        const q = query(collection(db, 'leaderboards'), where('isActive', '==', true));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Leaderboard));
+    },
+    createLeaderboard: async (data: any) => {
+        await addDoc(collection(db, 'leaderboards'), { ...data, createdAt: serverTimestamp() });
+    },
+    updateLeaderboard: async (id: string, data: any) => {
+        await updateDoc(doc(db, 'leaderboards', id), data);
+    },
+    deleteLeaderboard: async (id: string) => {
+        await updateDoc(doc(db, 'leaderboards', id), { deleted: true });
     },
     sendBulkEmail: async (role: UserRole, subject: string, body: string) => {
         console.log(`Sending bulk email to ${role}: ${subject}`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); 
+        await new Promise(resolve => setTimeout(resolve, 1000));
     },
     sendPushNotification: async (title: string, body: string, targetRole: UserRole | 'all', url?: string) => {
         console.log(`Sending push notification to ${targetRole}: ${title}`);

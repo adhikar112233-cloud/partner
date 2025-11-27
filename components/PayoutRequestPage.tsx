@@ -49,16 +49,18 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
         return 'Untitled Collaboration';
     }, [collaboration]);
 
-    // --- Calculation Logic ---
+    // --- Calculation Logic for Creators ---
     const finalAmountRaw = collaboration?.finalAmount ? parseFloat(String(collaboration.finalAmount).replace(/[^0-9.-]+/g, "")) : 0;
     const finalAmount = isNaN(finalAmountRaw) ? 0 : finalAmountRaw;
     const dailyPayoutsReceived = 'dailyPayoutsReceived' in collaboration ? collaboration.dailyPayoutsReceived || 0 : 0;
 
+    // Use specific flags for Creators
     const commission = platformSettings.isPlatformCommissionEnabled ? finalAmount * (platformSettings.platformCommissionRate / 100) : 0;
-    const processingCharge = platformSettings.isPaymentProcessingChargeEnabled ? finalAmount * (platformSettings.paymentProcessingChargeRate / 100) : 0;
-    const gstOnFees = platformSettings.isGstEnabled ? (commission + processingCharge) * (platformSettings.gstRate / 100) : 0;
     
-    const totalDeductions = commission + processingCharge + gstOnFees + dailyPayoutsReceived;
+    // GST applied on Commission amount only
+    const gstOnCommission = platformSettings.isCreatorGstEnabled ? commission * (platformSettings.gstRate / 100) : 0;
+    
+    const totalDeductions = commission + gstOnCommission + dailyPayoutsReceived;
     const finalPayoutAmount = finalAmount - totalDeductions;
 
     // --- Helper to convert Data URL to File ---
@@ -229,10 +231,6 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
 
     const isCurrentlyVerified = payoutMethod === 'bank' ? isBankVerified : isUpiVerified;
     
-    // If verification is enforced:
-    // - canEdit = isEditing OR !isVerified
-    // If NOT enforced:
-    // - canEdit = true (always editable unless explicitly saved/locked logic which we simplify here to always editable)
     const canEdit = !isVerificationEnforced || (isEditing || !isCurrentlyVerified);
 
     return (
@@ -264,11 +262,8 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                             {platformSettings.isPlatformCommissionEnabled && commission > 0 && (
                                 <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Platform Commission ({platformSettings.platformCommissionRate}%):</span> <span>- ₹{commission.toFixed(2)}</span></div>
                             )}
-                            {platformSettings.isPaymentProcessingChargeEnabled && processingCharge > 0 && (
-                                <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Payment Processing Charge ({platformSettings.paymentProcessingChargeRate}%):</span> <span>- ₹{processingCharge.toFixed(2)}</span></div>
-                            )}
-                            {platformSettings.isGstEnabled && gstOnFees > 0 && (
-                                 <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) GST on Fees ({platformSettings.gstRate}%):</span> <span>- ₹{gstOnFees.toFixed(2)}</span></div>
+                            {platformSettings.isCreatorGstEnabled && gstOnCommission > 0 && (
+                                 <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) GST on Commission ({platformSettings.gstRate}%):</span> <span>- ₹{gstOnCommission.toFixed(2)}</span></div>
                             )}
                             {dailyPayoutsReceived > 0 && <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Daily Payouts Received:</span> <span>- ₹{dailyPayoutsReceived.toFixed(2)}</span></div>}
                             <div className="flex justify-between font-bold text-lg border-t dark:border-gray-700 pt-2 mt-2 text-gray-900 dark:text-white"><span>Final Payout Amount:</span> <span>₹{finalPayoutAmount.toFixed(2)}</span></div>

@@ -36,12 +36,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [phoneNumber, setPhoneNumber] = useState(user.mobileNumber || '');
   const [useCoins, setUseCoins] = useState(false);
   
-  const processingCharge = platformSettings.isPaymentProcessingChargeEnabled
+  // Calculate Brand Fees using specific flags
+  const processingCharge = platformSettings.isBrandPlatformFeeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
     : 0;
-  const gstOnFees = platformSettings.isGstEnabled
+    
+  const gstOnFees = platformSettings.isBrandGstEnabled
     ? processingCharge * (platformSettings.gstRate / 100)
     : 0;
+    
   const grossTotal = baseAmount + processingCharge + gstOnFees;
   const userCoins = user.coins || 0;
   const maxRedeemableCoins = Math.min(userCoins, 100, Math.floor(grossTotal));

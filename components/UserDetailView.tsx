@@ -148,23 +148,25 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
     const TabButton = ({ tab, label, icon: Icon }: { tab: Tab, label: string, icon: any }) => (
         <button
             onClick={() => setActiveTab(tab)}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
-            <Icon className="w-4 h-4" /> {label}
+            <Icon className="w-4 h-4 flex-shrink-0" /> {label}
         </button>
     );
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-end z-[60]" onClick={onClose}>
-            <div className="w-full max-w-6xl bg-white dark:bg-gray-800 h-full overflow-y-auto shadow-2xl flex flex-col transition-all duration-300" onClick={e => e.stopPropagation()}>
+            {/* Added overflow-auto to enable scrollbars when content exceeds viewport */}
+            <div className="w-full max-w-6xl bg-white dark:bg-gray-800 h-full overflow-auto shadow-2xl flex flex-col transition-all duration-300" onClick={e => e.stopPropagation()}>
                 {/* Header */}
-                <div className="p-6 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                    <div className="flex justify-between items-center">
+                <div className="p-4 sm:p-6 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex-shrink-0">
+                    <div className="flex flex-wrap justify-between items-center gap-4">
                         <div className="flex items-center gap-4">
                             <img src={user.avatar} alt={user.name} className="w-16 h-16 rounded-full object-cover border-2 border-white shadow" />
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{user.name}</h2>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{user.email} • <span className="capitalize">{user.role}</span></p>
+                                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{user.name}</h2>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 break-all">{user.email}</p> 
+                                <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{user.role}</p>
                                 <div className="mt-1 flex gap-2 text-xs">
                                     <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">{user.piNumber}</span>
                                     <span className={`px-2 py-0.5 rounded ${user.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{user.isBlocked ? 'Blocked' : 'Active'}</span>
@@ -199,7 +201,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b dark:border-gray-700 overflow-x-auto">
+                <div className="flex border-b dark:border-gray-700 overflow-x-auto flex-shrink-0 bg-white dark:bg-gray-800">
                     <TabButton tab="profile" label="Profile" icon={ProfileIcon} />
                     <TabButton tab="financials" label="Financials" icon={PaymentIcon} />
                     <TabButton tab="membership" label="Membership" icon={MembershipIcon} />
@@ -208,7 +210,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
                 </div>
 
                 {/* Content */}
-                <div className="p-6 flex-1">
+                <div className="p-4 sm:p-6 flex-1 min-h-0">
                     {activeTab === 'profile' && (
                         <div className="space-y-4 max-w-lg">
                             <div>
@@ -255,7 +257,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
                     {activeTab === 'financials' && (
                         <div className="space-y-6">
                             {/* Saved Payment Details */}
-                            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border dark:border-gray-700 shadow-sm">
+                            <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg border dark:border-gray-700 shadow-sm">
                                 <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white border-b dark:border-gray-700 pb-2">Saved Payment Methods</h3>
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -733,7 +733,7 @@ const DisputeResolutionModal: React.FC<{
         setIsResolving(true);
         try {
             await apiService.updateDispute(dispute.id, { status: 'resolved' });
-            onResolve();
+            onResolve(); // This calls the parent's update handler which we will hook to refresh local disputes
             onClose();
         } catch (error) {
             console.error("Failed to resolve dispute", error);
@@ -1007,12 +1007,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
     
     const staffUsers = useMemo(() => allUsers.filter(u => u.role === 'staff' && !u.isBlocked), [allUsers]);
 
+    const fetchDisputes = useCallback(() => {
+        setIsLoadingDisputes(true);
+        apiService.getDisputes().then(setDisputes).finally(() => setIsLoadingDisputes(false));
+    }, []);
+
     useEffect(() => {
         if (activeTab === 'disputes') {
-            setIsLoadingDisputes(true);
-            apiService.getDisputes().then(setDisputes).finally(() => setIsLoadingDisputes(false));
+            fetchDisputes();
         }
-    }, [activeTab]);
+    }, [activeTab, fetchDisputes]);
 
     const handleCollabUpdate = async (id: string, type: string, data: Partial<AnyCollaboration>) => {
         const collabTypeMap: { [key: string]: 'direct' | 'campaign' | 'ad_slot' | 'banner_booking' } = {
@@ -1121,24 +1125,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
         return user.staffPermissions?.includes(tab.permission);
     });
 
+    const handleRefresh = useCallback(() => {
+        onUpdate(); // Trigger parent refresh for global data
+        if (activeTab === 'disputes') {
+            fetchDisputes(); // Specifically refresh local disputes state
+        }
+    }, [onUpdate, activeTab, fetchDisputes]);
+
     const renderContent = () => {
         switch (activeTab) {
             case 'dashboard': return <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />;
-            case 'user_management': return <UserManagementPanel allUsers={allUsers} onUpdate={onUpdate} transactions={allTransactions} payouts={allPayouts} collabs={allCollabs} />;
-            case 'staff_management': return <StaffManagementPanel staffUsers={staffUsers} onUpdate={onUpdate} platformSettings={platformSettings} />;
+            case 'user_management': return <UserManagementPanel allUsers={allUsers} onUpdate={handleRefresh} transactions={allTransactions} payouts={allPayouts} collabs={allCollabs} />;
+            case 'staff_management': return <StaffManagementPanel staffUsers={staffUsers} onUpdate={handleRefresh} platformSettings={platformSettings} />;
             case 'collaborations': return <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} />;
-            case 'kyc': return <KycPanel onUpdate={onUpdate} />;
-            case 'creator_verification': return <CreatorVerificationPanel onUpdate={onUpdate} />;
-            case 'payouts': return <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={onUpdate} />;
+            case 'kyc': return <KycPanel onUpdate={handleRefresh} />;
+            case 'creator_verification': return <CreatorVerificationPanel onUpdate={handleRefresh} />;
+            case 'payouts': return <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={handleRefresh} />;
             case 'payment_history': return <AdminPaymentHistoryPage transactions={allTransactions} payouts={allPayouts} allUsers={allUsers} collaborations={combinedCollaborations.map(c => ({ id: c.id, trackingId: c.originalData.collabId }))} />;
             case 'community': return <CommunityManagementPanel />;
             case 'live_help': return <LiveHelpPanel adminUser={user} />;
-            case 'marketing': return <MarketingPanel allUsers={allUsers} platformSettings={platformSettings} onUpdate={onUpdate} />;
-            case 'disputes': return <DisputesPanel disputes={disputes} allTransactions={allTransactions} onUpdate={onUpdate} />;
+            case 'marketing': return <MarketingPanel allUsers={allUsers} platformSettings={platformSettings} onUpdate={handleRefresh} />;
+            case 'disputes': return <DisputesPanel disputes={disputes} allTransactions={allTransactions} onUpdate={handleRefresh} />;
             case 'discounts': return <DiscountSettingsPanel settings={platformSettings} setSettings={() => {}} setIsDirty={() => {}} />;
-            case 'platform_banners': return <PlatformBannerPanel onUpdate={onUpdate} />;
-            case 'client_brands': return <PartnersPanel onUpdate={onUpdate} />;
-            case 'leaderboards': return <LeaderboardManager allUsers={allUsers} allTransactions={allTransactions} allCollabs={allCollabs} onUpdate={onUpdate} />;
+            case 'platform_banners': return <PlatformBannerPanel onUpdate={handleRefresh} />;
+            case 'client_brands': return <PartnersPanel onUpdate={handleRefresh} />;
+            case 'leaderboards': return <LeaderboardManager allUsers={allUsers} allTransactions={allTransactions} allCollabs={allCollabs} onUpdate={handleRefresh} />;
             case 'agreements': return <AgreementsPanel />;
             default: return <div>Select a tab</div>;
         }

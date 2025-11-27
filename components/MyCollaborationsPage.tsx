@@ -1,8 +1,11 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CollaborationRequest, CollabRequestStatus, ProfileData, ConversationParticipant, PlatformSettings, AnyCollaboration } from '../types';
 import { apiService } from '../services/apiService';
 import CashfreeModal from './PhonePeModal';
 import DisputeModal from './DisputeModal';
+import { TrashIcon, MessagesIcon } from './Icons';
+import { Timestamp } from 'firebase/firestore';
 
 interface MyCollaborationsPageProps {
     user: User; // The logged-in brand
@@ -12,10 +15,19 @@ interface MyCollaborationsPageProps {
     onInitiateRefund: (collab: AnyCollaboration) => void;
 }
 
+const toJsDate = (ts: any): Date | undefined => {
+    if (!ts) return undefined;
+    if (ts instanceof Date) return ts;
+    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    return undefined;
+};
+
 const RequestStatusBadge: React.FC<{ status: CollabRequestStatus }> = ({ status }) => {
-    const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize whitespace-nowrap";
+    const baseClasses = "px-2 py-1 text-xs font-medium rounded-full capitalize whitespace-nowrap";
     const statusMap: Record<CollabRequestStatus, { text: string; classes: string }> = {
-        pending: { text: "Pending Influencer Response", classes: "text-yellow-800 bg-yellow-100 dark:bg-yellow-900/50 dark:text-yellow-300" },
+        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100 dark:bg-yellow-900/50 dark:text-yellow-300" },
         rejected: { text: "Rejected", classes: "text-red-800 bg-red-100 dark:bg-red-900/50 dark:text-red-300" },
         influencer_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100 dark:bg-purple-900/50 dark:text-purple-300" },
         brand_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300" },
@@ -47,36 +59,6 @@ const OfferModal: React.FC<{ request: CollaborationRequest; onClose: () => void;
         </div>
     );
 };
-
-const CollaborationItem: React.FC<{
-    req: CollaborationRequest;
-    onViewProfile: (profile: ProfileData) => void;
-    renderStatusInfo: (req: CollaborationRequest) => React.ReactNode;
-    renderRequestActions: (req: CollaborationRequest) => React.ReactNode;
-}> = ({ req, onViewProfile, renderStatusInfo, renderRequestActions }) => (
-    <li className="p-6">
-        <div className="flex items-start space-x-4">
-            <button onClick={() => onViewProfile({ id: req.influencerId, name: req.influencerName, avatar: req.influencerAvatar, role: 'influencer' })} className="rounded-full flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" aria-label={`View profile of ${req.influencerName}`}>
-                <img src={req.influencerAvatar} alt={req.influencerName} className="w-12 h-12 rounded-full object-cover" />
-            </button>
-            <div className="flex-1">
-                <div className="flex justify-between items-center">
-                    <div>
-                        <h3 className="text-lg font-bold text-gray-800">{req.title}</h3>
-                        {req.collabId && <p className="text-xs font-mono text-gray-400">{req.collabId}</p>}
-                    </div>
-                    <RequestStatusBadge status={req.status} />
-                </div>
-                <p className="text-sm font-medium text-gray-600">With: {req.influencerName}</p>
-                <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{req.message}</p>
-                {req.status === 'influencer_offer' && <p className="text-sm font-semibold text-indigo-600 mt-2">Influencer's Offer: {req.currentOffer?.amount}</p>}
-                {renderStatusInfo(req)}
-                {renderRequestActions(req)}
-            </div>
-        </div>
-    </li>
-);
-
 
 const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platformSettings, onViewProfile, onStartChat, onInitiateRefund }) => {
     const [requests, setRequests] = useState<CollaborationRequest[]>([]);
@@ -122,6 +104,16 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
             setSelectedRequest(null);
         }
     };
+
+    const handleDelete = async (reqId: string) => {
+        if(window.confirm("Are you sure you want to delete this history? This cannot be undone.")) {
+            try {
+                await apiService.deleteCollaboration(reqId, 'collaboration_requests');
+            } catch (err) {
+                console.error("Delete failed", err);
+            }
+        }
+    };
     
     const handleAction = (req: CollaborationRequest, action: 'message' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'pay_now' | 'work_complete' | 'work_incomplete' | 'brand_complete_disputed' | 'brand_request_refund') => {
         setSelectedRequest(req);
@@ -164,54 +156,38 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
     };
 
     const renderRequestActions = (req: CollaborationRequest) => {
-        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string}[] = [];
+        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, icon?: any}[] = [];
         
+        actions.push({ label: 'Message', action: 'message', style: 'text-indigo-600 hover:bg-indigo-50', icon: <MessagesIcon className="w-4 h-4" /> });
+
         switch (req.status) {
             case 'influencer_offer':
-                actions.push({ label: 'Message', action: 'message', style: 'bg-gray-200 text-gray-800' });
-                actions.push({ label: 'Reject Offer', action: 'reject_offer', style: 'bg-red-500 text-white' });
-                actions.push({ label: 'Counter-Offer', action: 'recounter_offer', style: 'bg-blue-500 text-white' });
-                actions.push({ label: 'Accept Offer', action: 'accept_offer', style: 'bg-green-500 text-white' });
+                actions.push({ label: 'Reject', action: 'reject_offer', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
+                actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'agreement_reached':
-                actions.push({ label: `Pay Now: ${req.finalAmount}`, action: 'pay_now', style: 'bg-green-600 text-white' });
+                actions.push({ label: `Pay Now`, action: 'pay_now', style: 'text-green-600 hover:bg-green-50 font-bold' });
                 break;
             case 'work_submitted':
-                actions.push({ label: 'Mark as Complete', action: 'work_complete', style: 'bg-green-500 text-white' });
-                actions.push({ label: 'Dispute/Incomplete', action: 'work_incomplete', style: 'bg-orange-500 text-white' });
+                actions.push({ label: 'Complete', action: 'work_complete', style: 'text-green-600 hover:bg-green-50' });
+                actions.push({ label: 'Dispute', action: 'work_incomplete', style: 'text-orange-600 hover:bg-orange-50' });
                 break;
             case 'brand_decision_pending':
-                actions.push({ label: 'Request Full Refund', action: 'brand_request_refund', style: 'bg-red-500 text-white' });
-                actions.push({ label: 'Approve Payment', action: 'brand_complete_disputed', style: 'bg-green-500 text-white' });
+                actions.push({ label: 'Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Approve', action: 'brand_complete_disputed', style: 'text-green-600 hover:bg-green-50' });
                 break;
         }
         
-        if (actions.length === 0) return null;
-
         return (
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
                 {actions.map(a => (
-                    <button key={a.label} onClick={() => handleAction(req, a.action)} className={`px-4 py-2 text-sm font-semibold rounded-lg hover:opacity-80 ${a.style}`}>
-                        {a.label}
+                    <button key={a.label} onClick={() => handleAction(req, a.action)} className={`px-3 py-1 text-xs font-semibold rounded border border-gray-200 dark:border-gray-600 flex items-center gap-1 ${a.style}`}>
+                        {a.icon} {a.label}
                     </button>
                 ))}
             </div>
         );
-    };
-    
-    const renderStatusInfo = (req: CollaborationRequest) => {
-        let info = null;
-        switch (req.status) {
-            case 'pending': info = `Waiting for ${req.influencerName} to respond to your request.`; break;
-            case 'brand_offer': info = `You sent a counter-offer of ${req.currentOffer?.amount}.`; break;
-            case 'in_progress': info = "Work is currently in progress."; break;
-            case 'completed': info = `Collaboration complete. Payment status: ${req.paymentStatus || 'pending'}`; break;
-            case 'rejected': info = req.rejectionReason ? `Rejected: ${req.rejectionReason}` : `Request Rejected`; break;
-            case 'brand_decision_pending': info = `Admin has ruled in your favor. Please decide if the work can be marked as complete (to release payment) or if you want a refund.`; break;
-            case 'refund_pending_admin_review': info = 'Your refund request is under review. A BIGYAPON agent will process it within 48 hours.'; break;
-        }
-        if (!info) return null;
-        return <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg">{info}</div>;
     };
 
     const filteredRequests = useMemo(() => {
@@ -233,30 +209,86 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
         return [];
     }, [requests, filter]);
 
+    const renderTable = (data: CollaborationRequest[]) => (
+        <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date & Time</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Influencer / Title</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cancel Reason</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {data.map((req) => (
+                        <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                                {toJsDate(req.timestamp)?.toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
+                                {req.collabId || req.id.substring(0, 8)}
+                            </td>
+                            <td className="px-6 py-4">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0 h-10 w-10">
+                                        <img className="h-10 w-10 rounded-full object-cover" src={req.influencerAvatar} alt="" />
+                                    </div>
+                                    <div className="ml-4">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-white">{req.influencerName}</div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{req.title}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                <RequestStatusBadge status={req.status} />
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                                {req.rejectionReason || '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex items-center gap-2">
+                                    {renderRequestActions(req)}
+                                    {['completed', 'rejected'].includes(req.status) && (
+                                        <button 
+                                            onClick={() => handleDelete(req.id)}
+                                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            title="Delete from History"
+                                        >
+                                            <TrashIcon className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+
     if (isLoading) return <div className="text-center p-8">Loading collaborations...</div>;
     if (error) return <div className="text-center p-8 bg-red-100 text-red-700 rounded-lg">{error}</div>;
 
     return (
         <div className="space-y-8">
             <div>
-                <h1 className="text-3xl font-bold text-gray-800">My Direct Collaborations</h1>
-                <p className="text-gray-500 mt-1">Manage your one-on-one partnerships with influencers.</p>
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-white">My Direct Collaborations</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">Manage your one-on-one partnerships with influencers.</p>
             </div>
             
-            <div className="flex space-x-2 p-1 bg-gray-50 rounded-lg border">
-                 <button onClick={() => setFilter('pending')} className={`px-4 py-2 text-sm font-semibold rounded-lg ${filter === 'pending' ? 'bg-indigo-600 text-white' : 'text-gray-600'}`}>Pending</button>
-                 <button onClick={() => setFilter('active')} className={`px-4 py-2 text-sm font-semibold rounded-lg ${filter === 'active' ? 'bg-indigo-600 text-white' : 'text-gray-600'}`}>Active</button>
-                 <button onClick={() => setFilter('archived')} className={`px-4 py-2 text-sm font-semibold rounded-lg ${filter === 'archived' ? 'bg-indigo-600 text-white' : 'text-gray-600'}`}>Archived and Complete</button>
+            <div className="flex space-x-2 p-1 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
+                 <button onClick={() => setFilter('pending')} className={`px-4 py-2 text-sm font-semibold rounded-lg ${filter === 'pending' ? 'bg-indigo-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Pending</button>
+                 <button onClick={() => setFilter('active')} className={`px-4 py-2 text-sm font-semibold rounded-lg ${filter === 'active' ? 'bg-indigo-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Active</button>
+                 <button onClick={() => setFilter('archived')} className={`px-4 py-2 text-sm font-semibold rounded-lg ${filter === 'archived' ? 'bg-indigo-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Archived and Complete</button>
             </div>
             
             {requests.length === 0 ? (
-                 <div className="text-center py-10 col-span-full bg-white rounded-lg shadow"><p className="text-gray-500">You have no direct collaborations yet. Find an influencer to get started!</p></div>
+                 <div className="text-center py-10 col-span-full bg-white dark:bg-gray-800 rounded-lg shadow"><p className="text-gray-500 dark:text-gray-400">You have no direct collaborations yet. Find an influencer to get started!</p></div>
             ) : (
-                 <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
-                    <ul className="divide-y divide-gray-200">
-                        {filteredRequests.map(req => <CollaborationItem key={req.id} req={req} onViewProfile={onViewProfile} renderStatusInfo={renderStatusInfo} renderRequestActions={renderRequestActions} />)}
-                    </ul>
-                </div>
+                 renderTable(filteredRequests)
             )}
 
             {modal === 'offer' && selectedRequest && (

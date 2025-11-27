@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
+import { TrashIcon, MessagesIcon } from './Icons';
 
 interface AdRequestsPageProps {
     user: User; // The Live TV user
@@ -10,24 +11,33 @@ interface AdRequestsPageProps {
     onInitiatePayout: (collab: AdSlotRequest) => void;
 }
 
+const toJsDate = (ts: any): Date | undefined => {
+    if (!ts) return undefined;
+    if (ts instanceof Date) return ts;
+    if (typeof ts.toDate === 'function') return ts.toDate();
+    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    return undefined;
+};
+
 const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) => {
     const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize";
     const statusMap: Record<AdBookingStatus, { text: string; classes: string }> = {
-        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100" }, // From CollabRequestStatus
-        influencer_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" }, // From CollabRequestStatus
-        pending_approval: { text: "Pending Approval", classes: "text-yellow-800 bg-yellow-100" },
-        rejected: { text: "Rejected", classes: "text-red-800 bg-red-100" },
-        agency_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" },
-        brand_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100" },
-        agreement_reached: { text: "Agreement Reached", classes: "text-green-800 bg-green-100" },
-        in_progress: { text: "In Progress", classes: "text-cyan-800 bg-cyan-100" },
-        work_submitted: { text: "Work Submitted", classes: "text-indigo-800 bg-indigo-100" },
-        completed: { text: "Completed", classes: "text-gray-800 bg-gray-100" },
-        disputed: { text: "Dispute in Review", classes: "text-orange-800 bg-orange-100" },
-        brand_decision_pending: { text: "Decision Pending", classes: "text-gray-800 bg-gray-100" },
-        refund_pending_admin_review: { text: "Refund Under Review", classes: "text-blue-800 bg-blue-100" },
+        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100 dark:bg-yellow-900/50 dark:text-yellow-300" }, 
+        influencer_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300" },
+        pending_approval: { text: "Pending Approval", classes: "text-yellow-800 bg-yellow-100 dark:bg-yellow-900/50 dark:text-yellow-300" },
+        rejected: { text: "Rejected", classes: "text-red-800 bg-red-100 dark:bg-red-900/50 dark:text-red-300" },
+        agency_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300" },
+        brand_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100 dark:bg-purple-900/50 dark:text-purple-300" },
+        agreement_reached: { text: "Agreement Reached", classes: "text-green-800 bg-green-100 dark:bg-green-900/50 dark:text-green-300" },
+        in_progress: { text: "In Progress", classes: "text-cyan-800 bg-cyan-100 dark:bg-cyan-900/50 dark:text-cyan-300" },
+        work_submitted: { text: "Work Submitted", classes: "text-indigo-800 bg-indigo-100 dark:bg-indigo-900/50 dark:text-indigo-300" },
+        completed: { text: "Completed", classes: "text-gray-800 bg-gray-100 dark:bg-gray-700 dark:text-gray-300" },
+        disputed: { text: "Dispute in Review", classes: "text-orange-800 bg-orange-100 dark:bg-orange-900/50 dark:text-orange-300" },
+        brand_decision_pending: { text: "Decision Pending", classes: "text-gray-800 bg-gray-100 dark:bg-gray-700 dark:text-gray-300" },
+        refund_pending_admin_review: { text: "Refund Under Review", classes: "text-blue-800 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300" },
     };
-    const { text, classes } = statusMap[status] || { text: status.replace(/_/g, ' '), classes: "text-gray-800 bg-gray-100" };
+    const { text, classes } = statusMap[status] || { text: status.replace(/_/g, ' '), classes: "text-gray-800 bg-gray-100 dark:bg-gray-700 dark:text-gray-300" };
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
@@ -108,6 +118,17 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         setSelectedRequest(null);
     };
 
+    const handleDelete = async (reqId: string) => {
+        if(window.confirm("Are you sure you want to delete this history?")) {
+            try {
+                await apiService.deleteCollaboration(reqId, 'ad_slot_requests');
+                fetchRequests();
+            } catch (err) {
+                console.error("Delete failed", err);
+            }
+        }
+    };
+
     const handleAction = (req: AdSlotRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel') => {
         setSelectedRequest(req);
         switch(action) {
@@ -139,49 +160,47 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
     };
 
     const renderRequestActions = (req: AdSlotRequest) => {
-        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, disabled?: boolean, title?: string}[] = [];
+        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, disabled?: boolean, title?: string, icon?: any}[] = [];
         const isEndDatePassed = new Date(req.endDate) < new Date();
+
+        actions.push({ label: 'Message', action: 'message', style: 'text-indigo-600 hover:bg-indigo-50', icon: <MessagesIcon className="w-4 h-4" /> });
 
         switch (req.status) {
             case 'pending_approval':
-                actions.push({ label: 'Message', action: 'message', style: 'bg-gray-200 text-gray-800' });
-                actions.push({ label: 'Reject', action: 'reject', style: 'bg-red-500 text-white' });
-                actions.push({ label: 'Accept with Offer', action: 'accept_with_offer', style: 'bg-green-500 text-white' });
+                actions.push({ label: 'Reject', action: 'reject', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Accept & Offer', action: 'accept_with_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'brand_offer':
-                actions.push({ label: 'Message', action: 'message', style: 'bg-gray-200 text-gray-800' });
-                actions.push({ label: 'Cancel Collab', action: 'cancel', style: 'bg-red-500 text-white' });
-                actions.push({ label: 'Counter Offer', action: 'recounter_offer', style: 'bg-blue-500 text-white' });
-                actions.push({ label: 'Accept Offer', action: 'accept_offer', style: 'bg-green-500 text-white' });
+                actions.push({ label: 'Cancel', action: 'cancel', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
+                actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'in_progress':
                 if (req.paymentStatus === 'paid' && !req.workStatus) {
-                    actions.push({ label: 'Start Work', action: 'start_work', style: 'bg-indigo-600 text-white' });
+                    actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                 }
                 if (req.workStatus === 'started') {
                     actions.push({ 
-                        label: 'Complete Work', 
+                        label: 'Complete', 
                         action: 'complete_work', 
-                        style: 'bg-teal-500 text-white', 
+                        style: 'text-teal-600 hover:bg-teal-50 font-bold', 
                         disabled: !isEndDatePassed,
-                        title: isEndDatePassed ? 'Mark the ad campaign as complete' : `This button will be active on ${req.endDate}`
+                        title: isEndDatePassed ? 'Mark as complete' : `Active until ${req.endDate}`
                     });
                 }
                 break;
             case 'completed':
                  if (req.paymentStatus === 'paid') {
-                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'bg-green-500 text-white' });
+                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
                  }
                  break;
         }
 
-        if (actions.length === 0) return null;
-
         return (
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
                 {actions.map(a => (
-                    <button key={a.label} onClick={() => handleAction(req, a.action)} disabled={a.disabled} title={a.title} className={`px-4 py-2 text-sm font-semibold rounded-lg hover:opacity-80 ${a.style} ${a.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                        {a.label}
+                    <button key={a.label} onClick={() => handleAction(req, a.action)} disabled={a.disabled} title={a.title} className={`px-3 py-1 text-xs font-semibold rounded border border-gray-200 dark:border-gray-600 flex items-center gap-1 ${a.style} ${a.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        {a.icon} {a.label}
                     </button>
                 ))}
             </div>
@@ -194,7 +213,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
             <button
                 onClick={() => setFilter(filterType)}
                 className={`flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                    isActive ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100'
+                    isActive ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
                 }`}
             >
                 {label}
@@ -205,37 +224,66 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         );
     };
 
-    const renderList = (list: AdSlotRequest[], title: string) => {
-        if (list.length === 0) {
-            return <div className="text-center py-10 bg-white rounded-lg shadow"><p className="text-gray-500">You have no {title.toLowerCase()}.</p></div>;
-        }
-        return (
-            <div className="bg-white shadow-lg rounded-2xl overflow-hidden">
-                <ul className="divide-y divide-gray-200">
-                    {list.map(req => (
-                        <li key={req.id} className="p-6">
-                            <div className="flex flex-col sm:flex-row sm:items-start sm:space-x-4">
-                                <img src={req.brandAvatar} alt={req.brandName} className="w-12 h-12 rounded-full object-cover flex-shrink-0 mb-4 sm:mb-0" />
-                                <div className="flex-1">
-                                    <div className="flex justify-between items-center">
-                                        <h3 className="text-lg font-bold text-gray-800">{req.campaignName}</h3>
-                                        <RequestStatusBadge status={req.status} />
+    const renderTable = (list: AdSlotRequest[]) => (
+        <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date & Time</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Brand / Campaign</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cancel Reason</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {list.map((req) => (
+                        <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                                {toJsDate(req.timestamp)?.toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
+                                {req.collabId || req.id.substring(0, 8)}
+                            </td>
+                            <td className="px-6 py-4">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0 h-10 w-10">
+                                        <img className="h-10 w-10 rounded-full object-cover" src={req.brandAvatar} alt="" />
                                     </div>
-                                    <p className="text-sm font-medium text-gray-600">From: {req.brandName}</p>
-                                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                                        <div><span className="font-semibold text-gray-500">Ad Type:</span> {req.adType}</div>
-                                        <div><span className="font-semibold text-gray-500">Dates:</span> {req.startDate} to {req.endDate}</div>
-                                        {req.status === 'brand_offer' && <div className="col-span-full text-indigo-600"><span className="font-semibold">Brand's Offer:</span> {req.currentOffer?.amount}</div>}
+                                    <div className="ml-4">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-white">{req.brandName}</div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{req.campaignName}</div>
+                                        <div className="text-xs text-gray-400">{req.adType}</div>
                                     </div>
-                                    {renderRequestActions(req)}
                                 </div>
-                            </div>
-                        </li>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                <RequestStatusBadge status={req.status} />
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                                {req.rejectionReason || '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex items-center gap-2">
+                                    {renderRequestActions(req)}
+                                    {['completed', 'rejected'].includes(req.status) && (
+                                        <button 
+                                            onClick={() => handleDelete(req.id)}
+                                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            title="Delete from History"
+                                        >
+                                            <TrashIcon className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
                     ))}
-                </ul>
-            </div>
-        );
-    };
+                </tbody>
+            </table>
+        </div>
+    );
 
     if (isLoading) return <div className="text-center p-8">Loading ad requests...</div>;
     if (error) return <div className="text-center p-8 bg-red-100 text-red-700 rounded-lg">{error}</div>;
@@ -243,26 +291,26 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-3xl font-bold text-gray-800">Collaboration Status</h1>
-                <p className="text-gray-500 mt-1">Review and manage incoming advertising proposals from brands.</p>
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Collaboration Status</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">Review and manage incoming advertising proposals from brands.</p>
             </div>
 
-            <div className="flex space-x-2 p-1 bg-gray-50 rounded-lg border overflow-x-auto">
+            <div className="flex space-x-2 p-1 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-x-auto">
                 <FilterButton label="Pending Requests" filterType="pending" count={pendingRequests.length} />
                 <FilterButton label="Processing & Running Ads" filterType="processing" count={processingRequests.length} />
                 <FilterButton label="Completed Ads" filterType="completed" count={completedRequests.length} />
             </div>
 
             {requests.length === 0 ? (
-                <div className="text-center py-10 col-span-full bg-white rounded-lg shadow">
-                    <p className="text-gray-500">You have no ad slot requests yet.</p>
+                <div className="text-center py-10 col-span-full bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <p className="text-gray-500 dark:text-gray-400">You have no ad slot requests yet.</p>
                 </div>
             ) : (
-                <div className="space-y-8">
-                    {filter === 'pending' && renderList(pendingRequests, "pending requests")}
-                    {filter === 'processing' && renderList(processingRequests, "processing & running ads")}
-                    {filter === 'completed' && renderList(completedRequests, "completed ads")}
-                </div>
+                <>
+                    {filter === 'pending' && renderTable(pendingRequests)}
+                    {filter === 'processing' && renderTable(processingRequests)}
+                    {filter === 'completed' && renderTable(completedRequests)}
+                </>
             )}
             
              {modal === 'offer' && selectedRequest && (

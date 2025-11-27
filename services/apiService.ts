@@ -2,7 +2,7 @@
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
     orderBy, limit, addDoc, serverTimestamp, onSnapshot, increment, 
-    arrayUnion, arrayRemove, startAfter, Timestamp
+    arrayUnion, arrayRemove, startAfter, Timestamp, deleteDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, BACKEND_URL } from './firebase';
@@ -178,7 +178,9 @@ export const apiService = {
 
     // ... Messaging ...
     getConversations: async (userId: string): Promise<any[]> => {
-        const snapshot = await getDocs(collection(db, `users/${userId}/conversations`));
+        // Sort by lastMessage.timestamp descending to show newest first
+        const q = query(collection(db, `users/${userId}/conversations`), orderBy('lastMessage.timestamp', 'desc'));
+        const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
     getMessagesListener: (userId1: string, userId2: string, callback: (msgs: any[]) => void, onError: (err: any) => void) => {
@@ -198,6 +200,8 @@ export const apiService = {
     },
     sendMessage: async (text: string, senderId: string, recipientId: string, attachments: any[] = []) => {
         const chatId = [senderId, recipientId].sort().join('_');
+        
+        // 1. Add message to the chat collection
         await addDoc(collection(db, `chats/${chatId}/messages`), {
             text,
             senderId,
@@ -205,9 +209,56 @@ export const apiService = {
             timestamp: serverTimestamp()
         });
         
-        // Notify recipient about new message
-        const senderDoc = await getDoc(doc(db, 'users', senderId));
-        const senderName = senderDoc.exists() ? senderDoc.data().name : 'User';
+        // 2. Update Conversation list for both users (Sender and Recipient)
+        // This ensures the "Messages" dropdown works and shows the latest message
+        const senderDocRef = doc(db, 'users', senderId);
+        const recipientDocRef = doc(db, 'users', recipientId);
+        
+        const [senderSnap, recipientSnap] = await Promise.all([
+            getDoc(senderDocRef), 
+            getDoc(recipientDocRef)
+        ]);
+
+        if (senderSnap.exists() && recipientSnap.exists()) {
+            const senderData = senderSnap.data();
+            const recipientData = recipientSnap.data();
+
+            const lastMessageData = {
+                text: text || (attachments.length > 0 ? '📎 Attachment' : 'Message'),
+                timestamp: serverTimestamp()
+            };
+
+            // Update Sender's Conversation List (to show Recipient)
+            const senderConvRef = doc(db, `users/${senderId}/conversations`, recipientId);
+            await setDoc(senderConvRef, {
+                id: recipientId,
+                participant: {
+                    id: recipientId,
+                    name: recipientData.name,
+                    avatar: recipientData.avatar,
+                    role: recipientData.role,
+                    companyName: recipientData.companyName || ''
+                },
+                lastMessage: lastMessageData
+            }, { merge: true });
+
+            // Update Recipient's Conversation List (to show Sender)
+            const recipientConvRef = doc(db, `users/${recipientId}/conversations`, senderId);
+            await setDoc(recipientConvRef, {
+                id: senderId,
+                participant: {
+                    id: senderId,
+                    name: senderData.name,
+                    avatar: senderData.avatar,
+                    role: senderData.role,
+                    companyName: senderData.companyName || ''
+                },
+                lastMessage: lastMessageData
+            }, { merge: true });
+        }
+        
+        // 3. Notify recipient about new message
+        const senderName = senderSnap.exists() ? senderSnap.data().name : 'User';
         
         await apiService.createNotification(recipientId, {
             userId: recipientId,
@@ -316,6 +367,9 @@ export const apiService = {
             relatedId: id,
             isRead: false
         });
+    },
+    deleteCollaboration: async (id: string, collectionName: string) => {
+        await deleteDoc(doc(db, collectionName, id));
     },
 
     // ... Campaigns ...

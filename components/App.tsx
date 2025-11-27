@@ -283,7 +283,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState<View>(View.DASHBOARD);
   const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
-  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global'); // Updated State
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -414,6 +414,9 @@ const App: React.FC = () => {
       if (user && platformSettings) {
         await apiService.initializeFirestoreData();
         
+        // Fetch and update banners
+        apiService.getActivePlatformBanners().then(setPlatformBanners).catch(console.error);
+
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
           const influencerResult = await apiService.getInfluencersPaginated(platformSettings, { limit: INFLUENCER_PAGE_LIMIT });
           setInfluencers(influencerResult.influencers);
@@ -894,11 +897,7 @@ const App: React.FC = () => {
         />
 
         {platformBanners.length > 0 && (
-            <ClickableImageBanner 
-                imageUrl={platformBanners[0].imageUrl}
-                targetUrl={platformBanners[0].targetUrl}
-                title={platformBanners[0].title}
-            />
+            <ClickableImageBanner banners={platformBanners} />
         )}
         
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">

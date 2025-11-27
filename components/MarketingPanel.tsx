@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 import { User, UserRole, PlatformSettings } from '../types';
@@ -144,7 +143,7 @@ const MarketingPanel: React.FC<MarketingPanelProps> = ({ allUsers }) => {
     const currentAudienceCount = userCounts[activeEmailTab] || 0;
 
     return (
-        <div className="p-6 bg-gray-50 h-full">
+        <div className="p-6 bg-gray-50 h-full overflow-y-auto">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">Marketing Tools</h2>
             
             <div className="flex border-b border-gray-200 mb-6">

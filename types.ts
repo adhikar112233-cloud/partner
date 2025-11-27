@@ -227,6 +227,7 @@ export interface PlatformSettings {
         brandMembership: DiscountSetting;
         creatorMembership: DiscountSetting;
         brandCampaignBoost: DiscountSetting;
+        brandBannerBoost: DiscountSetting;
     };
 }
 

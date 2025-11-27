@@ -267,12 +267,14 @@ const CampaignsPage: React.FC<CampaignsPageProps> = ({ user, platformSettings, o
         setConfirmAction(null);
     };
 
+    // Calculate Boost Price with Discount
     const campaignBoostPrice = useMemo(() => {
         const originalPrice = platformSettings.boostPrices.campaign;
-        const discountSetting = platformSettings.discountSettings.brandCampaignBoost;
-        return discountSetting.isEnabled && discountSetting.percentage > 0 
-            ? originalPrice * (1 - discountSetting.percentage / 100)
-            : originalPrice;
+        const discountSetting = platformSettings.discountSettings?.brandCampaignBoost;
+        if (discountSetting?.isEnabled && discountSetting.percentage > 0) {
+            return Math.floor(originalPrice * (1 - discountSetting.percentage / 100));
+        }
+        return originalPrice;
     }, [platformSettings]);
 
 
@@ -330,9 +332,20 @@ const CampaignsPage: React.FC<CampaignsPageProps> = ({ user, platformSettings, o
                                         }}
                                     />
                                      {platformSettings.isCampaignBoostingEnabled && !campaign.isBoosted && campaign.status === 'open' && (
-                                        <div className="bg-gray-100 p-4 mt-4 rounded-lg flex justify-end">
-                                            <button onClick={() => setBoostingCampaign(campaign)} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700">
-                                                <RocketIcon className="w-5 h-5"/> Boost Campaign
+                                        <div className="bg-gray-100 p-4 mt-4 rounded-lg flex justify-between sm:justify-end items-center gap-3">
+                                            <div className="flex flex-col sm:flex-row gap-2 items-end">
+                                                {campaignBoostPrice < platformSettings.boostPrices.campaign && (
+                                                    <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full animate-pulse">
+                                                        Discount Applied!
+                                                    </span>
+                                                )}
+                                                <p className="text-sm text-gray-600">Get 3x more applicants by boosting this campaign.</p>
+                                            </div>
+                                            <button onClick={() => setBoostingCampaign(campaign)} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 shadow-md transition-all">
+                                                <RocketIcon className="w-5 h-5"/> 
+                                                Boost for 
+                                                {campaignBoostPrice < platformSettings.boostPrices.campaign && <span className="line-through text-purple-300 ml-1 text-xs">₹{platformSettings.boostPrices.campaign}</span>}
+                                                <span className="ml-1">₹{campaignBoostPrice.toLocaleString()}</span>
                                             </button>
                                         </div>
                                     )}

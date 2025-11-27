@@ -1,22 +1,19 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
-import { PlatformSettings, User, PayoutRequest, Post, Influencer, SocialMediaLink, Transaction, KycStatus, KycDetails, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, CollabRequestStatus, CampaignApplicationStatus, AdBookingStatus, PlatformBanner, UserRole, StaffPermission, Message, RefundRequest, DailyPayoutRequest, Dispute, DiscountSetting, Membership, CombinedCollabItem, Partner, CreatorVerificationDetails } from '../types';
-import { Timestamp, doc, updateDoc, QueryDocumentSnapshot, DocumentData, setDoc } from 'firebase/firestore';
+import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, PlatformBanner, UserRole, StaffPermission, RefundRequest, DailyPayoutRequest, Dispute, CombinedCollabItem, Partner, DiscountSetting, Leaderboard, LeaderboardEntry } from '../types';
+import { Timestamp } from 'firebase/firestore';
 import PostCard from './PostCard';
 import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
-import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, ChatBubbleLeftEllipsisIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, LockClosedIcon, LockOpenIcon, KeyIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, EnvelopeIcon, ProfileIcon, ShareIcon as SocialsIcon, TrashIcon, PencilIcon, CheckBadgeIcon, TrophyIcon } from './Icons';
+import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, CheckBadgeIcon, TrophyIcon } from './Icons';
 import LiveHelpPanel from './LiveHelpPanel';
-import { db, firebaseConfig } from '../services/firebase';
 import PayoutsPanel from './PayoutsPanel';
-import { filterPostsWithAI, filterDisputesWithAI } from '../services/geminiService';
+import { filterPostsWithAI } from '../services/geminiService';
 import MarketingPanel from './MarketingPanel';
 import PlatformBannerPanel from './PlatformBannerPanel';
 import { authService } from '../services/authService';
 import PartnersPanel from './PartnersPanel';
 import LeaderboardManager from './LeaderboardManager';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import UserManagementPanel from './UserManagementPanel';
 
 interface AdminPanelProps {
@@ -528,27 +525,6 @@ const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
     );
 };
 
-const PayoutStatusBadge: React.FC<{ status: PayoutRequest['status'] | Transaction['status'] }> = ({ status }) => {
-    const baseClasses = "px-2 py-1 text-xs font-medium rounded-full capitalize";
-    const statusMap: Record<string, { text: string; classes: string }> = {
-        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100 dark:text-yellow-200 dark:bg-yellow-900/50" },
-        on_hold: { text: "On Hold", classes: "text-blue-800 bg-blue-100 dark:text-blue-200 dark:bg-blue-900/50" },
-        processing: { text: "Processing", classes: "text-purple-800 bg-purple-100 dark:text-purple-200 dark:bg-purple-900/50" },
-        approved: { text: "Approved", classes: "text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50" },
-        rejected: { text: "Rejected", classes: "text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50" },
-        completed: { text: "Completed", classes: "text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50" },
-        failed: { text: "Failed", classes: "text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50" },
-    };
-    const statusInfo = statusMap[status];
-
-    if (!statusInfo) {
-        return <span className={`${baseClasses} text-gray-800 bg-gray-100 dark:text-gray-200 dark:bg-gray-700`}>{status || 'Unknown'}</span>;
-    }
-
-    const { text, classes } = statusInfo;
-    return <span className={`${baseClasses} ${classes}`}>{text}</span>;
-};
-
 const CommunityManagementPanel: React.FC = () => {
     const [posts, setPosts] = useState<Post[]>([]);
     const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
@@ -661,7 +637,7 @@ const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabIt
     ];
 
     return (
-        <div className="p-6">
+        <div className="p-6 h-full overflow-y-auto">
             <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Dashboard Overview</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {stats.map((stat, index) => (
@@ -822,8 +798,8 @@ const StaffManagementPanel: React.FC<{ staffUsers: User[], onUpdate: () => void,
                                 ))}
                             </div>
                             <div className="flex justify-end gap-2 border-t pt-3 dark:border-gray-600">
-                                <button onClick={() => { setEditingStaff(staff); setIsModalOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded dark:hover:bg-blue-900/30"><PencilIcon className="w-4 h-4" /></button>
-                                <button onClick={() => handleDelete(staff)} className="p-1.5 text-red-600 hover:bg-red-50 rounded dark:hover:bg-red-900/30"><TrashIcon className="w-4 h-4" /></button>
+                                <button onClick={() => { setEditingStaff(staff); setIsModalOpen(true); }} className="text-blue-600 hover:text-blue-800 font-medium text-sm">Edit</button>
+                                <button onClick={() => handleDelete(staff)} className="text-red-600 hover:text-red-800 font-medium text-sm">Remove</button>
                             </div>
                         </div>
                     ))}
@@ -896,7 +872,7 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allT
 
 const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transaction[], onUpdate: () => void }> = ({ disputes, allTransactions, onUpdate }) => {
     return (
-        <div className="p-6">
+        <div className="p-6 h-full overflow-y-auto">
             <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Disputes</h2>
             {disputes.length === 0 ? <p className="text-gray-500">No active disputes.</p> : (
                 <div className="space-y-4">
@@ -916,13 +892,156 @@ const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transactio
     );
 };
 
-const DiscountSettingsPanel: React.FC<{ settings: PlatformSettings, setSettings: (s: PlatformSettings) => void, setIsDirty: (d: boolean) => void }> = ({ settings }) => {
+const DiscountSettingsPanel: React.FC<{ settings: PlatformSettings, setSettings: (s: PlatformSettings) => void, setIsDirty: (d: boolean) => void }> = ({ settings, setSettings, setIsDirty }) => {
+    const [localSettings, setLocalSettings] = useState(settings);
+    const [hasChanges, setHasChanges] = useState(false);
+
+    // Discount Update Handler
+    const updateDiscount = (key: keyof typeof settings.discountSettings, field: keyof DiscountSetting, value: any) => {
+        const updated = {
+            ...localSettings,
+            discountSettings: {
+                ...localSettings.discountSettings,
+                [key]: {
+                    ...localSettings.discountSettings[key],
+                    [field]: value
+                }
+            }
+        };
+        setLocalSettings(updated);
+        setHasChanges(true);
+    };
+
+    // Base Price Update Handler
+    const updateBasePrice = (category: 'membershipPrices' | 'boostPrices', key: string, value: number) => {
+        const updated = {
+            ...localSettings,
+            [category]: {
+                ...localSettings[category],
+                [key]: value
+            }
+        };
+        setLocalSettings(updated);
+        setHasChanges(true);
+    };
+
+    const handleSave = async () => {
+        await apiService.updatePlatformSettings(localSettings);
+        setHasChanges(false);
+        alert("Pricing and Discount settings saved!");
+    };
+
+    const DiscountRow = ({ label, settingKey }: { label: string, settingKey: keyof typeof settings.discountSettings }) => {
+        const config = localSettings.discountSettings[settingKey] || { isEnabled: false, percentage: 0 };
+        return (
+            <div className="flex items-center justify-between py-3 border-b dark:border-gray-700 last:border-0">
+                <div>
+                    <p className="font-medium text-gray-800 dark:text-gray-200">{label}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <input 
+                            type="number" 
+                            value={config.percentage} 
+                            onChange={e => updateDiscount(settingKey, 'percentage', Number(e.target.value))}
+                            disabled={!config.isEnabled}
+                            className="w-16 p-1 text-center border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
+                            min="0" max="100"
+                        />
+                        <span className="text-gray-500">%</span>
+                    </div>
+                    <ToggleSwitch enabled={config.isEnabled} onChange={val => updateDiscount(settingKey, 'isEnabled', val)} />
+                </div>
+            </div>
+        );
+    };
+
+    const PriceInput = ({ label, value, onChange }: { label: string, value: number, onChange: (val: number) => void }) => (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2">
+            <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 sm:mb-0">{label}</label>
+            <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+                <input 
+                    type="number" 
+                    value={value} 
+                    onChange={e => onChange(Number(e.target.value))}
+                    className="w-24 pl-6 p-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-right"
+                />
+            </div>
+        </div>
+    );
+
     return (
-        <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Discount Settings</h2>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
-                <p className="text-gray-500 dark:text-gray-400">Manage promotional discounts here.</p>
-                <div className="mt-4 text-sm text-gray-400">Settings are currently read-only in this view.</div>
+        <div className="p-6 h-full overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Pricing & Discount Management</h2>
+                <button 
+                    onClick={handleSave} 
+                    disabled={!hasChanges}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
+                >
+                    Save Changes
+                </button>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Membership Section */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm space-y-6 h-fit">
+                    <h3 className="text-lg font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b dark:border-gray-700 pb-2">
+                        <SparklesIcon className="w-5 h-5" /> Membership Plans
+                    </h3>
+                    
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Base Prices (Brand)</h4>
+                        <div className="space-y-1 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+                            <PriceInput label="Pro 10 Plan" value={localSettings.membershipPrices.pro_10} onChange={v => updateBasePrice('membershipPrices', 'pro_10', v)} />
+                            <PriceInput label="Pro 20 Plan" value={localSettings.membershipPrices.pro_20} onChange={v => updateBasePrice('membershipPrices', 'pro_20', v)} />
+                            <PriceInput label="Pro Unlimited" value={localSettings.membershipPrices.pro_unlimited} onChange={v => updateBasePrice('membershipPrices', 'pro_unlimited', v)} />
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Base Prices (Creator)</h4>
+                        <div className="space-y-1 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+                            <PriceInput label="Basic Plan" value={localSettings.membershipPrices.basic} onChange={v => updateBasePrice('membershipPrices', 'basic', v)} />
+                            <PriceInput label="Pro Plan" value={localSettings.membershipPrices.pro} onChange={v => updateBasePrice('membershipPrices', 'pro', v)} />
+                            <PriceInput label="Premium Plan" value={localSettings.membershipPrices.premium} onChange={v => updateBasePrice('membershipPrices', 'premium', v)} />
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Discounts</h4>
+                        <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                            <DiscountRow label="Brand Membership Discount" settingKey="brandMembership" />
+                            <DiscountRow label="Creator Membership Discount" settingKey="creatorMembership" />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Boost Section */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm space-y-6 h-fit">
+                    <h3 className="text-lg font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-2 border-b dark:border-gray-700 pb-2">
+                        <RocketIcon className="w-5 h-5" /> Boosting Features
+                    </h3>
+
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Base Prices</h4>
+                        <div className="space-y-1 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+                            <PriceInput label="Profile Boost (7 Days)" value={localSettings.boostPrices.profile} onChange={v => updateBasePrice('boostPrices', 'profile', v)} />
+                            <PriceInput label="Campaign Boost" value={localSettings.boostPrices.campaign} onChange={v => updateBasePrice('boostPrices', 'campaign', v)} />
+                            <PriceInput label="Banner Ad Boost" value={localSettings.boostPrices.banner} onChange={v => updateBasePrice('boostPrices', 'banner', v)} />
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Discounts</h4>
+                        <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-100 dark:border-purple-800">
+                            <DiscountRow label="Creator Profile Boost Discount" settingKey="creatorProfileBoost" />
+                            <DiscountRow label="Brand Campaign Boost Discount" settingKey="brandCampaignBoost" />
+                            <DiscountRow label="Banner Ad Boost Discount" settingKey="brandBannerBoost" />
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -1015,7 +1134,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
         { id: 'live_help', label: 'Live Help Queue', icon: SupportIcon, permission: 'live_help' },
         { id: 'marketing', label: 'Marketing Tools', icon: RocketIcon, permission: 'marketing' },
         { id: 'disputes', label: 'Disputes', icon: ExclamationTriangleIcon, permission: 'support' },
-        { id: 'discounts', label: 'Discount Settings', icon: SparklesIcon, permission: 'super_admin' },
+        { id: 'discounts', label: 'Discounts & Pricing', icon: SparklesIcon, permission: 'super_admin' },
         { id: 'platform_banners', label: 'Platform Banners', icon: BannerAdsIcon, permission: 'marketing' },
         { id: 'client_brands', label: 'Partner Brands', icon: UserGroupIcon, permission: 'marketing' },
         { id: 'leaderboards', label: 'Leaderboards', icon: TrophyIcon, permission: 'marketing' },

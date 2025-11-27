@@ -337,29 +337,31 @@ const LeaderboardManager: React.FC<LeaderboardManagerProps> = ({ allUsers, allTr
                 </button>
             </div>
 
-            {isLoading ? <p className="dark:text-gray-300">Loading...</p> : leaderboards.length === 0 ? (
-                <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow"><p className="text-gray-500 dark:text-gray-400">No leaderboards created yet.</p></div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {leaderboards.map(board => (
-                        <div key={board.id} className={`bg-white dark:bg-gray-800 rounded-xl shadow p-5 border-l-4 ${board.isActive ? 'border-green-500' : 'border-gray-300'}`}>
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <h3 className="font-bold text-lg dark:text-white">{board.title}</h3>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">{board.year} • <span className="capitalize">{board.type}</span></p>
+            <div className="flex-1 overflow-y-auto">
+                {isLoading ? <p className="dark:text-gray-300">Loading...</p> : leaderboards.length === 0 ? (
+                    <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow"><p className="text-gray-500 dark:text-gray-400">No leaderboards created yet.</p></div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {leaderboards.map(board => (
+                            <div key={board.id} className={`bg-white dark:bg-gray-800 rounded-xl shadow p-5 border-l-4 ${board.isActive ? 'border-green-500' : 'border-gray-300'}`}>
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="font-bold text-lg dark:text-white">{board.title}</h3>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">{board.year} • <span className="capitalize">{board.type}</span></p>
+                                    </div>
+                                    <span className={`text-xs px-2 py-1 rounded-full ${board.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                                        {board.isActive ? 'Active' : 'Draft'}
+                                    </span>
                                 </div>
-                                <span className={`text-xs px-2 py-1 rounded-full ${board.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                                    {board.isActive ? 'Active' : 'Draft'}
-                                </span>
+                                <div className="mt-4 pt-4 border-t dark:border-gray-700 flex justify-end gap-2">
+                                    <button onClick={() => { setEditingBoard(board); setIsModalOpen(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><PencilIcon className="w-5 h-5" /></button>
+                                    <button onClick={() => handleDelete(board.id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><TrashIcon className="w-5 h-5" /></button>
+                                </div>
                             </div>
-                            <div className="mt-4 pt-4 border-t dark:border-gray-700 flex justify-end gap-2">
-                                <button onClick={() => { setEditingBoard(board); setIsModalOpen(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><PencilIcon className="w-5 h-5" /></button>
-                                <button onClick={() => handleDelete(board.id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><TrashIcon className="w-5 h-5" /></button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
+                        ))}
+                    </div>
+                )}
+            </div>
 
             {isModalOpen && (
                 <LeaderboardModal 

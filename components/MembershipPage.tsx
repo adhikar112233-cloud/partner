@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User, PlatformSettings, MembershipPlan } from '../types';
 import { apiService } from '../services/apiService';
@@ -28,12 +29,16 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
 
     const isCreator = ['influencer', 'livetv', 'banneragency'].includes(user.role);
 
-    const getDiscountedPrice = (originalPrice: number, discountSetting: { isEnabled: boolean; percentage: number }) => {
-        if (discountSetting.isEnabled && discountSetting.percentage > 0) {
-          return originalPrice * (1 - discountSetting.percentage / 100);
+    // Helper to calculate discount
+    const getDiscountedPrice = (originalPrice: number, discountSetting?: { isEnabled: boolean; percentage: number }) => {
+        if (discountSetting?.isEnabled && discountSetting.percentage > 0) {
+          return Math.floor(originalPrice * (1 - discountSetting.percentage / 100));
         }
         return originalPrice;
     };
+
+    const brandDiscount = platformSettings.discountSettings?.brandMembership;
+    const creatorDiscount = platformSettings.discountSettings?.creatorMembership;
 
     const brandPlans = [
         { id: 'pro_10' as MembershipPlan, name: 'Pro 10', originalPrice: platformSettings.membershipPrices.pro_10, description: 'Up to 10 of each collaboration type per year.', limit: '10 Collaborations', durationText: '/ year' },
@@ -41,7 +46,7 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
         { id: 'pro_unlimited' as MembershipPlan, name: 'Pro Unlimited', originalPrice: platformSettings.membershipPrices.pro_unlimited, description: 'Unlimited collaborations.', limit: 'Unlimited', durationText: '/ year' },
     ].map(plan => ({
         ...plan,
-        price: getDiscountedPrice(plan.originalPrice, platformSettings.discountSettings.brandMembership)
+        price: getDiscountedPrice(plan.originalPrice, brandDiscount)
     }));
     
     const creatorPlans = [
@@ -50,7 +55,7 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
         { id: 'premium' as MembershipPlan, name: 'Premium', originalPrice: platformSettings.membershipPrices.premium, description: 'Maximum savings for long-term growth.', limit: 'Unlimited Collabs', durationText: '/ 1 Year' },
     ].map(plan => ({
         ...plan,
-        price: getDiscountedPrice(plan.originalPrice, platformSettings.discountSettings.creatorMembership)
+        price: getDiscountedPrice(plan.originalPrice, creatorDiscount)
     }));
 
     const handleChoosePlan = (plan: MembershipPlan, price: number) => {
@@ -133,7 +138,7 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
         ? (platformSettings.isCreatorMembershipEnabled ? creatorPlans : [])
         : (platformSettings.isProMembershipEnabled ? brandPlans : []);
         
-    const discountSetting = isCreator ? platformSettings.discountSettings.creatorMembership : platformSettings.discountSettings.brandMembership;
+    const discountSetting = isCreator ? creatorDiscount : brandDiscount;
 
     return (
         <div className="max-w-7xl mx-auto space-y-6">
@@ -144,6 +149,11 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
                 <p className="text-gray-500 mt-1">
                     {isCreator ? 'Activate your profile and get seen by brands.' : 'Unlock more collaborations and features.'}
                 </p>
+                {discountSetting?.isEnabled && discountSetting.percentage > 0 && (
+                    <div className="mt-3 inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-bold animate-pulse">
+                        🔥 Special Offer: {discountSetting.percentage}% Discount Applied!
+                    </div>
+                )}
             </div>
 
             {successPlan && <div className="p-4 text-center text-green-700 bg-green-100 rounded-lg">Successfully activated {successPlan.replace(/_/g, ' ')} plan! Redirecting...</div>}
@@ -152,14 +162,19 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
             {plansToShow.length > 0 ? (
                 <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 ${isLoading ? 'opacity-50' : ''}`}>
                     {plansToShow.map((plan) => (
-                        <div key={plan.id} className="bg-white rounded-2xl shadow-lg p-8 flex flex-col text-center transform hover:-translate-y-2 transition-transform duration-300">
+                        <div key={plan.id} className="bg-white rounded-2xl shadow-lg p-8 flex flex-col text-center transform hover:-translate-y-2 transition-transform duration-300 relative overflow-hidden">
+                            {discountSetting?.isEnabled && plan.price < plan.originalPrice && (
+                                <div className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg shadow-md">
+                                    SALE
+                                </div>
+                            )}
                             <h3 className="text-2xl font-bold">{plan.name}</h3>
                             <p className="text-gray-500 mt-2">{plan.description}</p>
                             <div className="my-6">
-                                {discountSetting.isEnabled && plan.price !== plan.originalPrice && (
-                                    <div>
-                                        <del className="text-2xl font-bold text-gray-400">₹{plan.originalPrice.toLocaleString('en-IN')}</del>
-                                        <p className="text-sm font-semibold text-green-600">{discountSetting.percentage}% OFF</p>
+                                {discountSetting?.isEnabled && plan.price !== plan.originalPrice && (
+                                    <div className="flex items-center justify-center gap-2 mb-1">
+                                        <span className="text-lg text-gray-400 line-through decoration-red-500 decoration-2">₹{plan.originalPrice.toLocaleString('en-IN')}</span>
+                                        <span className="text-sm font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded">-{discountSetting.percentage}%</span>
                                     </div>
                                 )}
                                 <p className="text-4xl font-extrabold text-gray-800">
@@ -171,7 +186,7 @@ const MembershipPage: React.FC<MembershipPageProps> = ({ user, platformSettings,
                             <button
                                 onClick={() => handleChoosePlan(plan.id, plan.price)}
                                 disabled={isLoading || user.membership?.plan === plan.id}
-                                className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full py-3 font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                             >
                                 {user.membership?.plan === plan.id ? 'Current Plan' : 'Choose Plan'}
                             </button>

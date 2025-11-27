@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 import { generateImageFromPrompt, enhanceImagePrompt } from '../services/geminiService';
@@ -129,9 +128,6 @@ const PlatformBannerPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) =
         try {
             const result = await generateImageFromPrompt(aiPrompt);
     
-            // FIX: Restructured the logic to check for the failure case first (`result.success === false`).
-            // This helps TypeScript correctly narrow down the discriminated union type within each block,
-            // resolving the error where `reason` and `message` were not found on the `result` type.
             if (result.success === false) {
                 // Handle failure case where `reason` and `message` exist
                 if (result.reason === 'NO_IMAGE') {
@@ -249,7 +245,7 @@ const PlatformBannerPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) =
     };
 
     return (
-        <div className="p-6 h-full flex flex-col">
+        <div className="p-6 h-full flex flex-col overflow-y-auto">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Manage Platform Banners</h2>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -302,7 +298,7 @@ const PlatformBannerPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) =
                 {/* List Column */}
                 <div className="lg:col-span-2 bg-white p-4 rounded-lg shadow-sm">
                     <h3 className="font-bold text-lg mb-4">Current Banners</h3>
-                    <div className="space-y-3 max-h-[70vh] overflow-y-auto">
+                    <div className="space-y-3">
                         {isLoadingBanners ? <p>Loading...</p> : banners.map(banner => (
                             <div key={banner.id} className="flex items-center gap-4 p-2 border rounded-md">
                                 <img src={banner.imageUrl} alt={banner.title} className="w-24 h-12 object-cover rounded" />

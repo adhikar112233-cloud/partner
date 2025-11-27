@@ -1,6 +1,5 @@
 
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User, PlatformSettings, Boost, BoostType } from '../types';
 import { apiService } from '../services/apiService';
 import CashfreeModal from './PhonePeModal';
@@ -39,18 +38,28 @@ const BoostPage: React.FC<BoostPageProps> = ({ user, platformSettings, onBoostAc
 
     const activeProfileBoost = boosts.find(b => b.targetType === 'profile' && toJsDate(b.expiresAt)! > new Date());
 
-    const discountSetting = platformSettings.discountSettings.creatorProfileBoost;
-
+    // Access discount settings
+    const discountSetting = platformSettings.discountSettings?.creatorProfileBoost;
     const originalPrice = platformSettings.boostPrices.profile;
-    const price = discountSetting.isEnabled && discountSetting.percentage > 0
-        ? originalPrice * (1 - discountSetting.percentage / 100)
-        : originalPrice;
+    
+    // Calculate discounted price
+    const price = useMemo(() => {
+        if (discountSetting?.isEnabled && discountSetting.percentage > 0) {
+            return Math.floor(originalPrice * (1 - discountSetting.percentage / 100));
+        }
+        return originalPrice;
+    }, [originalPrice, discountSetting]);
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div>
                 <h1 className="text-3xl font-bold text-gray-800">Boost Your Profile</h1>
                 <p className="text-gray-500 mt-1">Get featured at the top of discovery pages and attract more brands.</p>
+                {discountSetting?.isEnabled && discountSetting.percentage > 0 && (
+                    <p className="text-green-600 font-semibold text-sm mt-2 animate-pulse">
+                        🔥 Limited Time Offer: {discountSetting.percentage}% OFF!
+                    </p>
+                )}
             </div>
 
             <div className="bg-white p-6 rounded-2xl shadow-lg border-2 border-purple-500">
@@ -72,17 +81,21 @@ const BoostPage: React.FC<BoostPageProps> = ({ user, platformSettings, onBoostAc
             {error && <div className="p-4 text-center text-red-700 bg-red-100 rounded-lg">{error}</div>}
             
             {platformSettings.isProfileBoostingEnabled ? (
-                <div className="bg-white rounded-2xl shadow-lg p-8 flex flex-col md:flex-row items-center text-center md:text-left gap-8">
+                <div className="bg-white rounded-2xl shadow-lg p-8 flex flex-col md:flex-row items-center text-center md:text-left gap-8 relative overflow-hidden transition-transform hover:-translate-y-1">
+                    {discountSetting?.isEnabled && price < originalPrice && (
+                        <div className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold px-4 py-1 rounded-bl-lg shadow-sm">
+                            SAVE {discountSetting.percentage}%
+                        </div>
+                    )}
                     <div className="text-purple-500"><RocketIcon className="w-24 h-24"/></div>
                     <div className="flex-1">
                         <h3 className="text-2xl font-bold">Boost Your Profile</h3>
                         <p className="text-gray-500 mt-2">Get featured at the top of discovery pages for 7 days and attract more brands directly to you.</p>
                     </div>
                     <div className="text-center">
-                        {discountSetting.isEnabled && price !== originalPrice && (
-                            <div>
-                                <del className="text-2xl font-bold text-gray-400">₹{originalPrice.toLocaleString('en-IN')}</del>
-                                <p className="text-sm font-semibold text-green-600">{discountSetting.percentage}% OFF</p>
+                        {discountSetting?.isEnabled && price !== originalPrice && (
+                            <div className="flex flex-col items-center">
+                                <del className="text-xl text-gray-400 decoration-red-500 decoration-2">₹{originalPrice.toLocaleString('en-IN')}</del>
                             </div>
                         )}
                         <p className="text-4xl font-extrabold text-gray-800">₹{price.toLocaleString('en-IN')}</p>
@@ -90,7 +103,7 @@ const BoostPage: React.FC<BoostPageProps> = ({ user, platformSettings, onBoostAc
                             onClick={() => setIsPaying(true)}
                             disabled={isLoading || !!activeProfileBoost || user.role === 'banneragency'}
                             title={user.role === 'banneragency' ? 'Profile boosting is not available for agencies.' : undefined}
-                            className="w-full mt-4 py-3 font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full mt-4 py-3 font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
                             {activeProfileBoost ? 'Boost Active' : 'Boost for 7 Days'}
                         </button>
@@ -112,7 +125,7 @@ const BoostPage: React.FC<BoostPageProps> = ({ user, platformSettings, onBoostAc
                     }}
                     transactionDetails={{
                         userId: user.id,
-                        description: `Profile Boost`,
+                        description: `Profile Boost (7 Days)`,
                         relatedId: user.id, // For profile boost, target is the user themselves
                     }}
                 />

@@ -874,34 +874,50 @@ const DiscountSettingsPanel: React.FC<{
     };
 
     return (
-        <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
+        <div className="p-4 sm:p-6 h-full overflow-y-auto">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <h2 className="text-2xl font-bold dark:text-white">Discount Settings</h2>
-                <button onClick={handleSave} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">Save Changes</button>
+                <button onClick={handleSave} className="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 shadow-sm transition-colors">Save Changes</button>
             </div>
             
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
                 {(Object.entries(localSettings.discountSettings || {}) as [string, DiscountSetting][]).map(([key, setting]) => (
-                    <div key={key} className="bg-white dark:bg-gray-800 p-4 rounded shadow">
-                        <h3 className="font-bold mb-2 capitalize dark:text-gray-200">{key.replace(/([A-Z])/g, ' $1').trim()}</h3>
-                        <div className="flex items-center gap-4">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="checkbox" 
-                                    checked={setting.isEnabled} 
-                                    onChange={(e) => updateDiscount(key as any, 'isEnabled', e.target.checked)}
-                                    className="rounded text-indigo-600"
-                                />
-                                <span className="dark:text-gray-300">Enabled</span>
-                            </label>
-                            <div className="flex items-center gap-2">
-                                <input 
-                                    type="number" 
-                                    value={setting.percentage} 
-                                    onChange={(e) => updateDiscount(key as any, 'percentage', Number(e.target.value))}
-                                    className="border rounded p-1 w-20 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                />
-                                <span className="dark:text-gray-300">% Discount</span>
+                    <div key={key} className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between h-full">
+                        <div className="mb-4">
+                            <h3 className="font-bold text-lg text-gray-800 dark:text-white capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Configure discount rules for this category.</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {/* Enable Toggle Row */}
+                            <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</span>
+                                <div className="flex items-center gap-3">
+                                    <span className={`text-xs font-semibold ${setting.isEnabled ? 'text-green-600' : 'text-gray-500'}`}>
+                                        {setting.isEnabled ? 'Active' : 'Disabled'}
+                                    </span>
+                                    <ToggleSwitch 
+                                        enabled={setting.isEnabled} 
+                                        onChange={(val) => updateDiscount(key as any, 'isEnabled', val)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Percentage Input Row */}
+                            <div className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${setting.isEnabled ? 'bg-white dark:bg-gray-800 border-indigo-100 dark:border-gray-600' : 'bg-gray-100 dark:bg-gray-900/50 border-transparent opacity-60'}`}>
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Discount Percentage</span>
+                                <div className="flex items-center">
+                                    <input 
+                                        type="number" 
+                                        value={setting.percentage} 
+                                        onChange={(e) => updateDiscount(key as any, 'percentage', Number(e.target.value))}
+                                        className="w-16 text-right font-bold text-indigo-600 dark:text-indigo-400 bg-transparent border-b border-gray-300 dark:border-gray-600 focus:border-indigo-500 focus:outline-none p-1"
+                                        disabled={!setting.isEnabled}
+                                        min="0"
+                                        max="100"
+                                    />
+                                    <span className="ml-1 text-gray-500 dark:text-gray-400 font-medium">%</span>
+                                </div>
                             </div>
                         </div>
                     </div>

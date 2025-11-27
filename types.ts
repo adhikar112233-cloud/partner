@@ -5,6 +5,13 @@ export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'sta
 
 export type MembershipPlan = 'free' | 'pro_10' | 'pro_20' | 'pro_unlimited' | 'basic' | 'pro' | 'premium';
 
+export interface Agreements {
+    brand: string;
+    influencer: string;
+    livetv: string;
+    banneragency: string;
+}
+
 export interface Membership {
     plan: MembershipPlan;
     isActive: boolean;

@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
-import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, PlatformBanner, UserRole, StaffPermission, RefundRequest, DailyPayoutRequest, Dispute, CombinedCollabItem, Partner, DiscountSetting, Leaderboard, LeaderboardEntry } from '../types';
+import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, PlatformBanner, UserRole, StaffPermission, RefundRequest, DailyPayoutRequest, Dispute, CombinedCollabItem, Partner, DiscountSetting, Leaderboard, LeaderboardEntry, Agreements, KycDetails, CreatorVerificationDetails } from '../types';
 import { Timestamp } from 'firebase/firestore';
 import PostCard from './PostCard';
 import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
-import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, CheckBadgeIcon, TrophyIcon } from './Icons';
+import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, CheckBadgeIcon, TrophyIcon, DocumentTextIcon, SearchIcon, PencilIcon, TrashIcon } from './Icons';
 import LiveHelpPanel from './LiveHelpPanel';
 import PayoutsPanel from './PayoutsPanel';
 import { filterPostsWithAI } from '../services/geminiService';
@@ -57,597 +57,317 @@ const toJsDate = (ts: any): Date | undefined => {
     return undefined;
 };
 
-type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands' | 'leaderboards';
+type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands' | 'leaderboards' | 'agreements';
 
-// --- Reusable Confirmation Modal for Verification Actions ---
-interface VerificationActionConfirmModalProps {
-    isOpen: boolean;
-    action: 'approved' | 'rejected';
-    userName: string;
-    onConfirm: (reason?: string) => void;
-    onCancel: () => void;
-    isProcessing: boolean;
-}
+// --- Dashboard Panel ---
+const DashboardPanel: React.FC<{
+    users: User[];
+    collaborations: CombinedCollabItem[];
+    transactions: Transaction[];
+    payouts: PayoutRequest[];
+    dailyPayouts: DailyPayoutRequest[];
+}> = ({ users, collaborations, transactions, payouts, dailyPayouts }) => {
+    const totalUsers = users.length;
+    const totalRevenue = transactions.filter(t => t.type === 'payment' && t.status === 'completed').reduce((sum, t) => sum + t.amount, 0);
+    const pendingPayouts = payouts.filter(p => p.status === 'pending').length + dailyPayouts.filter(d => d.status === 'pending').length;
+    const activeCollabs = collaborations.filter(c => c.status === 'in_progress' || c.status === 'work_submitted').length;
 
-const VerificationActionConfirmModal: React.FC<VerificationActionConfirmModalProps> = ({ isOpen, action, userName, onConfirm, onCancel, isProcessing }) => {
-    const [reason, setReason] = useState('');
-    
-    // Focus textarea on open if rejected
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-    useEffect(() => {
-        if (isOpen && action === 'rejected') {
-            setTimeout(() => textareaRef.current?.focus(), 100);
-        }
-    }, [isOpen, action]);
-
-    if (!isOpen) return null;
+    const StatCard = ({ title, value, color }: any) => (
+        <div className={`p-4 rounded-xl bg-white dark:bg-gray-800 shadow border-l-4 ${color}`}>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
+            <p className="text-2xl font-bold text-gray-800 dark:text-white">{value}</p>
+        </div>
+    );
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[80] p-4 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all scale-100">
-                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 capitalize flex items-center gap-2">
-                    {action === 'approved' ? (
-                        <CheckBadgeIcon className="w-6 h-6 text-green-500" />
-                    ) : (
-                        <ExclamationTriangleIcon className="w-6 h-6 text-red-500" />
-                    )}
-                    Confirm {action === 'approved' ? 'Approval' : 'Rejection'}
-                </h3>
-                <p className="mt-4 text-gray-600 dark:text-gray-300">
-                    Are you sure you want to <strong>{action === 'approved' ? 'approve' : 'reject'}</strong> the verification request for <strong>{userName}</strong>?
-                </p>
-                
-                {action === 'rejected' && (
-                    <div className="mt-4">
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Reason for Rejection <span className="text-red-500">*</span></label>
-                        <textarea 
-                            ref={textareaRef}
-                            value={reason} 
-                            onChange={(e) => setReason(e.target.value)}
-                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-none"
-                            rows={3}
-                            placeholder="e.g., Document blurry, Name mismatch, Invalid ID..."
-                        />
-                    </div>
-                )}
-
-                <div className="flex justify-end gap-3 mt-6">
-                    <button 
-                        onClick={onCancel} 
-                        disabled={isProcessing} 
-                        className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 font-medium"
-                    >
-                        Cancel
-                    </button>
-                    <button 
-                        onClick={() => onConfirm(reason)} 
-                        disabled={isProcessing || (action === 'rejected' && !reason.trim())}
-                        className={`px-6 py-2 text-white rounded-lg font-bold shadow-md transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
-                            action === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
-                        }`}
-                    >
-                        {isProcessing ? 'Processing...' : `Confirm ${action === 'approved' ? 'Approve' : 'Reject'}`}
-                    </button>
-                </div>
+        <div className="p-6">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Dashboard Overview</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard title="Total Users" value={totalUsers} color="border-blue-500" />
+                <StatCard title="Total Revenue" value={`₹${totalRevenue.toLocaleString()}`} color="border-green-500" />
+                <StatCard title="Pending Payouts" value={pendingPayouts} color="border-yellow-500" />
+                <StatCard title="Active Collabs" value={activeCollabs} color="border-purple-500" />
             </div>
         </div>
     );
 };
 
-// --- Creator Verification Components ---
-
-const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-    const [confirmAction, setConfirmAction] = useState<'approved' | 'rejected' | null>(null);
-    const details = user.creatorVerificationDetails;
-
-    const handleAction = async (status: 'approved' | 'rejected', reason?: string) => {
-        setIsProcessing(true);
-        try {
-            await apiService.updateCreatorVerificationStatus(user.id, status, reason);
-            onActionComplete();
-            setConfirmAction(null);
-            onClose();
-        } catch (error) {
-            console.error(`Failed to ${status}`, error);
-            alert(`Could not ${status}. Please try again.`);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    if (!details) return null;
-
-    const PreviewImage = ({ label, url }: { label: string, url?: string }) => (
-        url ? (
-            <div className="border rounded-lg p-2 bg-gray-50 dark:bg-gray-900/50">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">{label}</p>
-                <img 
-                    src={url} 
-                    alt={label} 
-                    className="h-32 object-contain rounded cursor-zoom-in hover:opacity-90" 
-                    onClick={() => setZoomedImage(url)}
-                />
-            </div>
-        ) : null
-    );
-
+// --- Staff Management Panel ---
+const StaffManagementPanel: React.FC<{
+    staffUsers: User[];
+    onUpdate: () => void;
+    platformSettings: PlatformSettings;
+}> = ({ staffUsers, onUpdate }) => {
     return (
-        <>
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[60] p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-                    <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Review Verification</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.name} ({user.role})</p>
-                        </div>
-                        <button onClick={onClose} className="text-gray-500 text-2xl">&times;</button>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-6">
-                        {user.role === 'influencer' ? (
-                            <div className="space-y-6">
-                                <div>
-                                    <h3 className="font-bold text-gray-700 dark:text-gray-200 mb-2">Social Media Links</h3>
-                                    <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded border dark:border-gray-700 whitespace-pre-wrap text-sm font-mono dark:text-gray-300">
-                                        {details.socialMediaLinks}
-                                    </div>
-                                </div>
-                                <PreviewImage label="Creator Proof / Acknowledgement" url={details.acknowledgementUrl} />
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="col-span-2">
-                                        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Doc Type: <span className="font-bold uppercase">{details.registrationDocType || 'MSME'}</span></p>
-                                    </div>
-                                    <PreviewImage label="Registration Document (MSME/GST/Trade License)" url={details.registrationDocUrl} />
-                                    <PreviewImage label="Office Photo" url={details.officePhotoUrl} />
-                                    <PreviewImage label="Business PAN" url={details.businessPanUrl} />
-                                    <PreviewImage label="Channel Stamp" url={details.channelStampUrl} />
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-end gap-3 rounded-b-2xl">
-                        <button onClick={() => setConfirmAction('rejected')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Reject</button>
-                        <button onClick={() => setConfirmAction('approved')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Approve</button>
-                    </div>
-                </div>
+        <div className="p-6">
+            <h2 className="text-2xl font-bold mb-4 dark:text-white">Staff Management</h2>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Name</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Email</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Permissions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {staffUsers.map(u => (
+                            <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td className="p-4 dark:text-gray-200">{u.name}</td>
+                                <td className="p-4 dark:text-gray-200">{u.email}</td>
+                                <td className="p-4 dark:text-gray-200">{u.staffPermissions?.join(', ') || 'None'}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {staffUsers.length === 0 && <p className="p-4 text-center text-gray-500">No staff users found.</p>}
             </div>
-            
-            {/* Image Lightbox */}
-            {zoomedImage && (
-                <div className="fixed inset-0 z-[70] bg-black bg-opacity-95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
-                    <img src={zoomedImage} className="max-w-full max-h-[90vh] rounded" />
-                    <button className="absolute top-6 right-6 text-white text-4xl">&times;</button>
-                </div>
-            )}
-
-            {/* Confirmation Dialog */}
-            <VerificationActionConfirmModal 
-                isOpen={!!confirmAction}
-                action={confirmAction!}
-                userName={user.name}
-                isProcessing={isProcessing}
-                onCancel={() => setConfirmAction(null)}
-                onConfirm={(reason) => handleAction(confirmAction!, reason)}
-            />
-        </>
+        </div>
     );
 };
 
-const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
-    const [pendingUsers, setPendingUsers] = useState<User[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [selectedUser, setSelectedUser] = useState<User | null>(null);
-
-    const fetchPending = useCallback(() => {
-        setIsLoading(true);
-        apiService.getPendingCreatorVerifications()
-            .then(setPendingUsers)
-            .finally(() => setIsLoading(false));
-    }, []);
-
-    useEffect(() => {
-        fetchPending();
-    }, [fetchPending]);
-
-    if (isLoading) return <p className="p-8 text-center dark:text-gray-300">Loading...</p>;
-    
-    if (pendingUsers.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-                <CheckBadgeIcon className="w-12 h-12 mb-2 opacity-50" />
-                <p>No pending creator verification requests.</p>
-            </div>
-        );
-    }
-
+// --- Collaborations Panel ---
+const CollaborationsPanel: React.FC<{
+    collaborations: CombinedCollabItem[];
+    allTransactions: Transaction[];
+    onUpdate: (id: string, type: string, data: any) => Promise<void>;
+}> = ({ collaborations }) => {
     return (
         <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Creator Verification Queue</h2>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+            <h2 className="text-2xl font-bold mb-4 dark:text-white">All Collaborations</h2>
+            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow">
                 <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
+                    <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                         <tr>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">User</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Role</th>
-                            <th className="p-4 font-medium text-gray-500 dark:text-gray-300">Submitted</th>
-                            <th className="p-4 text-right">Action</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Title</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Type</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Brand</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Creator</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Status</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {pendingUsers.map(user => (
-                            <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                <td className="p-4">
-                                    <div className="font-medium dark:text-gray-200">{user.name}</div>
-                                    <div className="text-xs text-gray-500">{user.email}</div>
-                                </td>
-                                <td className="p-4 capitalize text-gray-600 dark:text-gray-300">{user.role}</td>
-                                <td className="p-4 text-sm text-gray-500">Pending Review</td>
-                                <td className="p-4 text-right">
-                                    <button 
-                                        onClick={() => setSelectedUser(user)}
-                                        className="text-indigo-600 hover:text-indigo-800 text-sm font-medium px-3 py-1 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
-                                    >
-                                        Review
-                                    </button>
-                                </td>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {collaborations.map(c => (
+                            <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td className="p-4 dark:text-gray-200">{c.title}</td>
+                                <td className="p-4 dark:text-gray-200">{c.type}</td>
+                                <td className="p-4 dark:text-gray-200">{c.customerName}</td>
+                                <td className="p-4 dark:text-gray-200">{c.providerName}</td>
+                                <td className="p-4 dark:text-gray-200 capitalize">{c.status.replace(/_/g, ' ')}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-            {selectedUser && (
-                <CreatorVerificationModal 
-                    user={selectedUser} 
-                    onClose={() => setSelectedUser(null)}
-                    onActionComplete={() => {
-                        fetchPending();
-                        onUpdate();
-                    }}
-                />
-            )}
         </div>
     );
 };
 
+// --- KYC Panel ---
+const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
+    const [pendingKycs, setPendingKycs] = useState<User[]>([]);
+    
+    useEffect(() => {
+        apiService.getKycSubmissions().then(setPendingKycs);
+    }, []);
 
-// --- KYC Components ---
+    const handleApprove = async (userId: string) => {
+        await apiService.updateKycStatus(userId, 'approved');
+        onUpdate();
+        setPendingKycs(prev => prev.filter(u => u.id !== userId));
+    };
 
-const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-    const [confirmAction, setConfirmAction] = useState<'approved' | 'rejected' | null>(null);
-    const { kycDetails } = user;
-
-    const handleAction = async (status: 'approved' | 'rejected', reason?: string) => {
-        setIsProcessing(true);
-        try {
-            await apiService.updateKycStatus(user.id, status, reason);
-            onActionComplete();
-            setConfirmAction(null);
-            onClose();
-        } catch (error) {
-            console.error(`Failed to ${status} KYC`, error);
-            alert(`Could not ${status} KYC. Please try again.`);
-        } finally {
-            setIsProcessing(false);
+    const handleReject = async (userId: string) => {
+        const reason = prompt("Reason for rejection:");
+        if (reason) {
+            await apiService.updateKycStatus(userId, 'rejected', reason);
+            onUpdate();
+            setPendingKycs(prev => prev.filter(u => u.id !== userId));
         }
     };
 
-    if (!kycDetails) return null;
-
     return (
-        <>
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[60] p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
-                    <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 rounded-t-2xl">
-                        <div>
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">KYC Verification</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.name} ({user.role})</p>
-                        </div>
-                        <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-3xl leading-none">&times;</button>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-6">
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
-                            {/* Left: User Details */}
-                            <div className="bg-gray-50 dark:bg-gray-700/30 p-6 rounded-xl border border-gray-200 dark:border-gray-700 h-fit">
-                                <h3 className="font-bold text-lg mb-4 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-2">Submitted Data</h3>
-                                <dl className="space-y-3 text-sm dark:text-gray-300">
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">ID Type:</dt><dd className="font-medium">{kycDetails.idType || 'N/A'}</dd></div>
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">ID Number:</dt><dd className="font-mono font-medium bg-gray-200 dark:bg-gray-600 px-2 rounded">{kycDetails.idNumber || 'N/A'}</dd></div>
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">DOB:</dt><dd>{kycDetails.dob || 'N/A'}</dd></div>
-                                    <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">Gender:</dt><dd>{kycDetails.gender || 'N/A'}</dd></div>
-                                    <div className="pt-3 border-t border-gray-200 dark:border-gray-600">
-                                        <dt className="text-gray-500 dark:text-gray-400 mb-1">Address:</dt>
-                                        <dd className="bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
-                                            {kycDetails.address}<br/>
-                                            {kycDetails.villageTown}, {kycDetails.roadNameArea}<br/>
-                                            {kycDetails.city}, {kycDetails.district}<br/>
-                                            {kycDetails.state} - {kycDetails.pincode}
-                                        </dd>
-                                    </div>
-                                </dl>
+        <div className="p-6">
+            <h2 className="text-2xl font-bold mb-4 dark:text-white">Pending KYC Requests</h2>
+            {pendingKycs.length === 0 ? <p className="dark:text-gray-400">No pending KYC requests.</p> : (
+                <div className="space-y-4">
+                    {pendingKycs.map(u => (
+                        <div key={u.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow flex justify-between items-center">
+                            <div>
+                                <p className="font-bold dark:text-white">{u.name}</p>
+                                <p className="text-sm text-gray-500">{u.email}</p>
+                                <p className="text-sm dark:text-gray-300">ID: {u.kycDetails?.idType} - {u.kycDetails?.idNumber}</p>
                             </div>
-
-                            {/* Right: Documents */}
-                            <div className="space-y-6">
-                                <h3 className="font-bold text-lg mb-2 dark:text-gray-100">Documents</h3>
-                                <div>
-                                    <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">ID Proof Document</h4>
-                                    {kycDetails.idProofUrl ? (
-                                        <div 
-                                            className="border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden cursor-zoom-in hover:border-indigo-500 transition-colors bg-gray-100 dark:bg-gray-900 flex items-center justify-center h-64"
-                                            onClick={() => setZoomedImage(kycDetails.idProofUrl!)}
-                                        >
-                                            <img src={kycDetails.idProofUrl} alt="ID Proof" className="max-h-full max-w-full object-contain" />
-                                        </div>
-                                    ) : (
-                                        <div className="h-32 bg-red-50 border border-red-200 rounded-xl flex items-center justify-center text-red-500 text-sm">
-                                            Not Uploaded
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
-                                    <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Live Selfie</h4>
-                                    {kycDetails.selfieUrl ? (
-                                        <div 
-                                            className="border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden cursor-zoom-in hover:border-indigo-500 transition-colors bg-gray-100 dark:bg-gray-900 flex items-center justify-center h-64"
-                                            onClick={() => setZoomedImage(kycDetails.selfieUrl!)}
-                                        >
-                                            <img src={kycDetails.selfieUrl} alt="Selfie" className="max-h-full max-w-full object-contain" />
-                                        </div>
-                                    ) : (
-                                        <div className="h-32 bg-red-50 border border-red-200 rounded-xl flex items-center justify-center text-red-500 text-sm">
-                                            Not Uploaded
-                                        </div>
-                                    )}
-                                </div>
+                            <div className="flex gap-2">
+                                {u.kycDetails?.idProofUrl && <a href={u.kycDetails.idProofUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline flex items-center px-3">View ID</a>}
+                                <button onClick={() => handleApprove(u.id)} className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600">Approve</button>
+                                <button onClick={() => handleReject(u.id)} className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">Reject</button>
                             </div>
                         </div>
-                    </div>
-
-                    <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-between items-center rounded-b-2xl">
-                        <div className="text-sm text-gray-500">Action required for verification.</div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setConfirmAction('rejected')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 shadow-sm">
-                                ✕ Reject
-                            </button>
-                            <button onClick={() => setConfirmAction('approved')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm">
-                                ✓ Approve
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Lightbox */}
-            {zoomedImage && (
-                <div className="fixed inset-0 z-[70] bg-black bg-opacity-95 flex items-center justify-center p-4 animate-fade-in-down" onClick={() => setZoomedImage(null)}>
-                    <img src={zoomedImage} className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" alt="Zoomed Document" />
-                    <button className="absolute top-6 right-6 text-white text-4xl hover:text-gray-300">&times;</button>
-                    <p className="absolute bottom-6 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded-full">Click anywhere to close</p>
-                </div>
-            )}
-
-            {/* Confirmation Dialog */}
-            <VerificationActionConfirmModal 
-                isOpen={!!confirmAction}
-                action={confirmAction!}
-                userName={user.name}
-                isProcessing={isProcessing}
-                onCancel={() => setConfirmAction(null)}
-                onConfirm={(reason) => handleAction(confirmAction!, reason)}
-            />
-        </>
-    );
-};
-
-const KycPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
-    const [submissions, setSubmissions] = useState<User[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [viewingUser, setViewingUser] = useState<User | null>(null);
-
-    const fetchSubmissions = useCallback(() => {
-        setIsLoading(true);
-        apiService.getKycSubmissions()
-            .then(setSubmissions)
-            .finally(() => setIsLoading(false));
-    }, []);
-
-    useEffect(() => {
-        fetchSubmissions();
-    }, [fetchSubmissions]);
-
-    if (isLoading) return <p className="p-8 text-center text-gray-500 dark:text-gray-400">Loading KYC submissions...</p>;
-    
-    if (submissions.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-                <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full mb-3">
-                    <KycIcon className="w-8 h-8 text-gray-400" />
-                </div>
-                <p>No pending KYC submissions.</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">KYC Verification Queue</h2>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {submissions.map(user => (
-                        <li key={user.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center space-x-4">
-                                    <div className="relative">
-                                        <img src={user.avatar} alt={user.name} className="w-12 h-12 rounded-full object-cover border border-gray-200 dark:border-gray-600" />
-                                        {user.kycDetails?.rejectionReason && (
-                                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white" title="Resubmitted after rejection"></span>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <p className="font-semibold text-gray-900 dark:text-gray-100">{user.name}</p>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">{user.email} • <span className="capitalize bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs">{user.role}</span></p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-xs font-medium text-yellow-600 bg-yellow-100 px-2.5 py-1 rounded-full">Pending Review</span>
-                                    <button 
-                                        onClick={() => setViewingUser(user)} 
-                                        className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors"
-                                    >
-                                        Review Documents
-                                    </button>
-                                </div>
-                            </div>
-                        </li>
                     ))}
-                </ul>
-            </div>
-            {viewingUser && (
-                <KycDetailModal 
-                    user={viewingUser}
-                    onClose={() => setViewingUser(null)}
-                    onActionComplete={() => {
-                        fetchSubmissions();
-                        onUpdate();
-                    }}
-                />
+                </div>
             )}
         </div>
     );
 };
 
+// --- Creator Verification Panel ---
+const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate }) => {
+    const [pendingVerifications, setPendingVerifications] = useState<User[]>([]);
+
+    useEffect(() => {
+        apiService.getPendingCreatorVerifications().then(setPendingVerifications);
+    }, []);
+
+    const handleApprove = async (userId: string) => {
+        await apiService.updateCreatorVerificationStatus(userId, 'approved');
+        onUpdate();
+        setPendingVerifications(prev => prev.filter(u => u.id !== userId));
+    };
+
+    const handleReject = async (userId: string) => {
+        const reason = prompt("Reason for rejection:");
+        if (reason) {
+            await apiService.updateCreatorVerificationStatus(userId, 'rejected', reason);
+            onUpdate();
+            setPendingVerifications(prev => prev.filter(u => u.id !== userId));
+        }
+    };
+
+    return (
+        <div className="p-6">
+            <h2 className="text-2xl font-bold mb-4 dark:text-white">Creator Verification Requests</h2>
+            {pendingVerifications.length === 0 ? <p className="dark:text-gray-400">No pending requests.</p> : (
+                <div className="space-y-4">
+                    {pendingVerifications.map(u => (
+                        <div key={u.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow flex justify-between items-center">
+                            <div>
+                                <p className="font-bold dark:text-white">{u.name} ({u.role})</p>
+                                <p className="text-sm text-gray-500">{u.email}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleApprove(u.id)} className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600">Approve</button>
+                                <button onClick={() => handleReject(u.id)} className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">Reject</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- Community Management Panel ---
 const CommunityManagementPanel: React.FC = () => {
     const [posts, setPosts] = useState<Post[]>([]);
-    const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isAiSearching, setIsAiSearching] = useState(false);
-
-    const fetchPosts = useCallback(() => {
-        setIsLoading(true);
-        apiService.getPosts().then(data => {
-            setPosts(data);
-            setFilteredPosts(data);
-        }).finally(() => setIsLoading(false));
+    
+    useEffect(() => {
+        apiService.getPosts().then(setPosts);
     }, []);
 
-    useEffect(() => {
-        const dummyAdmin: User = { 
-            id: 'admin', 
-            name: 'Admin', 
-            email: '', 
-            role: 'staff', 
-            membership: {} as any, 
-            kycStatus: 'approved',
-            avatar: 'https://placehold.co/100x100?text=Admin' // Add avatar
-        };
-        setCurrentUser(dummyAdmin);
-        fetchPosts();
-    }, [fetchPosts]);
-    
     const handleDelete = async (postId: string) => {
-        if(window.confirm("Are you sure you want to delete this post?")) {
+        if(confirm("Delete this post?")) {
             await apiService.deletePost(postId);
-            fetchPosts();
+            setPosts(prev => prev.filter(p => p.id !== postId));
         }
     };
-
-    const handleUpdate = async (postId: string, data: Partial<Post>) => {
-        await apiService.updatePost(postId, data);
-        fetchPosts();
-    };
-
-    const handleAiSearch = async () => {
-        if (!searchQuery.trim()) {
-            setFilteredPosts(posts);
-            return;
-        }
-        setIsAiSearching(true);
-        try {
-            const matchedIds = await filterPostsWithAI(searchQuery, posts);
-            setFilteredPosts(posts.filter(p => matchedIds.includes(p.id)));
-        } catch (err) {
-            console.error(err);
-            alert("AI Search failed. Showing all results.");
-            setFilteredPosts(posts);
-        } finally {
-            setIsAiSearching(false);
-        }
-    };
-
-    if (isLoading || !currentUser) return <p className="dark:text-gray-300 p-4">Loading posts...</p>;
 
     return (
-        <div className="p-4 h-full flex flex-col">
-            <div className="mb-4 relative">
-                <input
-                    type="text"
-                    placeholder="AI search posts (e.g., 'posts by influencers', 'blocked content')"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAiSearch()}
-                    className="w-full p-3 pr-28 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                />
-                <button
-                    onClick={handleAiSearch}
-                    disabled={isAiSearching}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center px-3 py-1.5 text-sm font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-md shadow hover:shadow-md disabled:opacity-50"
-                >
-                    <SparklesIcon className={`w-4 h-4 mr-1 ${isAiSearching ? 'animate-spin' : ''}`} />
-                    {isAiSearching ? 'Searching...' : 'AI Search'}
-                </button>
-            </div>
-            <div className="flex-1 overflow-y-auto space-y-4">
-                 {filteredPosts.length === 0 ? (
-                    <p className="text-center text-gray-500 dark:text-gray-400 mt-8">No posts match your search.</p>
-                ) : (
-                    filteredPosts.map(post => (
-                        <PostCard 
-                            key={post.id} 
-                            post={post} 
-                            currentUser={currentUser}
-                            onDelete={handleDelete}
-                            onUpdate={handleUpdate}
-                            onToggleLike={() => {}} 
-                            onCommentChange={() => {}} 
-                        />
-                    ))
-                )}
+        <div className="p-6">
+            <h2 className="text-2xl font-bold mb-4 dark:text-white">Community Management</h2>
+            <div className="grid gap-4">
+                {posts.map(post => (
+                    <div key={post.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+                        <div className="flex justify-between items-center">
+                            <p className="font-bold dark:text-white">{post.userName}</p>
+                            <button onClick={() => handleDelete(post.id)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
+                        </div>
+                        <p className="mt-2 dark:text-gray-300">{post.text}</p>
+                        {post.imageUrl && <img src={post.imageUrl} className="mt-2 h-32 object-cover rounded" alt="" />}
+                    </div>
+                ))}
             </div>
         </div>
     );
 };
 
-const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabItem[], transactions: Transaction[], payouts: PayoutRequest[], dailyPayouts: DailyPayoutRequest[] }> = ({ users, collaborations, transactions, payouts, dailyPayouts }) => {
-    const stats = [
-        { label: 'Total Users', value: users.length, icon: UserGroupIcon, color: 'bg-blue-500' },
-        { label: 'Active Collabs', value: collaborations.filter(c => c.status === 'in_progress').length, icon: CollabIcon, color: 'bg-green-500' },
-        { label: 'Pending Payouts', value: payouts.filter(p => p.status === 'pending').length + dailyPayouts.filter(d => d.status === 'pending').length, icon: PaymentIcon, color: 'bg-yellow-500' },
-        { label: 'Total Revenue', value: `₹${transactions.filter(t => t.type === 'payment' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0).toLocaleString()}`, icon: AnalyticsIcon, color: 'bg-purple-500' },
-    ];
+// --- Disputes Panel ---
+const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transaction[], onUpdate: () => void }> = ({ disputes }) => {
+    return (
+        <div className="p-6">
+            <h2 className="text-2xl font-bold mb-4 dark:text-white">Disputes</h2>
+            {disputes.length === 0 ? <p className="dark:text-gray-400">No open disputes.</p> : (
+                <div className="space-y-4">
+                    {disputes.map(d => (
+                        <div key={d.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-red-500">
+                            <p className="font-bold dark:text-white">Dispute on: {d.collaborationTitle}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">By: {d.disputedByName} vs {d.disputedAgainstName}</p>
+                            <p className="mt-2 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm italic dark:text-gray-300">{d.reason}</p>
+                            <p className="mt-2 font-bold dark:text-gray-200">Amount: ₹{d.amount}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- Discount Settings Panel ---
+const DiscountSettingsPanel: React.FC<{ 
+    settings: PlatformSettings; 
+    setSettings: (s: PlatformSettings) => void;
+    setIsDirty: (b: boolean) => void;
+}> = ({ settings }) => {
+    const [localSettings, setLocalSettings] = useState<PlatformSettings>(settings);
+
+    const handleSave = async () => {
+        await apiService.updatePlatformSettings(localSettings);
+        alert("Discount settings saved.");
+    };
+
+    const updateDiscount = (key: keyof typeof settings.discountSettings, field: 'isEnabled' | 'percentage', value: any) => {
+        setLocalSettings(prev => ({
+            ...prev,
+            discountSettings: {
+                ...prev.discountSettings,
+                [key]: {
+                    ...prev.discountSettings[key],
+                    [field]: value
+                }
+            }
+        }));
+    };
 
     return (
-        <div className="p-6 h-full overflow-y-auto">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Dashboard Overview</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, index) => (
-                    <div key={index} className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm flex items-center space-x-4">
-                        <div className={`p-3 rounded-full text-white ${stat.color}`}>
-                            <stat.icon className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-                            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{stat.value}</p>
+        <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold dark:text-white">Discount Settings</h2>
+                <button onClick={handleSave} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">Save Changes</button>
+            </div>
+            
+            <div className="space-y-6">
+                {Object.entries(localSettings.discountSettings || {}).map(([key, setting]) => (
+                    <div key={key} className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+                        <h3 className="font-bold mb-2 capitalize dark:text-gray-200">{key.replace(/([A-Z])/g, ' $1').trim()}</h3>
+                        <div className="flex items-center gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    checked={setting.isEnabled} 
+                                    onChange={(e) => updateDiscount(key as any, 'isEnabled', e.target.checked)}
+                                    className="rounded text-indigo-600"
+                                />
+                                <span className="dark:text-gray-300">Enabled</span>
+                            </label>
+                            <div className="flex items-center gap-2">
+                                <input 
+                                    type="number" 
+                                    value={setting.percentage} 
+                                    onChange={(e) => updateDiscount(key as any, 'percentage', Number(e.target.value))}
+                                    className="border rounded p-1 w-20 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                                <span className="dark:text-gray-300">% Discount</span>
+                            </div>
                         </div>
                     </div>
                 ))}
@@ -656,391 +376,89 @@ const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabIt
     );
 };
 
-const StaffModal: React.FC<{
-    staff: User | null;
-    onClose: () => void;
-    onSave: (data: any) => void;
-}> = ({ staff, onClose, onSave }) => {
-    const [name, setName] = useState(staff?.name || '');
-    const [email, setEmail] = useState(staff?.email || '');
-    const [mobile, setMobile] = useState(staff?.mobileNumber || '');
-    const [password, setPassword] = useState('');
-    const [permissions, setPermissions] = useState<StaffPermission[]>(staff?.staffPermissions || []);
-    const [isLoading, setIsLoading] = useState(false);
+// --- Agreements Panel ---
+const AgreementsPanel: React.FC = () => {
+    const [agreements, setAgreements] = useState<Agreements>({ brand: '', influencer: '', livetv: '', banneragency: '' });
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [activeRole, setActiveRole] = useState<keyof Agreements>('brand');
 
-    const allPermissions: StaffPermission[] = ['super_admin', 'user_management', 'financial', 'collaborations', 'kyc', 'community', 'support', 'marketing', 'live_help', 'analytics'];
-
-    const togglePermission = (perm: StaffPermission) => {
-        setPermissions(prev => prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm]);
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    useEffect(() => {
         setIsLoading(true);
-        try {
-            await onSave({ name, email, mobile, password, permissions });
-            onClose();
-        } catch (error) {
-            console.error(error);
-            alert("Failed to save staff member.");
-        } finally {
-            setIsLoading(false);
-        }
-    };
+        apiService.getAgreements()
+            .then(setAgreements)
+            .finally(() => setIsLoading(false));
+    }, []);
 
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                <h3 className="text-xl font-bold mb-4 dark:text-gray-100">{staff ? 'Edit Staff Member' : 'Add New Staff'}</h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium dark:text-gray-300">Name</label>
-                        <input type="text" value={name} onChange={e => setName(e.target.value)} required className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium dark:text-gray-300">Email</label>
-                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} required disabled={!!staff} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60" />
-                    </div>
-                    {!staff && (
-                        <div>
-                            <label className="block text-sm font-medium dark:text-gray-300">Password</label>
-                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                        </div>
-                    )}
-                    <div>
-                        <label className="block text-sm font-medium dark:text-gray-300">Mobile</label>
-                        <input type="tel" value={mobile} onChange={e => setMobile(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium dark:text-gray-300 mb-2">Permissions</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {allPermissions.map(perm => (
-                                <label key={perm} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer dark:border-gray-600">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={permissions.includes(perm)} 
-                                        onChange={() => togglePermission(perm)}
-                                        className="rounded text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    <span className="text-sm capitalize dark:text-gray-300">{perm.replace('_', ' ')}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="flex justify-end gap-3 mt-6">
-                        <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded dark:text-gray-300 dark:hover:bg-gray-700">Cancel</button>
-                        <button type="submit" disabled={isLoading} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">
-                            {isLoading ? 'Saving...' : 'Save Staff'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-};
-
-const StaffManagementPanel: React.FC<{ staffUsers: User[], onUpdate: () => void, platformSettings: PlatformSettings }> = ({ staffUsers, onUpdate, platformSettings }) => {
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingStaff, setEditingStaff] = useState<User | null>(null);
-
-    const handleSave = async (data: any) => {
-        if (editingStaff) {
-            await apiService.updateUser(editingStaff.id, {
-                name: data.name,
-                mobileNumber: data.mobile,
-                staffPermissions: data.permissions
-            });
-        } else {
-            await authService.createUserByAdmin(
-                data.email,
-                data.password,
-                'staff',
-                data.name,
-                data.mobile,
-                'free',
-                data.permissions
-            );
-        }
-        onUpdate();
-    };
-
-    const handleDelete = async (user: User) => {
-        if (window.confirm(`Are you sure you want to remove ${user.name} from staff? This will block their account.`)) {
-            await apiService.updateUser(user.id, { isBlocked: true, role: 'brand' }); // Demote and block
-            onUpdate();
-        }
-    };
-
-    return (
-        <div className="p-6 h-full flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Staff Management</h2>
-                <button onClick={() => { setEditingStaff(null); setIsModalOpen(true); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                    + Create Staff
-                </button>
-            </div>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                    {staffUsers.map(staff => (
-                        <div key={staff.id} className="p-4 border rounded-lg dark:border-gray-700 flex flex-col justify-between bg-gray-50 dark:bg-gray-700/30">
-                            <div className="flex items-center gap-3 mb-3">
-                                <img src={staff.avatar} alt="" className="w-12 h-12 rounded-full object-cover" />
-                                <div>
-                                    <p className="font-bold dark:text-gray-200">{staff.name}</p>
-                                    <p className="text-xs text-gray-500">{staff.email}</p>
-                                </div>
-                            </div>
-                            <div className="flex flex-wrap gap-1 mb-4">
-                                {staff.staffPermissions?.map(perm => (
-                                    <span key={perm} className="px-2 py-0.5 text-[10px] uppercase font-semibold bg-blue-100 text-blue-800 rounded-full dark:bg-blue-900 dark:text-blue-200">
-                                        {perm.replace('_', ' ')}
-                                    </span>
-                                ))}
-                            </div>
-                            <div className="flex justify-end gap-2 border-t pt-3 dark:border-gray-600">
-                                <button onClick={() => { setEditingStaff(staff); setIsModalOpen(true); }} className="text-blue-600 hover:text-blue-800 font-medium text-sm">Edit</button>
-                                <button onClick={() => handleDelete(staff)} className="text-red-600 hover:text-red-800 font-medium text-sm">Remove</button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-            {isModalOpen && (
-                <StaffModal 
-                    staff={editingStaff} 
-                    onClose={() => setIsModalOpen(false)} 
-                    onSave={handleSave} 
-                />
-            )}
-        </div>
-    );
-};
-
-const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allTransactions: Transaction[], onUpdate: (id: string, type: string, data: any) => void }> = ({ collaborations, allTransactions, onUpdate }) => {
-    return (
-        <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">All Collaborations</h2>
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600 sticky top-0">
-                        <tr>
-                            <th className="p-4 whitespace-nowrap">Collab ID</th>
-                            <th className="p-4">Title</th>
-                            <th className="p-4">Type</th>
-                            <th className="p-4">Brand (User ID)</th>
-                            <th className="p-4">Partner (User ID)</th>
-                            <th className="p-4">Status</th>
-                            <th className="p-4">Payment</th>
-                            <th className="p-4 whitespace-nowrap">Creator Payout</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {collaborations.map(collab => (
-                            <tr key={collab.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                <td className="p-4 font-mono text-xs text-gray-500 dark:text-gray-400 select-all">
-                                    {collab.originalData.collabId || collab.id.substring(0, 8) + '...'}
-                                </td>
-                                <td className="p-4 font-medium dark:text-gray-200">{collab.title}</td>
-                                <td className="p-4 text-sm text-gray-500">{collab.type}</td>
-                                <td className="p-4">
-                                    <div className="text-sm text-gray-800 dark:text-gray-200">{collab.customerName}</div>
-                                    <div className="text-xs text-gray-500 font-mono">{collab.customerPiNumber || 'N/A'}</div>
-                                </td>
-                                <td className="p-4">
-                                    <div className="text-sm text-gray-800 dark:text-gray-200">{collab.providerName}</div>
-                                    <div className="text-xs text-gray-500 font-mono">{collab.providerPiNumber || 'N/A'}</div>
-                                </td>
-                                <td className="p-4"><span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-600 rounded-full capitalize">{collab.status.replace(/_/g, ' ')}</span></td>
-                                <td className="p-4"><span className={`px-2 py-1 text-xs rounded-full ${collab.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{collab.paymentStatus}</span></td>
-                                <td className="p-4">
-                                    <span className={`px-2 py-1 text-xs rounded-full capitalize ${
-                                        collab.payoutStatus === 'Completed' ? 'bg-green-100 text-green-800' : 
-                                        collab.payoutStatus === 'Requested' ? 'bg-purple-100 text-purple-800' : 
-                                        'bg-gray-100 text-gray-600'
-                                    }`}>
-                                        {collab.payoutStatus}
-                                    </span>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transaction[], onUpdate: () => void }> = ({ disputes, allTransactions, onUpdate }) => {
-    return (
-        <div className="p-6 h-full overflow-y-auto">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Disputes</h2>
-            {disputes.length === 0 ? <p className="text-gray-500">No active disputes.</p> : (
-                <div className="space-y-4">
-                    {disputes.map(d => (
-                        <div key={d.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-red-100 dark:border-red-900">
-                            <div className="flex justify-between">
-                                <h3 className="font-bold text-red-600 dark:text-red-400">Dispute: {d.collaborationTitle}</h3>
-                                <span className="text-sm text-gray-500">{d.status}</span>
-                            </div>
-                            <p className="text-sm mt-2 dark:text-gray-300"><strong>Reason:</strong> {d.reason}</p>
-                            <p className="text-sm text-gray-500 mt-1">Raised by: {d.disputedByName}</p>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
-
-const DiscountSettingsPanel: React.FC<{ settings: PlatformSettings, setSettings: (s: PlatformSettings) => void, setIsDirty: (d: boolean) => void }> = ({ settings, setSettings, setIsDirty }) => {
-    const [localSettings, setLocalSettings] = useState(settings);
-    const [hasChanges, setHasChanges] = useState(false);
-
-    // Discount Update Handler
-    const updateDiscount = (key: keyof typeof settings.discountSettings, field: keyof DiscountSetting, value: any) => {
-        const updated = {
-            ...localSettings,
-            discountSettings: {
-                ...localSettings.discountSettings,
-                [key]: {
-                    ...localSettings.discountSettings[key],
-                    [field]: value
-                }
-            }
-        };
-        setLocalSettings(updated);
-        setHasChanges(true);
-    };
-
-    // Base Price Update Handler
-    const updateBasePrice = (category: 'membershipPrices' | 'boostPrices', key: string, value: number) => {
-        const updated = {
-            ...localSettings,
-            [category]: {
-                ...localSettings[category],
-                [key]: value
-            }
-        };
-        setLocalSettings(updated);
-        setHasChanges(true);
+    const handleChange = (val: string) => {
+        setAgreements(prev => ({ ...prev, [activeRole]: val }));
     };
 
     const handleSave = async () => {
-        await apiService.updatePlatformSettings(localSettings);
-        setHasChanges(false);
-        alert("Pricing and Discount settings saved!");
+        setIsSaving(true);
+        try {
+            await apiService.updateAgreements(agreements);
+            alert("Agreements updated successfully!");
+        } catch (error) {
+            console.error(error);
+            alert("Failed to save agreements.");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const DiscountRow = ({ label, settingKey }: { label: string, settingKey: keyof typeof settings.discountSettings }) => {
-        const config = localSettings.discountSettings[settingKey] || { isEnabled: false, percentage: 0 };
-        return (
-            <div className="flex items-center justify-between py-3 border-b dark:border-gray-700 last:border-0">
-                <div>
-                    <p className="font-medium text-gray-800 dark:text-gray-200">{label}</p>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                        <input 
-                            type="number" 
-                            value={config.percentage} 
-                            onChange={e => updateDiscount(settingKey, 'percentage', Number(e.target.value))}
-                            disabled={!config.isEnabled}
-                            className="w-16 p-1 text-center border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
-                            min="0" max="100"
-                        />
-                        <span className="text-gray-500">%</span>
-                    </div>
-                    <ToggleSwitch enabled={config.isEnabled} onChange={val => updateDiscount(settingKey, 'isEnabled', val)} />
-                </div>
-            </div>
-        );
-    };
+    const roles: { id: keyof Agreements, label: string }[] = [
+        { id: 'brand', label: 'Brand Agreement' },
+        { id: 'influencer', label: 'Influencer Agreement' },
+        { id: 'livetv', label: 'Live TV Agreement' },
+        { id: 'banneragency', label: 'Banner Agency Agreement' },
+    ];
 
-    const PriceInput = ({ label, value, onChange }: { label: string, value: number, onChange: (val: number) => void }) => (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2">
-            <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 sm:mb-0">{label}</label>
-            <div className="relative">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
-                <input 
-                    type="number" 
-                    value={value} 
-                    onChange={e => onChange(Number(e.target.value))}
-                    className="w-24 pl-6 p-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-right"
-                />
-            </div>
-        </div>
-    );
+    if (isLoading) return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading agreements...</div>;
 
     return (
-        <div className="p-6 h-full overflow-y-auto">
+        <div className="p-6 h-full flex flex-col">
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Pricing & Discount Management</h2>
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Agreements</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Use <code className="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded text-indigo-600 font-mono">{"{{USER_NAME}}"}</code> to insert the user's name dynamically.
+                    </p>
+                </div>
                 <button 
                     onClick={handleSave} 
-                    disabled={!hasChanges}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
+                    disabled={isSaving}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
                 >
-                    Save Changes
+                    {isSaving ? 'Saving...' : 'Save All Changes'}
                 </button>
             </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Membership Section */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm space-y-6 h-fit">
-                    <h3 className="text-lg font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b dark:border-gray-700 pb-2">
-                        <SparklesIcon className="w-5 h-5" /> Membership Plans
-                    </h3>
-                    
-                    <div>
-                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Base Prices (Brand)</h4>
-                        <div className="space-y-1 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
-                            <PriceInput label="Pro 10 Plan" value={localSettings.membershipPrices.pro_10} onChange={v => updateBasePrice('membershipPrices', 'pro_10', v)} />
-                            <PriceInput label="Pro 20 Plan" value={localSettings.membershipPrices.pro_20} onChange={v => updateBasePrice('membershipPrices', 'pro_20', v)} />
-                            <PriceInput label="Pro Unlimited" value={localSettings.membershipPrices.pro_unlimited} onChange={v => updateBasePrice('membershipPrices', 'pro_unlimited', v)} />
-                        </div>
-                    </div>
 
-                    <div>
-                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Base Prices (Creator)</h4>
-                        <div className="space-y-1 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
-                            <PriceInput label="Basic Plan" value={localSettings.membershipPrices.basic} onChange={v => updateBasePrice('membershipPrices', 'basic', v)} />
-                            <PriceInput label="Pro Plan" value={localSettings.membershipPrices.pro} onChange={v => updateBasePrice('membershipPrices', 'pro', v)} />
-                            <PriceInput label="Premium Plan" value={localSettings.membershipPrices.premium} onChange={v => updateBasePrice('membershipPrices', 'premium', v)} />
-                        </div>
-                    </div>
+            <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+                {roles.map(role => (
+                    <button
+                        key={role.id}
+                        onClick={() => setActiveRole(role.id)}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            activeRole === role.id 
+                                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' 
+                                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                        }`}
+                    >
+                        {role.label}
+                    </button>
+                ))}
+            </div>
 
-                    <div>
-                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Discounts</h4>
-                        <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                            <DiscountRow label="Brand Membership Discount" settingKey="brandMembership" />
-                            <DiscountRow label="Creator Membership Discount" settingKey="creatorMembership" />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Boost Section */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm space-y-6 h-fit">
-                    <h3 className="text-lg font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-2 border-b dark:border-gray-700 pb-2">
-                        <RocketIcon className="w-5 h-5" /> Boosting Features
-                    </h3>
-
-                    <div>
-                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Base Prices</h4>
-                        <div className="space-y-1 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
-                            <PriceInput label="Profile Boost (7 Days)" value={localSettings.boostPrices.profile} onChange={v => updateBasePrice('boostPrices', 'profile', v)} />
-                            <PriceInput label="Campaign Boost" value={localSettings.boostPrices.campaign} onChange={v => updateBasePrice('boostPrices', 'campaign', v)} />
-                            <PriceInput label="Banner Ad Boost" value={localSettings.boostPrices.banner} onChange={v => updateBasePrice('boostPrices', 'banner', v)} />
-                        </div>
-                    </div>
-
-                    <div>
-                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Discounts</h4>
-                        <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-100 dark:border-purple-800">
-                            <DiscountRow label="Creator Profile Boost Discount" settingKey="creatorProfileBoost" />
-                            <DiscountRow label="Brand Campaign Boost Discount" settingKey="brandCampaignBoost" />
-                            <DiscountRow label="Banner Ad Boost Discount" settingKey="brandBannerBoost" />
-                        </div>
-                    </div>
+            <div className="flex-1 flex flex-col">
+                <textarea
+                    value={agreements[activeRole]}
+                    onChange={(e) => handleChange(e.target.value)}
+                    className="flex-1 w-full p-4 border border-gray-300 rounded-lg dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 font-mono text-sm resize-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder={`Enter terms and conditions for ${activeRole}s here...`}
+                />
+                <div className="mt-2 text-xs text-gray-500 text-right">
+                    Supports plain text. HTML/Markdown rendering depends on frontend implementation (currently plain text/pre-wrap).
                 </div>
             </div>
         </div>
@@ -1138,6 +556,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
         { id: 'platform_banners', label: 'Platform Banners', icon: BannerAdsIcon, permission: 'marketing' },
         { id: 'client_brands', label: 'Partner Brands', icon: UserGroupIcon, permission: 'marketing' },
         { id: 'leaderboards', label: 'Leaderboards', icon: TrophyIcon, permission: 'marketing' },
+        { id: 'agreements', label: 'Legal & Agreements', icon: DocumentTextIcon, permission: 'super_admin' },
     ];
 
     const visibleTabs = tabs.filter(tab => {
@@ -1164,13 +583,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
             case 'platform_banners': return <PlatformBannerPanel onUpdate={onUpdate} />;
             case 'client_brands': return <PartnersPanel onUpdate={onUpdate} />;
             case 'leaderboards': return <LeaderboardManager allUsers={allUsers} allTransactions={allTransactions} allCollabs={allCollabs} onUpdate={onUpdate} />;
+            case 'agreements': return <AgreementsPanel />;
             default: return <div>Select a tab</div>;
         }
     };
 
     return (
         <div className="flex h-full bg-gray-100 dark:bg-gray-900 overflow-hidden">
-            {/* Sidebar for Admin Tabs */}
             <div className="w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col flex-shrink-0 overflow-y-auto">
                 <div className="p-4 border-b dark:border-gray-700">
                     <h2 className="text-lg font-bold text-gray-800 dark:text-white">Admin Panel</h2>
@@ -1194,7 +613,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
                 </nav>
             </div>
 
-            {/* Main Content */}
             <div className="flex-1 overflow-hidden flex flex-col">
                 {renderContent()}
             </div>

@@ -4,7 +4,7 @@ import { User, Transaction, PayoutRequest, AnyCollaboration, UserRole } from '..
 import { apiService } from '../services/apiService';
 import { authService } from '../services/authService';
 import UserDetailView from './UserDetailView';
-import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon, CheckBadgeIcon, KeyIcon, EnvelopeIcon, PencilIcon } from './Icons';
+import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon, CheckBadgeIcon, KeyIcon, EnvelopeIcon, PencilIcon, ExclamationTriangleIcon } from './Icons';
 
 interface UserManagementPanelProps {
     allUsers: User[];
@@ -37,9 +37,11 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
 
     const generatePassword = () => {
         const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        const array = new Uint32Array(12);
+        window.crypto.getRandomValues(array);
         let pass = "";
         for (let i = 0; i < 12; i++) {
-            pass += chars.charAt(Math.floor(Math.random() * chars.length));
+            pass += chars.charAt(array[i] % chars.length);
         }
         setNewPassword(pass);
         setShowPassword(true); 
@@ -56,7 +58,7 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
         setMessage(null);
         try {
             await apiService.adminChangePassword(user.id, newPassword);
-            setMessage({ type: 'success', text: 'Password updated successfully.' });
+            setMessage({ type: 'success', text: 'Password updated successfully. The user can now login with this password.' });
         } catch (err: any) {
             console.error(err);
             setMessage({ type: 'error', text: err.message || 'Failed to update password.' });
@@ -81,7 +83,7 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
                 
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">For user: <span className="font-semibold text-gray-800 dark:text-gray-200">{user.name}</span></p>
 
-                <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+                <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
                     <button 
                         onClick={() => { setActiveTab('reset'); setMessage(null); }}
                         className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'reset' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
@@ -104,72 +106,76 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
 
                 {activeTab === 'reset' && (
                     <div className="space-y-4">
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Send a system-generated password reset email to <strong>{user.email}</strong>. This is the safest method.
-                        </p>
+                        <div className="bg-blue-50 text-blue-800 p-4 rounded-lg border border-blue-100 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800">
+                            <p className="text-sm">
+                                Send a system-generated password reset email to <strong>{user.email}</strong>. This is the safest method as the user sets their own password.
+                            </p>
+                        </div>
                         <button 
                             onClick={handleSendReset}
                             disabled={isLoading}
-                            className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2 font-medium"
                         >
                             <EnvelopeIcon className="w-4 h-4" />
-                            {isLoading ? 'Sending...' : 'Send Email'}
+                            {isLoading ? 'Sending...' : 'Send Reset Email'}
                         </button>
                     </div>
                 )}
 
                 {activeTab === 'manual' && (
                     <form onSubmit={handleManualUpdate} className="space-y-4">
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Manually override the user's password. Use this if the user cannot access their email.
-                        </p>
+                        <div className="bg-yellow-50 text-yellow-800 p-3 rounded-lg text-sm border border-yellow-200 flex items-start gap-2 dark:bg-yellow-900/20 dark:text-yellow-200 dark:border-yellow-800">
+                            <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                            <p>Manually override the user's password. Use this if the user cannot access their email.</p>
+                        </div>
                         
-                        <div className="relative">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">New Password</label>
-                            <input 
-                                type={showPassword ? "text" : "password"}
-                                value={newPassword}
-                                onChange={e => setNewPassword(e.target.value)}
-                                placeholder="Enter new password"
-                                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white pr-16"
-                                required
-                                minLength={6}
-                            />
-                            <button 
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-2 top-8 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400"
-                            >
-                                {showPassword ? 'Hide' : 'Show'}
-                            </button>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">New Password</label>
+                            <div className="relative">
+                                <input 
+                                    type={showPassword ? "text" : "password"}
+                                    value={newPassword}
+                                    onChange={e => setNewPassword(e.target.value)}
+                                    placeholder="Enter new password"
+                                    className="w-full p-2.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white pr-16 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                    required
+                                    minLength={6}
+                                />
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-3 text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 uppercase"
+                                >
+                                    {showPassword ? 'Hide' : 'Show'}
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="flex justify-between gap-2">
+                        <div className="flex justify-between gap-3">
                             <button 
                                 type="button"
                                 onClick={generatePassword}
-                                className="flex-1 py-2 px-3 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors"
+                                className="flex-1 py-2 px-3 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors font-medium border border-gray-200 dark:border-gray-600"
                             >
                                 Generate Random
                             </button>
-                            {newPassword && (
-                                <button 
-                                    type="button"
-                                    onClick={copyToClipboard}
-                                    className={`py-2 px-3 text-sm text-gray-700 rounded-lg transition-colors flex-1 ${copied ? 'bg-green-200 hover:bg-green-300' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'}`}
-                                >
-                                    {copied ? 'Copied!' : 'Copy'}
-                                </button>
-                            )}
+                            <button 
+                                type="button"
+                                onClick={copyToClipboard}
+                                disabled={!newPassword}
+                                className={`py-2 px-4 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${copied ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600'}`}
+                            >
+                                {copied ? 'Copied' : 'Copy'}
+                            </button>
                         </div>
 
                         <button 
                             type="submit"
                             disabled={isLoading}
-                            className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
+                            className="w-full py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2 mt-2 font-bold shadow-md"
                         >
                             <KeyIcon className="w-4 h-4" />
-                            {isLoading ? 'Updating...' : 'Update Password'}
+                            {isLoading ? 'Updating Password...' : 'Update Password'}
                         </button>
                     </form>
                 )}

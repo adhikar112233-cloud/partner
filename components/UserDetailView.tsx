@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Transaction, PayoutRequest, AnyCollaboration, MembershipPlan, UserRole } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
-import { ProfileIcon, PaymentIcon, MembershipIcon, CollabIcon, CheckBadgeIcon, DocumentIcon } from './Icons';
+import { ProfileIcon, PaymentIcon, MembershipIcon, CollabIcon, CheckBadgeIcon, DocumentIcon, LogoIcon } from './Icons';
 
 interface UserDetailViewProps {
     user: User;
@@ -127,7 +127,10 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                                 </div>
                             </div>
                         </div>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                        <div className="flex items-center gap-4">
+                             <LogoIcon className="h-8 w-auto opacity-50 hidden sm:block" />
+                             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                        </div>
                     </div>
                 </div>
 

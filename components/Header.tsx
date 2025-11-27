@@ -112,14 +112,7 @@ const Header: React.FC<HeaderProps> = ({ user, activeView, setActiveView, platfo
             </button>
             
             <button onClick={() => setActiveView(View.PARTNERS)} className="flex items-center focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg">
-               {/* Mobile Logo: Icon Only */}
-               <div className="md:hidden">
-                   <LogoIcon iconOnly={true} className="h-8 w-auto" />
-               </div>
-               {/* Desktop Logo: Full */}
-               <div className="hidden md:block">
-                   <LogoIcon className="h-10 w-auto" />
-               </div>
+               <LogoIcon className="h-8 sm:h-10 w-auto" />
             </button>
           </div>
 

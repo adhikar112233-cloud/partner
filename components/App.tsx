@@ -1,10 +1,10 @@
 
-// ... existing imports ...
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
 import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus, UserRole } from '../types';
+// Fix: Add QueryDocumentSnapshot and DocumentData for pagination types.
 import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
@@ -34,7 +34,7 @@ import SupportAdminPage from './SupportAdminPage';
 import MembershipPage from './MembershipPage';
 import MyCollaborationsPage from './MyCollaborationsPage';
 import { MyApplicationsPage } from './MyApplicationsPage';
-import { MyAdBookingsPage } from './MyAdBookingsPage';
+import MyAdBookingsPage from './MyAdBookingsPage';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import CommunityPage from './CommunityPage';
 import SocialMediaFab from './SocialMediaFab';
@@ -45,7 +45,6 @@ import RefundRequestPage from './RefundRequestPage';
 import BoostPage from './BoostPage';
 import LiveHelpChat from './LiveHelpChat';
 import { NotificationManager } from './NotificationManager';
-import ClickableImageBanner from './ClickableImageBanner';
 import CreatorVerificationPage from './CreatorVerificationPage';
 import ActivityFeed from './ActivityFeed';
 import OurPartnersPage from './OurPartnersPage';
@@ -352,12 +351,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     refreshPlatformSettings();
-    if (user) {
-      apiService.getActivePlatformBanners().then(setPlatformBanners).catch(err => {
-          console.error("Failed to fetch platform banners:", err);
-      });
-    }
-  }, [refreshPlatformSettings, user]);
+    // Initial banner fetch
+    apiService.getActivePlatformBanners().then(setPlatformBanners).catch(console.error);
+  }, [refreshPlatformSettings]);
 
  const refreshUser = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -415,7 +411,7 @@ const App: React.FC = () => {
       if (user && platformSettings) {
         await apiService.initializeFirestoreData();
         
-        // Fetch and update banners
+        // Refresh banners on any update
         apiService.getActivePlatformBanners().then(setPlatformBanners).catch(console.error);
 
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
@@ -838,7 +834,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen overflow-hidden flex bg-gray-50 dark:bg-gray-950">
+    // Use h-[100dvh] for mobile support to prevent body scroll
+    <div className="h-[100dvh] w-full overflow-hidden flex bg-gray-50 dark:bg-gray-950">
       <Sidebar 
         user={user}
         activeView={activeView}
@@ -864,44 +861,44 @@ const App: React.FC = () => {
         setCommunityFeedFilter={setCommunityFeedFilter}
         onToggleFollow={handleToggleFollow}
       />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <NotificationManager user={user} />
-        {user.kycStatus === 'rejected' && (
-            <KycRejectedBanner onResubmit={() => setActiveView(View.KYC)} reason={user.kycDetails?.rejectionReason} />
-        )}
-        {platformSettings.isNotificationBannerEnabled && platformSettings.notificationBannerText && (
-            <NotificationBanner text={platformSettings.notificationBannerText} />
-        )}
-        {showMembershipBanner && <MembershipInactiveBanner onUpgrade={() => setActiveView(View.MEMBERSHIP)} />}
-        {showCreatorVerificationBanner && (
-            <CreatorVerificationBanner
-                status={user.creatorVerificationStatus!}
-                role={user.role}
-                onVerify={() => setActiveView(View.CREATOR_VERIFICATION)}
-                reason={user.creatorVerificationDetails?.rejectionReason}
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Wrap top elements in a shrink-0 container to ensure they remain fixed */}
+        <div className="flex-shrink-0 z-20 bg-gray-50 dark:bg-gray-950">
+            <NotificationManager user={user} />
+            {user.kycStatus === 'rejected' && (
+                <KycRejectedBanner onResubmit={() => setActiveView(View.KYC)} reason={user.kycDetails?.rejectionReason} />
+            )}
+            {platformSettings.isNotificationBannerEnabled && platformSettings.notificationBannerText && (
+                <NotificationBanner text={platformSettings.notificationBannerText} />
+            )}
+            {showMembershipBanner && <MembershipInactiveBanner onUpgrade={() => setActiveView(View.MEMBERSHIP)} />}
+            {showCreatorVerificationBanner && (
+                <CreatorVerificationBanner
+                    status={user.creatorVerificationStatus!}
+                    role={user.role}
+                    onVerify={() => setActiveView(View.CREATOR_VERIFICATION)}
+                    reason={user.creatorVerificationDetails?.rejectionReason}
+                />
+            )}
+            
+            <Header 
+                user={user} 
+                activeView={activeView}
+                setActiveView={setActiveView}
+                platformSettings={platformSettings}
+                onConversationSelected={handleConversationSelected}
+                onMobileNavToggle={() => setIsMobileNavOpen(true)}
+                theme={theme}
+                setTheme={setTheme}
+                unreadCount={unreadCount}
+                onActivityFeedToggle={() => setIsFeedOpen(prev => !prev)}
+                appMode={appMode}
+                setAppMode={setAppMode}
             />
-        )}
+        </div>
         
-        <Header 
-            user={user} 
-            activeView={activeView}
-            setActiveView={setActiveView}
-            platformSettings={platformSettings}
-            onConversationSelected={handleConversationSelected}
-            onMobileNavToggle={() => setIsMobileNavOpen(true)}
-            theme={theme}
-            setTheme={setTheme}
-            unreadCount={unreadCount}
-            onActivityFeedToggle={() => setIsFeedOpen(prev => !prev)}
-            appMode={appMode}
-            setAppMode={setAppMode}
-        />
-
-        {platformBanners.length > 0 && (
-            <ClickableImageBanner banners={platformBanners} />
-        )}
-        
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        {/* Main content area scrolls independently */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto scroll-smooth">
           {renderContent()}
         </main>
       </div>

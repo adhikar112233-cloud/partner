@@ -15,7 +15,7 @@ import {
     PayoutRequest, RefundRequest, DailyPayoutRequest,
     Transaction, Dispute, KycDetails, CreatorVerificationDetails,
     UserRole, AppNotification, QuickReply, MembershipPlan, StaffPermission,
-    PlatformBanner
+    PlatformBanner, Agreements
 } from '../types';
 
 // Helper to upload file
@@ -110,6 +110,23 @@ export const apiService = {
     },
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
+    },
+    getAgreements: async (): Promise<Agreements> => {
+        const docRef = doc(db, 'settings', 'agreements');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            return docSnap.data() as Agreements;
+        }
+        // Default empty structure if not found
+        return {
+            brand: '',
+            influencer: '',
+            livetv: '',
+            banneragency: ''
+        };
+    },
+    updateAgreements: async (agreements: Agreements) => {
+        await setDoc(doc(db, 'settings', 'agreements'), agreements, { merge: true });
     },
 
     // ... Banners ...

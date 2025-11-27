@@ -1,25 +1,11 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import { Timestamp } from 'firebase/firestore';
-import { GiftIcon, CoinIcon } from './Icons';
+import { GiftIcon, CoinIcon, DocumentTextIcon } from './Icons';
+import AgreementModal from './AgreementModal';
 
 interface ProfilePageProps {
   user: User;
@@ -229,6 +215,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showDailyPayoutModal, setShowDailyPayoutModal] = useState(false);
+  const [showAgreementModal, setShowAgreementModal] = useState(false);
 
   useEffect(() => {
     // Fetch influencer-specific profile data if user is an influencer
@@ -483,9 +470,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Expires: {toJsDate(user.membership.expiresAt)?.toLocaleDateString()}</p>
                     )}
                 </div>
-                <button onClick={onGoToMembership} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-medium">
-                    {isMembershipActive ? 'Manage Plan' : 'Upgrade'}
-                </button>
+                <div className="flex gap-2">
+                    <button onClick={onGoToMembership} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-medium">
+                        {isMembershipActive ? 'Manage Plan' : 'Upgrade'}
+                    </button>
+                </div>
             </dd>
           </div>
 
@@ -515,6 +504,19 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
             </dd>
           </div>
 
+          <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
+            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Agreement</dt>
+            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 flex items-center justify-between">
+                <span className="text-gray-600 dark:text-gray-400">View terms and conditions</span>
+                <button 
+                    onClick={() => setShowAgreementModal(true)} 
+                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 text-sm font-medium flex items-center gap-1"
+                >
+                    <DocumentTextIcon className="w-4 h-4" /> Agreement with BIGYAPON
+                </button>
+            </dd>
+          </div>
+
           {(user.role === 'livetv' || user.role === 'banneragency') && (
              <div className="py-3 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 px-4 sm:px-6">
                 <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Daily Payouts</dt>
@@ -527,6 +529,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
         </dl>
       </div>
       {showDailyPayoutModal && <DailyPayoutRequestModal user={user} onClose={() => setShowDailyPayoutModal(false)} platformSettings={platformSettings} />}
+      {showAgreementModal && <AgreementModal user={user} onClose={() => setShowAgreementModal(false)} />}
     </div>
   );
 };

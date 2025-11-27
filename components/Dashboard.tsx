@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, View, CollaborationStatusItem, CollabRequestStatus, CampaignApplication, CollaborationRequest, PlatformSettings, PlatformBanner, AdSlotRequest, BannerAdBookingRequest } from '../types';
 import { InfluencersIcon, SparklesIcon, CollabIcon, SettingsIcon, AdminIcon as CompletedIcon } from './Icons';
@@ -246,12 +247,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, setActiveView, platformSett
     return (
         <div className="space-y-6">
             
-            {banners.length > 0 && (
-                <a href={banners[0].targetUrl} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-shadow">
-                    <img src={banners[0].imageUrl} alt={banners[0].title} className="w-full h-auto object-cover max-h-32 sm:max-h-48" />
-                </a>
-            )}
-
             <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-gray-100">Welcome back, {user.name}!</h1>
                 <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm sm:text-base">Here's a snapshot of your BIGYAPON dashboard.</p>

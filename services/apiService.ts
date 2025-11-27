@@ -14,7 +14,8 @@ import {
     Post, Comment, Partner, Leaderboard, Boost,
     PayoutRequest, RefundRequest, DailyPayoutRequest,
     Transaction, Dispute, KycDetails, CreatorVerificationDetails,
-    UserRole, AppNotification, QuickReply, MembershipPlan, StaffPermission
+    UserRole, AppNotification, QuickReply, MembershipPlan, StaffPermission,
+    PlatformBanner
 } from '../types';
 
 // Helper to upload file
@@ -72,17 +73,30 @@ export const apiService = {
         await updateDoc(doc(db, 'users', userId), { fcmToken: token });
     },
     adminChangePassword: async (userId: string, newPassword: string) => {
-        const response = await fetch(`${BACKEND_URL}/admin-change-password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, newPassword })
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Failed to update password');
+        try {
+            const response = await fetch(`${BACKEND_URL}/admin-change-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, newPassword })
+            });
+            
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to update password');
+                }
+                return data;
+            } else {
+                // Handle non-JSON response (likely HTML 404/500)
+                const text = await response.text();
+                console.error("Non-JSON response from backend:", text);
+                throw new Error("Backend function not found or failed. Please ensure 'functions' are deployed to Firebase.");
+            }
+        } catch (error: any) {
+            console.error("adminChangePassword error:", error);
+            throw error; 
         }
-        return await response.json();
     },
 
     // ... Platform Settings ...

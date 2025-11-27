@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { User, Transaction, PayoutRequest, AnyCollaboration, UserRole, MembershipPlan } from '../types';
+
+import React, { useState, useMemo } from 'react';
+import { User, Transaction, PayoutRequest, AnyCollaboration, UserRole } from '../types';
 import { apiService } from '../services/apiService';
 import { authService } from '../services/authService';
 import UserDetailView from './UserDetailView';
-import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon, CheckBadgeIcon, ExclamationTriangleIcon, KeyIcon, EnvelopeIcon } from './Icons';
+import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon, CheckBadgeIcon, KeyIcon, EnvelopeIcon, PencilIcon } from './Icons';
 
 interface UserManagementPanelProps {
     allUsers: User[];
@@ -16,8 +17,10 @@ interface UserManagementPanelProps {
 const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = ({ user, onClose }) => {
     const [activeTab, setActiveTab] = useState<'reset' | 'manual'>('reset');
     const [newPassword, setNewPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [copied, setCopied] = useState(false);
 
     const handleSendReset = async () => {
         setIsLoading(true);
@@ -32,6 +35,16 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
         }
     };
 
+    const generatePassword = () => {
+        const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        let pass = "";
+        for (let i = 0; i < 12; i++) {
+            pass += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        setNewPassword(pass);
+        setShowPassword(true); 
+    };
+
     const handleManualUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword.length < 6) {
@@ -44,12 +57,18 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
         try {
             await apiService.adminChangePassword(user.id, newPassword);
             setMessage({ type: 'success', text: 'Password updated successfully.' });
-            setNewPassword('');
         } catch (err: any) {
+            console.error(err);
             setMessage({ type: 'error', text: err.message || 'Failed to update password.' });
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(newPassword);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     return (
@@ -65,13 +84,13 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
                 <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
                     <button 
                         onClick={() => { setActiveTab('reset'); setMessage(null); }}
-                        className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'reset' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                        className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'reset' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
                     >
                         Send Reset Link
                     </button>
                     <button 
                         onClick={() => { setActiveTab('manual'); setMessage(null); }}
-                        className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'manual' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                        className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'manual' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
                     >
                         Set Manually
                     </button>
@@ -102,24 +121,52 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
                 {activeTab === 'manual' && (
                     <form onSubmit={handleManualUpdate} className="space-y-4">
                         <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Manually override the user's password. Use this only if the user cannot access their email.
+                            Manually override the user's password. Use this if the user cannot access their email.
                         </p>
-                        <div>
+                        
+                        <div className="relative">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">New Password</label>
                             <input 
-                                type="text" 
+                                type={showPassword ? "text" : "password"}
                                 value={newPassword}
                                 onChange={e => setNewPassword(e.target.value)}
                                 placeholder="Enter new password"
-                                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white pr-16"
                                 required
                                 minLength={6}
                             />
+                            <button 
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-2 top-8 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400"
+                            >
+                                {showPassword ? 'Hide' : 'Show'}
+                            </button>
                         </div>
+
+                        <div className="flex justify-between gap-2">
+                            <button 
+                                type="button"
+                                onClick={generatePassword}
+                                className="flex-1 py-2 px-3 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            >
+                                Generate Random
+                            </button>
+                            {newPassword && (
+                                <button 
+                                    type="button"
+                                    onClick={copyToClipboard}
+                                    className={`py-2 px-3 text-sm text-gray-700 rounded-lg transition-colors flex-1 ${copied ? 'bg-green-200 hover:bg-green-300' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'}`}
+                                >
+                                    {copied ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
+                        </div>
+
                         <button 
                             type="submit"
-                            disabled={isLoading || newPassword.length < 6}
-                            className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                            disabled={isLoading}
+                            className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
                         >
                             <KeyIcon className="w-4 h-4" />
                             {isLoading ? 'Updating...' : 'Update Password'}
@@ -132,176 +179,111 @@ const PasswordManagementModal: React.FC<{ user: User; onClose: () => void }> = (
 };
 
 const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onUpdate, transactions, payouts, collabs }) => {
-    const [searchTerm, setSearchTerm] = useState('');
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    
-    // Confirmation Modal State
-    const [confirmation, setConfirmation] = useState<{ type: 'block' | 'delete', user: User } | null>(null);
-    
-    // Password Modal State
     const [passwordModalUser, setPasswordModalUser] = useState<User | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
 
-    // Create User State
-    const [newUser, setNewUser] = useState({
-        name: '',
-        email: '',
-        role: 'brand' as UserRole,
-        mobileNumber: '',
-        password: '',
-        membershipPlan: 'free' as MembershipPlan
-    });
-
-    const filteredUsers = allUsers.filter(u => 
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.piNumber && u.piNumber.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-
-    const handleCreateUser = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsLoading(true);
-        try {
-            await authService.createUserByAdmin(
-                newUser.email,
-                newUser.password,
-                newUser.role,
-                newUser.name,
-                newUser.mobileNumber,
-                newUser.membershipPlan
-            );
-            alert('User created successfully!');
-            setIsCreateModalOpen(false);
-            setNewUser({ name: '', email: '', role: 'brand', mobileNumber: '', password: '', membershipPlan: 'free' });
-            onUpdate();
-        } catch (error: any) {
-            alert(`Failed to create user: ${error.message}`);
-        } finally {
-            setIsLoading(false);
+    const filteredUsers = useMemo(() => {
+        let filtered = allUsers;
+        if (roleFilter !== 'all') {
+            filtered = filtered.filter(u => u.role === roleFilter);
         }
-    };
+        if (searchQuery) {
+            const lower = searchQuery.toLowerCase();
+            filtered = filtered.filter(u => 
+                u.name.toLowerCase().includes(lower) || 
+                u.email.toLowerCase().includes(lower) || 
+                (u.companyName && u.companyName.toLowerCase().includes(lower)) ||
+                (u.piNumber && u.piNumber.toLowerCase().includes(lower))
+            );
+        }
+        return filtered;
+    }, [allUsers, roleFilter, searchQuery]);
 
-    const requestToggleBlock = (user: User) => {
-        setConfirmation({ type: 'block', user });
-    };
-
-    const requestDelete = (user: User) => {
-        setConfirmation({ type: 'delete', user });
-    };
-
-    const executeConfirmation = async () => {
-        if (!confirmation) return;
-        const { type, user } = confirmation;
-        
-        setIsLoading(true); 
-        
-        try {
-            if (type === 'block') {
-                 await apiService.updateUser(user.id, { isBlocked: !user.isBlocked });
-            } else if (type === 'delete') {
-                 // Soft delete by blocking and renaming
-                 await apiService.updateUser(user.id, { isBlocked: true, name: `[DELETED] ${user.name}` }); 
-            }
+    const handleBlockToggle = async (user: User) => {
+        if (window.confirm(`Are you sure you want to ${user.isBlocked ? 'unblock' : 'block'} this user?`)) {
+            await apiService.updateUser(user.id, { isBlocked: !user.isBlocked });
             onUpdate();
-        } catch (error) {
-            console.error("Action failed:", error);
-            alert("Action failed. Please try again.");
-        } finally {
-            setIsLoading(false);
-            setConfirmation(null);
         }
     };
 
     return (
-        <div className="p-4 sm:p-6 h-full flex flex-col">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <div className="p-6 h-full flex flex-col">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Management</h2>
-                <button onClick={() => setIsCreateModalOpen(true)} className="w-full sm:w-auto px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors">
-                    + Create User
-                </button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="relative flex-grow sm:flex-grow-0">
+                        <input 
+                            type="text" 
+                            placeholder="Search users..." 
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="w-full sm:w-64 pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                        <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    </div>
+                    <select 
+                        value={roleFilter} 
+                        onChange={e => setRoleFilter(e.target.value as any)} 
+                        className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    >
+                        <option value="all">All Roles</option>
+                        <option value="brand">Brand</option>
+                        <option value="influencer">Influencer</option>
+                        <option value="livetv">Live TV</option>
+                        <option value="banneragency">Banner Agency</option>
+                        <option value="staff">Staff</option>
+                    </select>
+                </div>
             </div>
 
-            <div className="mb-4 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><SearchIcon className="h-5 w-5 text-gray-400" /></div>
-                <input 
-                    type="text" 
-                    placeholder="Search users by name, email, or ID..." 
-                    className="pl-10 w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-            </div>
-
-            <div className="flex-1 overflow-hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 flex flex-col">
-                <div className="overflow-x-auto overflow-y-auto flex-1">
-                    <table className="min-w-[1000px] w-full text-left border-collapse">
-                        <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600 sticky top-0 z-10 shadow-sm">
-                            <tr>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-32">User ID</th>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-48">User Name</th>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-32">User Type</th>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-48">Email ID</th>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-32">Mobile Number</th>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap w-32">Membership</th>
-                                <th className="p-4 font-medium text-gray-500 dark:text-gray-300 whitespace-nowrap text-center w-48">Action</th>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden flex-1 flex flex-col">
+                <div className="overflow-auto flex-1">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0 z-10">
+                            <tr className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase border-b dark:border-gray-700">
+                                <th className="p-4">User</th>
+                                <th className="p-4">Role</th>
+                                <th className="p-4">Status</th>
+                                <th className="p-4">KYC</th>
+                                <th className="p-4 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                             {filteredUsers.map(user => (
-                                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="p-4 font-mono text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{user.piNumber || 'N/A'}</td>
-                                    <td className="p-4 font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">
-                                        <div className="flex items-center gap-2">
-                                            <img src={user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
-                                            <span className="truncate max-w-[150px]" title={user.name}>{user.name}</span>
-                                            {user.kycStatus === 'approved' && <CheckBadgeIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />}
+                                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                    <td className="p-4">
+                                        <div className="flex items-center gap-3">
+                                            <img src={user.avatar} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200" />
+                                            <div>
+                                                <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
+                                                <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
+                                                <div className="text-xs text-gray-400 font-mono">{user.piNumber}</div>
+                                            </div>
                                         </div>
                                     </td>
-                                    <td className="p-4 capitalize text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                            user.role === 'staff' ? 'bg-purple-100 text-purple-800' : 
-                                            user.role === 'brand' ? 'bg-blue-100 text-blue-800' : 
-                                            'bg-green-100 text-green-800'
-                                        }`}>
-                                            {user.role}
+                                    <td className="p-4 capitalize text-gray-600 dark:text-gray-300">{user.role}</td>
+                                    <td className="p-4">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${user.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                                            {user.isBlocked ? 'Blocked' : 'Active'}
                                         </span>
                                     </td>
-                                    <td className="p-4 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap truncate max-w-[200px]" title={user.email}>{user.email}</td>
-                                    <td className="p-4 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">{user.mobileNumber || '-'}</td>
-                                    <td className="p-4 text-sm whitespace-nowrap">
-                                        <span className={`px-2 py-1 rounded text-xs font-semibold ${user.membership?.isActive ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-800'}`}>
-                                            {user.membership?.plan.replace(/_/g, ' ') || 'Free'}
-                                        </span>
+                                    <td className="p-4">
+                                        {user.kycStatus === 'approved' ? <CheckBadgeIcon className="w-5 h-5 text-green-500" /> : 
+                                         user.kycStatus === 'pending' ? <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Pending</span> :
+                                         <span className="text-gray-400 text-xs">-</span>}
                                     </td>
-                                    <td className="p-4 text-center whitespace-nowrap">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <button 
-                                                onClick={() => setPasswordModalUser(user)} 
-                                                className="p-1.5 bg-yellow-50 text-yellow-600 rounded-md hover:bg-yellow-100 transition-colors" 
-                                                title="Manage Password"
-                                            >
+                                    <td className="p-4 text-right">
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={() => setSelectedUser(user)} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded dark:hover:bg-gray-700" title="View Details">
+                                                <PencilIcon className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => setPasswordModalUser(user)} className="p-1.5 text-indigo-500 hover:bg-indigo-50 rounded dark:hover:bg-indigo-900/30" title="Manage Password">
                                                 <KeyIcon className="w-4 h-4" />
                                             </button>
-                                            <button 
-                                                onClick={() => requestToggleBlock(user)} 
-                                                className={`p-1.5 rounded-md transition-colors ${user.isBlocked ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-green-100 text-green-600 hover:bg-green-200'}`} 
-                                                title={user.isBlocked ? 'Unblock User' : 'Block User'}
-                                            >
-                                                {user.isBlocked ? <LockClosedIcon className="w-4 h-4" /> : <LockOpenIcon className="w-4 h-4" />}
-                                            </button>
-                                            <button 
-                                                onClick={() => requestDelete(user)} 
-                                                className="p-1.5 bg-gray-100 text-gray-500 rounded-md hover:bg-red-100 hover:text-red-600 transition-colors" 
-                                                title="Delete User"
-                                            >
-                                                <TrashIcon className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={() => setSelectedUser(user)} 
-                                                className="text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-md shadow-sm transition-colors"
-                                            >
-                                                View Details
+                                            <button onClick={() => handleBlockToggle(user)} className={`p-1.5 rounded ${user.isBlocked ? 'text-green-600 hover:bg-green-50' : 'text-red-600 hover:bg-red-50'}`} title={user.isBlocked ? 'Unblock' : 'Block'}>
+                                                {user.isBlocked ? <LockOpenIcon className="w-4 h-4" /> : <LockClosedIcon className="w-4 h-4" />}
                                             </button>
                                         </div>
                                     </td>
@@ -309,10 +291,12 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onU
                             ))}
                         </tbody>
                     </table>
+                    {filteredUsers.length === 0 && (
+                        <div className="p-8 text-center text-gray-500 dark:text-gray-400">No users found matching your criteria.</div>
+                    )}
                 </div>
             </div>
 
-            {/* User Detail Modal */}
             {selectedUser && (
                 <UserDetailView 
                     user={selectedUser} 
@@ -324,113 +308,11 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ allUsers, onU
                 />
             )}
 
-            {/* Password Management Modal */}
             {passwordModalUser && (
                 <PasswordManagementModal 
-                    user={passwordModalUser}
-                    onClose={() => setPasswordModalUser(null)}
+                    user={passwordModalUser} 
+                    onClose={() => setPasswordModalUser(null)} 
                 />
-            )}
-
-            {/* Create User Modal */}
-            {isCreateModalOpen && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
-                        <h3 className="text-xl font-bold mb-4 dark:text-white">Create New User</h3>
-                        <form onSubmit={handleCreateUser} className="space-y-3">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
-                                <input type="text" placeholder="John Doe" required value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email ID</label>
-                                <input type="email" placeholder="john@example.com" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
-                                <input type="password" placeholder="******" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mobile Number</label>
-                                <input type="tel" placeholder="10-digit number" required value={newUser.mobileNumber} onChange={e => setNewUser({...newUser, mobileNumber: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">User Type</label>
-                                <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white">
-                                    <option value="brand">Brand</option>
-                                    <option value="influencer">Influencer</option>
-                                    <option value="livetv">Live TV</option>
-                                    <option value="banneragency">Banner Agency</option>
-                                    <option value="staff">Staff</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Membership Plan</label>
-                                <select value={newUser.membershipPlan} onChange={e => setNewUser({...newUser, membershipPlan: e.target.value as MembershipPlan})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white">
-                                    <option value="free">Free</option>
-                                    <option value="basic">Basic</option>
-                                    <option value="pro">Pro</option>
-                                    <option value="premium">Premium</option>
-                                    <option value="pro_10">Pro 10</option>
-                                    <option value="pro_20">Pro 20</option>
-                                    <option value="pro_unlimited">Pro Unlimited</option>
-                                </select>
-                            </div>
-                            <div className="flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded dark:text-gray-300 dark:hover:bg-gray-700">Cancel</button>
-                                <button type="submit" disabled={isLoading} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">{isLoading ? 'Creating...' : 'Create User'}</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Confirmation Modal */}
-            {confirmation && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[70] p-4" onClick={() => setConfirmation(null)}>
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-6 w-full max-w-sm transform transition-all scale-100" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center gap-4 mb-4">
-                            <div className={`p-3 rounded-full ${confirmation.type === 'delete' || (confirmation.type === 'block' && !confirmation.user.isBlocked) ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                                {confirmation.type === 'delete' ? <TrashIcon className="w-6 h-6" /> : <ExclamationTriangleIcon className="w-6 h-6" />}
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                                    {confirmation.type === 'delete' ? 'Delete User?' : (confirmation.user.isBlocked ? 'Unblock User?' : 'Block User?')}
-                                </h3>
-                            </div>
-                        </div>
-                        
-                        <p className="text-gray-600 dark:text-gray-300 mb-6">
-                            {confirmation.type === 'delete' 
-                                ? `Are you sure you want to delete ${confirmation.user.name}? This will permanently disable access.`
-                                : confirmation.user.isBlocked
-                                    ? `Are you sure you want to unblock ${confirmation.user.name}? They will regain access immediately.`
-                                    : `Are you sure you want to block ${confirmation.user.name}? They will lose access to the platform.`
-                            }
-                        </p>
-
-                        <div className="flex justify-end gap-3">
-                            <button 
-                                onClick={() => setConfirmation(null)}
-                                disabled={isLoading}
-                                className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={executeConfirmation}
-                                disabled={isLoading}
-                                className={`px-4 py-2 text-white font-semibold rounded-lg shadow-md transition-colors disabled:opacity-50 ${
-                                    confirmation.type === 'delete' || (confirmation.type === 'block' && !confirmation.user.isBlocked)
-                                    ? 'bg-red-600 hover:bg-red-700' 
-                                    : 'bg-indigo-600 hover:bg-indigo-700'
-                                }`}
-                            >
-                                {isLoading ? 'Processing...' : 'Confirm'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
             )}
         </div>
     );

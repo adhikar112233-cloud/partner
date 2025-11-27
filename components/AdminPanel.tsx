@@ -62,27 +62,95 @@ const toJsDate = (ts: any): Date | undefined => {
 
 type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands' | 'leaderboards';
 
+// --- Reusable Confirmation Modal for Verification Actions ---
+interface VerificationActionConfirmModalProps {
+    isOpen: boolean;
+    action: 'approved' | 'rejected';
+    userName: string;
+    onConfirm: (reason?: string) => void;
+    onCancel: () => void;
+    isProcessing: boolean;
+}
+
+const VerificationActionConfirmModal: React.FC<VerificationActionConfirmModalProps> = ({ isOpen, action, userName, onConfirm, onCancel, isProcessing }) => {
+    const [reason, setReason] = useState('');
+    
+    // Focus textarea on open if rejected
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    useEffect(() => {
+        if (isOpen && action === 'rejected') {
+            setTimeout(() => textareaRef.current?.focus(), 100);
+        }
+    }, [isOpen, action]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[80] p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all scale-100">
+                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 capitalize flex items-center gap-2">
+                    {action === 'approved' ? (
+                        <CheckBadgeIcon className="w-6 h-6 text-green-500" />
+                    ) : (
+                        <ExclamationTriangleIcon className="w-6 h-6 text-red-500" />
+                    )}
+                    Confirm {action === 'approved' ? 'Approval' : 'Rejection'}
+                </h3>
+                <p className="mt-4 text-gray-600 dark:text-gray-300">
+                    Are you sure you want to <strong>{action === 'approved' ? 'approve' : 'reject'}</strong> the verification request for <strong>{userName}</strong>?
+                </p>
+                
+                {action === 'rejected' && (
+                    <div className="mt-4">
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Reason for Rejection <span className="text-red-500">*</span></label>
+                        <textarea 
+                            ref={textareaRef}
+                            value={reason} 
+                            onChange={(e) => setReason(e.target.value)}
+                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-none"
+                            rows={3}
+                            placeholder="e.g., Document blurry, Name mismatch, Invalid ID..."
+                        />
+                    </div>
+                )}
+
+                <div className="flex justify-end gap-3 mt-6">
+                    <button 
+                        onClick={onCancel} 
+                        disabled={isProcessing} 
+                        className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 font-medium"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={() => onConfirm(reason)} 
+                        disabled={isProcessing || (action === 'rejected' && !reason.trim())}
+                        className={`px-6 py-2 text-white rounded-lg font-bold shadow-md transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                            action === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                        }`}
+                    >
+                        {isProcessing ? 'Processing...' : `Confirm ${action === 'approved' ? 'Approve' : 'Reject'}`}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- Creator Verification Components ---
 
 const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+    const [confirmAction, setConfirmAction] = useState<'approved' | 'rejected' | null>(null);
     const details = user.creatorVerificationDetails;
 
-    const handleAction = async (status: 'approved' | 'rejected') => {
-        let reason: string | undefined;
-        if (status === 'rejected') {
-            reason = prompt("Please provide a reason for rejection:");
-            if (!reason) return;
-        }
-
-        if (!window.confirm(`Are you sure you want to ${status} this verification request?`)) return;
-
+    const handleAction = async (status: 'approved' | 'rejected', reason?: string) => {
         setIsProcessing(true);
         try {
             await apiService.updateCreatorVerificationStatus(user.id, status, reason);
             onActionComplete();
+            setConfirmAction(null);
             onClose();
         } catch (error) {
             console.error(`Failed to ${status}`, error);
@@ -110,7 +178,7 @@ const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onAc
 
     return (
         <>
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[60] p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
                     <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
                         <div>
@@ -147,17 +215,29 @@ const CreatorVerificationModal: React.FC<{ user: User, onClose: () => void, onAc
                     </div>
 
                     <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-end gap-3 rounded-b-2xl">
-                        <button onClick={() => handleAction('rejected')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Reject</button>
-                        <button onClick={() => handleAction('approved')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Approve</button>
+                        <button onClick={() => setConfirmAction('rejected')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Reject</button>
+                        <button onClick={() => setConfirmAction('approved')} disabled={isProcessing} className="px-4 py-2 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Approve</button>
                     </div>
                 </div>
             </div>
+            
+            {/* Image Lightbox */}
             {zoomedImage && (
-                <div className="fixed inset-0 z-[60] bg-black bg-opacity-95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
+                <div className="fixed inset-0 z-[70] bg-black bg-opacity-95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
                     <img src={zoomedImage} className="max-w-full max-h-[90vh] rounded" />
                     <button className="absolute top-6 right-6 text-white text-4xl">&times;</button>
                 </div>
             )}
+
+            {/* Confirmation Dialog */}
+            <VerificationActionConfirmModal 
+                isOpen={!!confirmAction}
+                action={confirmAction!}
+                userName={user.name}
+                isProcessing={isProcessing}
+                onCancel={() => setConfirmAction(null)}
+                onConfirm={(reason) => handleAction(confirmAction!, reason)}
+            />
         </>
     );
 };
@@ -239,26 +319,20 @@ const CreatorVerificationPanel: React.FC<{ onUpdate: () => void }> = ({ onUpdate
 };
 
 
-// --- Existing Components (KycDetailModal, KycPanel, etc.) remain unchanged ---
+// --- KYC Components ---
 
 const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComplete: () => void }> = ({ user, onClose, onActionComplete }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+    const [confirmAction, setConfirmAction] = useState<'approved' | 'rejected' | null>(null);
     const { kycDetails } = user;
 
-    const handleAction = async (status: 'approved' | 'rejected') => {
-        let reason: string | undefined;
-        if (status === 'rejected') {
-            reason = prompt("Please provide a reason for rejection:");
-            if (!reason) return; 
-        }
-
-        if (!window.confirm(`Are you sure you want to ${status} this KYC submission?`)) return;
-
+    const handleAction = async (status: 'approved' | 'rejected', reason?: string) => {
         setIsProcessing(true);
         try {
             await apiService.updateKycStatus(user.id, status, reason);
             onActionComplete();
+            setConfirmAction(null);
             onClose();
         } catch (error) {
             console.error(`Failed to ${status} KYC`, error);
@@ -272,7 +346,7 @@ const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComple
 
     return (
         <>
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[60] p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
                     <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 rounded-t-2xl">
                         <div>
@@ -344,10 +418,10 @@ const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComple
                     <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-between items-center rounded-b-2xl">
                         <div className="text-sm text-gray-500">Action required for verification.</div>
                         <div className="flex gap-3">
-                            <button onClick={() => handleAction('rejected')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 shadow-sm">
+                            <button onClick={() => setConfirmAction('rejected')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 shadow-sm">
                                 ✕ Reject
                             </button>
-                            <button onClick={() => handleAction('approved')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm">
+                            <button onClick={() => setConfirmAction('approved')} disabled={isProcessing} className="px-6 py-2.5 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm">
                                 ✓ Approve
                             </button>
                         </div>
@@ -357,12 +431,22 @@ const KycDetailModal: React.FC<{ user: User, onClose: () => void, onActionComple
 
             {/* Lightbox */}
             {zoomedImage && (
-                <div className="fixed inset-0 z-[60] bg-black bg-opacity-95 flex items-center justify-center p-4 animate-fade-in-down" onClick={() => setZoomedImage(null)}>
+                <div className="fixed inset-0 z-[70] bg-black bg-opacity-95 flex items-center justify-center p-4 animate-fade-in-down" onClick={() => setZoomedImage(null)}>
                     <img src={zoomedImage} className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" alt="Zoomed Document" />
                     <button className="absolute top-6 right-6 text-white text-4xl hover:text-gray-300">&times;</button>
                     <p className="absolute bottom-6 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded-full">Click anywhere to close</p>
                 </div>
             )}
+
+            {/* Confirmation Dialog */}
+            <VerificationActionConfirmModal 
+                isOpen={!!confirmAction}
+                action={confirmAction!}
+                userName={user.name}
+                isProcessing={isProcessing}
+                onCancel={() => setConfirmAction(null)}
+                onConfirm={(reason) => handleAction(confirmAction!, reason)}
+            />
         </>
     );
 };

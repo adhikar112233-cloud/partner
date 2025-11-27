@@ -79,7 +79,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-end z-[60]" onClick={onClose}>
-            <div className="w-full max-w-5xl bg-white dark:bg-gray-800 h-full overflow-y-auto shadow-2xl flex flex-col transition-all duration-300" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-6xl bg-white dark:bg-gray-800 h-full overflow-y-auto shadow-2xl flex flex-col transition-all duration-300" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="p-6 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                     <div className="flex justify-between items-start">
@@ -138,7 +138,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                     )}
 
                     {activeTab === 'financials' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                             <div>
                                 <h3 className="font-bold text-lg mb-3 text-gray-800 dark:text-white">Payments Made (Transactions)</h3>
                                 <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -146,21 +146,23 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                                                 <tr>
-                                                    <th className="p-3 font-semibold">Date</th>
-                                                    <th className="p-3 font-semibold">Amount</th>
-                                                    <th className="p-3 font-semibold">Status</th>
-                                                    <th className="p-3 font-semibold">Description</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Date</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Tx Ref ID</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Collab ID</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Amount</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                                 {userTransactions.map(t => (
                                                     <tr key={t.transactionId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                                         <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-400">{toJsDate(t.timestamp)?.toLocaleDateString()}</td>
-                                                        <td className="p-3 font-bold text-red-600 dark:text-red-400">-₹{t.amount.toLocaleString()}</td>
+                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{t.transactionId}</td>
+                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{t.collabId || '-'}</td>
+                                                        <td className="p-3 font-bold text-red-600 dark:text-red-400 whitespace-nowrap">-₹{t.amount.toLocaleString()}</td>
                                                         <td className="p-3">
                                                             <span className={`px-2 py-0.5 rounded-full text-xs capitalize ${t.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{t.status}</span>
                                                         </td>
-                                                        <td className="p-3 text-gray-600 dark:text-gray-400 max-w-[150px] truncate" title={t.description}>{t.description}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -176,21 +178,23 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                                                 <tr>
-                                                    <th className="p-3 font-semibold">Date</th>
-                                                    <th className="p-3 font-semibold">Amount</th>
-                                                    <th className="p-3 font-semibold">Status</th>
-                                                    <th className="p-3 font-semibold">Details</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Date</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Payout ID</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Collab ID</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Amount</th>
+                                                    <th className="p-3 font-semibold whitespace-nowrap">Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                                 {userPayouts.map(p => (
                                                     <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                                         <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-400">{toJsDate(p.timestamp)?.toLocaleDateString()}</td>
-                                                        <td className="p-3 font-bold text-green-600 dark:text-green-400">+₹{p.amount.toLocaleString()}</td>
+                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{p.id}</td>
+                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{p.collabId || '-'}</td>
+                                                        <td className="p-3 font-bold text-green-600 dark:text-green-400 whitespace-nowrap">+₹{p.amount.toLocaleString()}</td>
                                                         <td className="p-3">
                                                             <span className={`px-2 py-0.5 rounded-full text-xs capitalize ${p.status === 'completed' ? 'bg-green-100 text-green-800' : p.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'}`}>{p.status.replace('_', ' ')}</span>
                                                         </td>
-                                                        <td className="p-3 text-gray-600 dark:text-gray-400 max-w-[150px] truncate" title={p.collaborationTitle}>{p.collaborationTitle}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -231,21 +235,44 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, onClose, onUpdate
                     {activeTab === 'collabs' && (
                         <div>
                             <h3 className="font-bold text-lg mb-3">Collaboration History</h3>
-                            <ul className="space-y-2">
-                                {userCollabs.map(c => {
-                                    const title = 'title' in c ? c.title : ('campaignTitle' in c ? c.campaignTitle : ('campaignName' in c ? c.campaignName : 'Untitled'));
-                                    return (
-                                        <li key={c.id} className="p-3 border rounded bg-gray-50 dark:bg-gray-700/50">
-                                            <div className="flex justify-between">
-                                                <span className="font-semibold">{title}</span>
-                                                <span className="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded capitalize">{c.status.replace('_', ' ')}</span>
-                                            </div>
-                                            <div className="text-xs text-gray-500 mt-1">ID: {c.collabId || c.id}</div>
-                                        </li>
-                                    )
-                                })}
-                            </ul>
-                            {userCollabs.length === 0 && <p className="text-gray-500 italic">No collaborations yet.</p>}
+                            <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                            <tr>
+                                                <th className="p-3 font-semibold whitespace-nowrap">Date</th>
+                                                <th className="p-3 font-semibold whitespace-nowrap">Collab ID</th>
+                                                <th className="p-3 font-semibold">Title</th>
+                                                <th className="p-3 font-semibold">Type</th>
+                                                <th className="p-3 font-semibold">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                            {userCollabs.map(c => {
+                                                const title = 'title' in c ? c.title : ('campaignTitle' in c ? c.campaignTitle : ('campaignName' in c ? c.campaignName : 'Untitled'));
+                                                let type = 'Other';
+                                                if ('campaignId' in c) type = 'Campaign';
+                                                else if ('influencerId' in c) type = 'Direct';
+                                                else if ('liveTvId' in c) type = 'Live TV';
+                                                else if ('agencyId' in c) type = 'Banner Ad';
+
+                                                return (
+                                                    <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                        <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-400">{toJsDate(c.timestamp)?.toLocaleDateString()}</td>
+                                                        <td className="p-3 font-mono text-xs text-gray-500 select-all">{c.collabId || c.id}</td>
+                                                        <td className="p-3 font-medium text-gray-800 dark:text-gray-200">{title}</td>
+                                                        <td className="p-3 text-xs text-gray-500">{type}</td>
+                                                        <td className="p-3">
+                                                            <span className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs capitalize">{c.status.replace('_', ' ')}</span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {userCollabs.length === 0 && <p className="p-4 text-center text-gray-500 italic">No collaborations yet.</p>}
+                            </div>
                         </div>
                     )}
 

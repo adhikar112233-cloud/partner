@@ -793,9 +793,25 @@ const App: React.FC = () => {
               ))}
             </div>
             {filteredInfluencers.length === 0 && !isLoading && (
-                <div className="text-center py-20">
+                <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
                     <p className="text-gray-500 dark:text-gray-400 text-lg">No influencers found matching your criteria.</p>
-                    <button onClick={() => { setSearchQuery(''); handleSearch(); }} className="mt-4 text-indigo-600 hover:underline">Clear Search</button>
+                    {searchQuery && (
+                        <button onClick={() => { setSearchQuery(''); handleSearch(); }} className="mt-4 text-indigo-600 hover:underline">Clear Search</button>
+                    )}
+                    <div className="mt-6 border-t pt-6 border-gray-100 dark:border-gray-700">
+                        <p className="text-sm text-gray-400 mb-3">Don't see any data?</p>
+                        <button 
+                            onClick={async () => { 
+                                setIsLoading(true); 
+                                await apiService.initializeFirestoreData(); 
+                                await refreshAllData(); 
+                                setIsLoading(false); 
+                            }} 
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow transition-colors text-sm font-medium"
+                        >
+                            Refresh & Load Data
+                        </button>
+                    </div>
                 </div>
             )}
             {hasMoreInfluencers && filteredInfluencers.length > 0 && (

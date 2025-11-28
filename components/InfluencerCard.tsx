@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { Influencer, ProfileData } from '../types';
-import { CollabIcon, MessagesIcon, InstagramIcon, YoutubeIcon, TiktokIcon, XIcon, SparklesIcon, CheckBadgeIcon } from './Icons';
+import { CollabIcon, MessagesIcon, InstagramIcon, YoutubeIcon, TiktokIcon, XIcon, SparklesIcon } from './Icons';
 
 interface InfluencerCardProps {
   influencer: Influencer;
@@ -58,10 +57,10 @@ const SocialLinks: React.FC<{ links: string }> = ({ links }) => {
 
 const InfluencerCard: React.FC<InfluencerCardProps> = ({ influencer, onStartChat, onSendCollabRequest, onViewProfile }) => {
   return (
-    <div className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden flex flex-col transition-all duration-300 transform hover:-translate-y-1 ${influencer.isBoosted ? 'ring-2 ring-indigo-400 dark:ring-indigo-600' : ''}`}>
+    <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden transform hover:-translate-y-1 transition-transform duration-300 flex flex-col">
       {influencer.isBoosted && (
-        <div className="absolute top-3 right-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center shadow-md z-10 animate-pulse">
-          <SparklesIcon className="w-3 h-3 mr-1" /> Boosted
+        <div className="absolute top-3 right-3 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full flex items-center shadow-md z-10">
+          <SparklesIcon className="w-4 h-4 mr-1" /> Boosted
         </div>
       )}
       <div className="p-6 flex-grow flex flex-col">
@@ -80,20 +79,11 @@ const InfluencerCard: React.FC<InfluencerCardProps> = ({ influencer, onStartChat
             <img src={influencer.avatar} alt={influencer.name} className="w-16 h-16 rounded-full object-cover" />
           </button>
           <div>
-            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-1.5 flex-wrap">
-                {influencer.name}
-                {influencer.isVerified ? (
-                    <span title="Verified Creator"><CheckBadgeIcon className="w-5 h-5 text-blue-500" /></span>
-                ) : (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400 border border-gray-300 dark:border-gray-600 uppercase tracking-wide">
-                        Unverified
-                    </span>
-                )}
-            </h3>
+            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">{influencer.name}</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">@{influencer.handle}</p>
           </div>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-300 mt-4 flex-grow line-clamp-3">{influencer.bio}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mt-4 flex-grow">{influencer.bio}</p>
         
         {influencer.socialMediaLinks && <SocialLinks links={influencer.socialMediaLinks} />}
         
@@ -115,7 +105,7 @@ const InfluencerCard: React.FC<InfluencerCardProps> = ({ influencer, onStartChat
                 className="w-full flex items-center justify-center px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-all duration-300"
             >
                 <CollabIcon className="w-5 h-5 mr-2" />
-                Request
+                Send Request
             </button>
         </div>
       </div>

@@ -1,37 +1,42 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd } from '../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
 import { apiService } from '../services/apiService';
 import PostBannerAdModal from './PostBannerAdModal';
-import { SparklesIcon, TrashIcon, MessagesIcon, EyeIcon } from './Icons';
+import { Timestamp } from 'firebase/firestore';
 import CashfreeModal from './PhonePeModal';
+import DisputeModal from './DisputeModal';
+import { TrashIcon, MessagesIcon, EyeIcon, SparklesIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
+import CancellationPenaltyModal from './CancellationPenaltyModal';
 
-interface AdBookingsPageProps {
-    user: User; // The Banner Agency user
+type AdRequest = (AdSlotRequest & { type: 'Live TV' }) | (BannerAdBookingRequest & { type: 'Banner Ad' });
+
+interface MyAdBookingsPageProps {
+    user: User; // The logged-in brand
     platformSettings: PlatformSettings;
     onStartChat: (participant: ConversationParticipant) => void;
-    onInitiatePayout: (collab: BannerAdBookingRequest) => void;
+    onInitiateRefund: (collab: BannerAdBookingRequest | AdSlotRequest) => void;
 }
 
 const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) => {
     const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize whitespace-nowrap";
     const statusMap: Record<AdBookingStatus, { text: string; classes: string }> = {
-        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100" },
-        influencer_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" },
-        pending_approval: { text: "Pending Approval", classes: "text-yellow-800 bg-yellow-100" },
-        rejected: { text: "Rejected", classes: "text-red-800 bg-red-100" },
-        agency_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100" },
-        brand_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100" },
-        agreement_reached: { text: "Agreement Reached", classes: "text-green-800 bg-green-100" },
-        in_progress: { text: "In Progress", classes: "text-cyan-800 bg-cyan-100" },
-        work_submitted: { text: "Work Submitted", classes: "text-indigo-800 bg-indigo-100" },
-        completed: { text: "Completed", classes: "text-gray-800 bg-gray-100" },
-        disputed: { text: "Dispute in Review", classes: "text-orange-800 bg-orange-100" },
-        brand_decision_pending: { text: "Decision Pending", classes: "text-gray-800 bg-gray-100" },
-        refund_pending_admin_review: { text: "Refund Under Review", classes: "text-blue-800 bg-blue-100" },
+        pending: { text: "Pending", classes: "text-yellow-800 bg-yellow-100 dark:bg-yellow-900/50 dark:text-yellow-300" }, 
+        influencer_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300" }, 
+        pending_approval: { text: "Pending Approval", classes: "text-yellow-800 bg-yellow-100 dark:bg-yellow-900/50 dark:text-yellow-300" },
+        rejected: { text: "Rejected", classes: "text-red-800 bg-red-100 dark:bg-red-900/50 dark:text-red-300" },
+        agency_offer: { text: "Offer Received", classes: "text-purple-800 bg-purple-100 dark:bg-purple-900/50 dark:text-purple-300" },
+        brand_offer: { text: "Offer Sent", classes: "text-blue-800 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300" },
+        agreement_reached: { text: "Payment Pending", classes: "text-green-800 bg-green-100 dark:bg-green-900/50 dark:text-green-300" },
+        in_progress: { text: "In Progress", classes: "text-cyan-800 bg-cyan-100 dark:bg-cyan-900/50 dark:text-cyan-300" },
+        work_submitted: { text: "Work Submitted", classes: "text-indigo-800 bg-indigo-100 dark:bg-indigo-900/50 dark:text-indigo-300" },
+        completed: { text: "Completed", classes: "text-gray-800 bg-gray-100 dark:bg-gray-700 dark:text-gray-300" },
+        disputed: { text: "Dispute in Review", classes: "text-orange-800 bg-orange-100 dark:bg-orange-900/50 dark:text-orange-300" },
+        brand_decision_pending: { text: "Decision Pending", classes: "text-gray-800 bg-gray-100 dark:bg-gray-700 dark:text-gray-300" },
+        refund_pending_admin_review: { text: "Refund Under Review", classes: "text-blue-800 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300" },
     };
-    const { text, classes } = statusMap[status] || { text: status.replace(/_/g, ' '), classes: "text-gray-800 bg-gray-100" };
+    const { text, classes } = statusMap[status] || { text: status.replace(/_/g, ' '), classes: "text-gray-800 bg-gray-100 dark:bg-gray-700 dark:text-gray-300" };
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
@@ -42,7 +47,7 @@ const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
                 <h3 className="text-lg font-bold mb-4 dark:text-gray-100">{type === 'accept' ? 'Accept with Offer' : 'Send Counter Offer'}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  {type === 'recounter' && currentOffer ? `Brand's offer is ${currentOffer}. ` : ''}
+                  {type === 'recounter' && currentOffer ? `Agency's offer is ${currentOffer}. ` : ''}
                   Propose your fee for this ad booking.
                 </p>
                 <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g., 25000" className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
@@ -55,190 +60,194 @@ const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string
     );
 };
 
-const FilterButton: React.FC<{ label: string; filterType: 'pending' | 'processing' | 'completed'; count: number; activeFilter: string; onClick: (f: any) => void }> = ({ label, filterType, count, activeFilter, onClick }) => {
-    const isActive = activeFilter === filterType;
+const TabButton: React.FC<{
+    label: string;
+    count: number;
+    isActive: boolean;
+    onClick: () => void;
+}> = ({ label, count, isActive, onClick }) => {
     return (
         <button
-            onClick={() => onClick(filterType)}
-            className={`flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                isActive ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+            onClick={onClick}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex-1 justify-center ${
+                isActive ? 'bg-white text-indigo-700 shadow' : 'text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-700'
             }`}
         >
             {label}
-            <span className={`px-2 py-0.5 text-xs rounded-full ${isActive ? 'bg-white text-indigo-600' : 'bg-gray-200 text-gray-700'}`}>
+            <span className={`px-2 py-0.5 text-xs rounded-full ${isActive ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-200 text-gray-700'}`}>
                 {count}
             </span>
         </button>
     );
 };
 
-const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiatePayout }) => {
-    const [activeTab, setActiveTab] = useState<'requests' | 'my_ads'>('requests');
-    const [requests, setRequests] = useState<BannerAdBookingRequest[]>([]);
-    const [myAds, setMyAds] = useState<BannerAd[]>([]);
+
+export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund }) => {
+    const [requests, setRequests] = useState<AdRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [modal, setModal] = useState<'offer' | 'post_ad' | 'details' | null>(null);
-    const [selectedRequest, setSelectedRequest] = useState<BannerAdBookingRequest | null>(null);
-    const [filter, setFilter] = useState<'pending' | 'processing' | 'completed'>('pending');
-    const [boostingAd, setBoostingAd] = useState<BannerAd | null>(null);
+    const [payingRequest, setPayingRequest] = useState<AdRequest | null>(null);
+    const [disputingRequest, setDisputingRequest] = useState<AdRequest | null>(null);
+    const [modal, setModal] = useState<'offer' | 'dispute' | 'details' | null>(null);
+    const [selectedRequest, setSelectedRequest] = useState<AdRequest | null>(null);
+    const [confirmAction, setConfirmAction] = useState<{req: AdRequest, action: 'approve_payment'} | null>(null);
+    const [activeTab, setActiveTab] = useState<'pending' | 'inProgress' | 'completed'>('pending');
 
-    const fetchData = async () => {
+    const fetchRequests = async () => {
         setIsLoading(true);
         try {
-            const [reqs, ads] = await Promise.all([
-                apiService.getBannerAdBookingRequestsForAgency(user.id),
-                apiService.getBannerAdsForAgency(user.id)
+            const [tvRequests, bannerRequests] = await Promise.all([
+                apiService.getAdSlotRequestsForBrand(user.id),
+                apiService.getBannerAdBookingRequestsForBrand(user.id)
             ]);
-            setRequests(reqs);
-            setMyAds(ads);
+            const combined: AdRequest[] = [
+                ...tvRequests.map(r => ({...r, type: 'Live TV' as const})),
+                ...bannerRequests.map(r => ({...r, type: 'Banner Ad' as const}))
+            ];
+            combined.sort((a, b) => {
+                const timeB = (b.timestamp && typeof (b.timestamp as Timestamp).toMillis === 'function') ? (b.timestamp as Timestamp).toMillis() : 0;
+                const timeA = (a.timestamp && typeof (a.timestamp as Timestamp).toMillis === 'function') ? (a.timestamp as Timestamp).toMillis() : 0;
+                return timeB - timeA;
+            });
+            setRequests(combined);
         } catch (err) {
             console.error(err);
-            setError("Failed to fetch data.");
+            setError("Failed to fetch your ad bookings.");
         } finally {
             setIsLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchData();
+        fetchRequests();
     }, [user.id]);
 
-    const { pendingRequests, processingRequests, completedRequests } = useMemo(() => {
-        const pending: BannerAdBookingRequest[] = [];
-        const processing: BannerAdBookingRequest[] = [];
-        const completed: BannerAdBookingRequest[] = [];
+    const { pending, inProgress, completed } = useMemo(() => {
+        const pendingReqs: AdRequest[] = [];
+        const inProgressReqs: AdRequest[] = [];
+        const completedReqs: AdRequest[] = [];
 
-        const pendingStatuses: AdBookingStatus[] = ['pending_approval', 'agency_offer', 'brand_offer'];
-        const processingStatuses: AdBookingStatus[] = ['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review', 'agreement_reached'];
+        const pendingStatuses: AdBookingStatus[] = ['pending_approval', 'agency_offer', 'brand_offer', 'agreement_reached'];
+        const inProgressStatuses: AdBookingStatus[] = ['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'];
         const completedStatuses: AdBookingStatus[] = ['completed', 'rejected'];
 
         requests.forEach(req => {
             if (pendingStatuses.includes(req.status)) {
-                pending.push(req);
-            } else if (processingStatuses.includes(req.status)) {
-                processing.push(req);
+                pendingReqs.push(req);
+            } else if (inProgressStatuses.includes(req.status)) {
+                inProgressReqs.push(req);
             } else if (completedStatuses.includes(req.status)) {
-                completed.push(req);
+                completedReqs.push(req);
             }
         });
-
-        return { pendingRequests: pending, processingRequests: processing, completedRequests: completed };
+        return { pending: pendingReqs, inProgress: inProgressReqs, completed: completedReqs };
     }, [requests]);
 
-    const handleUpdate = async (reqId: string, data: Partial<BannerAdBookingRequest>) => {
-        setRequests(prev => prev.map(req => req.id === reqId ? { ...req, ...data } : req));
-        await apiService.updateBannerAdBookingRequest(reqId, data, user.id);
-        setModal(null);
-        setSelectedRequest(null);
+    const handleUpdate = async (req: AdRequest, data: Partial<AdSlotRequest | BannerAdBookingRequest>) => {
+        try {
+            if (req.type === 'Live TV') {
+                await apiService.updateAdSlotRequest(req.id, data, user.id);
+            } else {
+                await apiService.updateBannerAdBookingRequest(req.id, data, user.id);
+            }
+            fetchRequests();
+        } catch (e) {
+            console.error("Failed to update ad booking:", e);
+        } finally {
+            setModal(null);
+            setSelectedRequest(null);
+        }
     };
 
-    const handleAction = (req: BannerAdBookingRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'cancel_active' | 'view_details') => {
+    const handleDelete = async (req: AdRequest) => {
+        if(window.confirm("Are you sure you want to delete this from history? This cannot be undone.")) {
+            try {
+                const collectionName = req.type === 'Live TV' ? 'ad_slot_requests' : 'banner_ad_booking_requests';
+                await apiService.deleteCollaboration(req.id, collectionName);
+                fetchRequests();
+            } catch (err) {
+                console.error("Delete failed", err);
+            }
+        }
+    };
+
+    const handleAction = (req: AdRequest, action: 'message' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'pay_now' | 'work_complete' | 'work_incomplete' | 'brand_complete_disputed' | 'brand_request_refund' | 'view_details') => {
+        const agencyId = req.type === 'Live TV' ? req.liveTvId : req.agencyId;
+        const agencyName = req.type === 'Live TV' ? (req as AdSlotRequest).liveTvName : (req as BannerAdBookingRequest).agencyName;
+        const agencyAvatar = req.type === 'Live TV' ? (req as AdSlotRequest).liveTvAvatar : (req as BannerAdBookingRequest).agencyAvatar;
+
         setSelectedRequest(req);
+        
         switch(action) {
             case 'view_details':
                 setModal('details');
                 break;
             case 'message':
-                onStartChat({ id: req.brandId, name: req.brandName, avatar: req.brandAvatar, role: 'brand' });
+                onStartChat({ id: agencyId, name: agencyName, avatar: agencyAvatar, role: req.type === 'Live TV' ? 'livetv' : 'banneragency' });
                 break;
-            case 'accept_with_offer':
             case 'recounter_offer':
                 setModal('offer');
                 break;
-            case 'reject':
-            case 'cancel':
-                const reason = prompt("Reason for rejection/cancellation (optional):");
-                handleUpdate(req.id, { status: 'rejected', rejectionReason: reason || "Not specified" });
-                break;
             case 'accept_offer':
-                handleUpdate(req.id, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount });
+                handleUpdate(req, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount });
                 break;
-            case 'start_work':
-                handleUpdate(req.id, { workStatus: 'started' });
+            case 'reject_offer':
+                handleUpdate(req, { status: 'rejected', rejectionReason: 'Offer rejected by brand.' });
                 break;
-            case 'complete_work':
-                handleUpdate(req.id, { status: 'work_submitted' });
+            case 'pay_now':
+                setPayingRequest(req);
                 break;
-            case 'get_payment':
-                onInitiatePayout(req);
+            case 'work_complete':
+                handleUpdate(req, { status: 'completed' });
                 break;
-            case 'cancel_active':
-                const penalty = platformSettings.cancellationPenaltyAmount || 0;
-                if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
-                    setIsLoading(true);
-                    apiService.cancelCollaboration(user.id, req.id, 'banner_ad_booking_requests', 'Cancelled by Banner Agency.', penalty)
-                        .then(() => {
-                            fetchData(); 
-                        })
-                        .catch((err) => {
-                            console.error(err);
-                            alert("Failed to cancel collaboration. Please try again.");
-                        })
-                        .finally(() => setIsLoading(false));
-                }
+            case 'work_incomplete':
+                setDisputingRequest(req);
+                break;
+            case 'brand_complete_disputed':
+                setConfirmAction({ req, action: 'approve_payment' });
+                break;
+            case 'brand_request_refund':
+                onInitiateRefund(req);
                 break;
         }
     };
 
-    // Calculate Boost Price for Ads
-    const adBoostPrice = useMemo(() => {
-        const originalPrice = platformSettings.boostPrices.banner;
-        const discountSetting = platformSettings.discountSettings?.brandBannerBoost; // Assuming same setting used for agency ad boost
-        if (discountSetting?.isEnabled && discountSetting.percentage > 0) {
-            return Math.floor(originalPrice * (1 - discountSetting.percentage / 100));
-        }
-        return originalPrice;
-    }, [platformSettings]);
+    const executeConfirmAction = () => {
+        if (!confirmAction) return;
+        const { req } = confirmAction;
+        handleUpdate(req, { status: 'completed' });
+        setConfirmAction(null);
+    };
 
-    const renderRequestActions = (req: BannerAdBookingRequest) => {
-        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, disabled?: boolean, title?: string, icon?: any}[] = [];
-        const isEndDatePassed = new Date(req.endDate) < new Date();
-
+    const renderRequestActions = (req: AdRequest) => {
+        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, icon?: any}[] = [];
+        
         actions.push({ label: 'Details', action: 'view_details', style: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700', icon: <EyeIcon className="w-4 h-4" /> });
         actions.push({ label: 'Message', action: 'message', style: 'text-indigo-600 hover:bg-indigo-50', icon: <MessagesIcon className="w-4 h-4" /> });
 
         switch (req.status) {
-            case 'pending_approval':
-                actions.push({ label: 'Reject', action: 'reject', style: 'text-red-600 hover:bg-red-50' });
-                actions.push({ label: 'Accept & Offer', action: 'accept_with_offer', style: 'text-green-600 hover:bg-green-50' });
-                break;
-            case 'brand_offer':
-                actions.push({ label: 'Cancel', action: 'cancel', style: 'text-red-600 hover:bg-red-50' });
+            case 'agency_offer':
+                actions.push({ label: 'Reject', action: 'reject_offer', style: 'text-red-600 hover:bg-red-50' });
                 actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'agreement_reached':
-                 actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
-                 break;
-            case 'in_progress':
-                actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
-                if (req.paymentStatus === 'paid' && !req.workStatus) {
-                    actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
-                }
-                if (req.workStatus === 'started') {
-                    actions.push({ 
-                        label: 'Complete', 
-                        action: 'complete_work', 
-                        style: 'text-teal-600 hover:bg-teal-50 font-bold', 
-                        disabled: !isEndDatePassed,
-                        title: isEndDatePassed ? 'Mark as complete' : `Active until ${req.endDate}`
-                    });
-                }
+                actions.push({ label: `Pay Now`, action: 'pay_now', style: 'text-green-600 hover:bg-green-50 font-bold' });
                 break;
-            case 'completed':
-                 if (req.paymentStatus === 'paid') {
-                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
-                 }
-                 break;
+            case 'work_submitted':
+                actions.push({ label: 'Complete', action: 'work_complete', style: 'text-green-600 hover:bg-green-50' });
+                actions.push({ label: 'Dispute', action: 'work_incomplete', style: 'text-orange-600 hover:bg-orange-50' });
+                break;
+            case 'brand_decision_pending':
+                actions.push({ label: 'Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Approve', action: 'brand_complete_disputed', style: 'text-green-600 hover:bg-green-50' });
+                break;
         }
-
-        if (actions.length === 0) return null;
-
+        
         return (
             <div className="flex flex-wrap gap-2">
                 {actions.map(a => (
-                    <button key={a.label} onClick={() => handleAction(req, a.action)} disabled={a.disabled} title={a.title} className={`px-3 py-1 text-xs font-semibold rounded border border-gray-200 dark:border-gray-600 flex items-center gap-1 ${a.style} ${a.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <button key={a.label} onClick={() => handleAction(req, a.action)} className={`px-3 py-1 text-xs font-semibold rounded border border-gray-200 dark:border-gray-600 flex items-center gap-1 ${a.style}`}>
                         {a.icon} {a.label}
                     </button>
                 ))}
@@ -246,158 +255,134 @@ const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings,
         );
     };
 
-    const renderRequestsList = (list: BannerAdBookingRequest[], title: string) => {
-        if (list.length === 0) {
-            return <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow"><p className="text-gray-500 dark:text-gray-400">No {title.toLowerCase()} found.</p></div>;
-        }
-        return (
-            <div className="bg-white dark:bg-gray-800 shadow-lg rounded-2xl overflow-hidden">
-                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {list.map(req => (
-                        <li key={req.id} className="p-6">
-                            <div className="flex flex-col sm:flex-row sm:items-start sm:space-x-4">
-                                <img src={req.brandAvatar} alt={req.brandName} className="w-12 h-12 rounded-full object-cover flex-shrink-0 mb-4 sm:mb-0" />
-                                <div className="flex-1">
-                                    <div className="flex justify-between items-center">
-                                        <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">{req.campaignName}</h3>
-                                        <RequestStatusBadge status={req.status} />
+    const renderTable = (list: AdRequest[]) => (
+        <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Provider / Campaign</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {list.map((req) => (
+                        <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <td className="px-6 py-4">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0 h-10 w-10">
+                                        <img 
+                                            className="h-10 w-10 rounded-full object-cover" 
+                                            src={req.type === 'Live TV' ? (req as AdSlotRequest).liveTvAvatar : (req as BannerAdBookingRequest).agencyAvatar} 
+                                            alt="" 
+                                        />
                                     </div>
-                                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">From: {req.brandName}</p>
-                                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm dark:text-gray-300">
-                                        <div><span className="font-semibold text-gray-500 dark:text-gray-400">Ad Location:</span> {req.bannerAdLocation}</div>
-                                        {req.status === 'brand_offer' && <div className="col-span-full text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Brand's Offer:</span> {req.currentOffer?.amount}</div>}
-                                    </div>
-                                    <div className="mt-4">
-                                        {renderRequestActions(req)}
+                                    <div className="ml-4">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                            {req.type === 'Live TV' ? (req as AdSlotRequest).liveTvName : (req as BannerAdBookingRequest).agencyName}
+                                        </div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{req.campaignName}</div>
+                                        <span className="text-xs text-indigo-500 bg-indigo-50 px-1 rounded">{req.type}</span>
                                     </div>
                                 </div>
-                            </div>
-                        </li>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                <RequestStatusBadge status={req.status} />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex items-center gap-2">
+                                    {renderRequestActions(req)}
+                                    {['completed', 'rejected'].includes(req.status) && (
+                                        <button 
+                                            onClick={() => handleDelete(req)}
+                                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            title="Delete from History"
+                                        >
+                                            <TrashIcon className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
                     ))}
-                </ul>
-            </div>
-        );
-    };
+                </tbody>
+            </table>
+        </div>
+    );
+
+    const currentList = activeTab === 'pending' ? pending : activeTab === 'inProgress' ? inProgress : completed;
+
+    if (isLoading) return <div className="text-center p-8">Loading ad bookings...</div>;
+    if (error) return <div className="text-center p-8 bg-red-100 text-red-700 rounded-lg">{error}</div>;
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white">My Banner Ads</h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-1">Manage your ad spaces and incoming booking requests.</p>
-                </div>
-                <button onClick={() => setModal('post_ad')} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md">
-                    + Post New Ad
-                </button>
+        <div className="space-y-8">
+            <div>
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-white">My Ad Bookings</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">Track your Live TV and Banner Ad campaigns.</p>
             </div>
-
-            <div className="flex border-b border-gray-200 dark:border-gray-700">
-                <button 
-                    onClick={() => setActiveTab('requests')} 
-                    className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${activeTab === 'requests' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                >
-                    Booking Requests
-                </button>
-                <button 
-                    onClick={() => setActiveTab('my_ads')} 
-                    className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${activeTab === 'my_ads' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                >
-                    My Posted Ads
-                </button>
+            
+            <div className="flex space-x-2 p-1 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-x-auto">
+                <TabButton label="Pending" count={pending.length} isActive={activeTab === 'pending'} onClick={() => setActiveTab('pending')} />
+                <TabButton label="In Progress" count={inProgress.length} isActive={activeTab === 'inProgress'} onClick={() => setActiveTab('inProgress')} />
+                <TabButton label="Completed" count={completed.length} isActive={activeTab === 'completed'} onClick={() => setActiveTab('completed')} />
             </div>
-
-            {isLoading && <p className="text-center p-8 dark:text-gray-300">Loading...</p>}
-            {error && <p className="text-center p-8 bg-red-100 text-red-700 rounded-lg">{error}</p>}
-
-            {!isLoading && activeTab === 'requests' && (
-                <div className="space-y-6">
-                    <div className="flex space-x-2 p-1 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-x-auto">
-                        <FilterButton label="Pending" filterType="pending" count={pendingRequests.length} activeFilter={filter} onClick={setFilter} />
-                        <FilterButton label="Processing" filterType="processing" count={processingRequests.length} activeFilter={filter} onClick={setFilter} />
-                        <FilterButton label="Completed" filterType="completed" count={completedRequests.length} activeFilter={filter} onClick={setFilter} />
-                    </div>
-                    
-                    {filter === 'pending' && renderRequestsList(pendingRequests, "pending requests")}
-                    {filter === 'processing' && renderRequestsList(processingRequests, "processing & running ads")}
-                    {filter === 'completed' && renderRequestsList(completedRequests, "completed ads")}
-                </div>
-            )}
-
-            {!isLoading && activeTab === 'my_ads' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {myAds.map(ad => (
-                        <div key={ad.id} className="relative bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden flex flex-col">
-                            {ad.isBoosted && (
-                                <div className="absolute top-3 right-3 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full flex items-center shadow-md z-10">
-                                    <SparklesIcon className="w-4 h-4 mr-1" /> Boosted
-                                </div>
-                            )}
-                            <img src={ad.photoUrl} alt={ad.location} className="w-full h-40 object-cover" />
-                            <div className="p-4 flex-grow flex flex-col">
-                                <h3 className="text-lg font-bold text-gray-800 dark:text-white">{ad.location}</h3>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{ad.address}</p>
-                                <div className="mt-4 text-sm dark:text-gray-300">
-                                    <p><strong>Size:</strong> {ad.size}</p>
-                                    <p><strong>Fee:</strong> ₹{ad.feePerDay}/day</p>
-                                    <p><strong>Type:</strong> {ad.bannerType}</p>
-                                </div>
-                            </div>
-                            <div className="p-4 bg-gray-50 dark:bg-gray-700 border-t dark:border-gray-600 flex justify-between items-center">
-                                <button className="text-red-600 hover:text-red-800 dark:text-red-400 text-sm flex items-center">
-                                    <TrashIcon className="w-4 h-4 mr-1" /> Delete
-                                </button>
-                                {!ad.isBoosted && (
-                                    <button onClick={() => setBoostingAd(ad)} className="text-purple-600 hover:text-purple-800 dark:text-purple-400 text-sm flex items-center font-semibold">
-                                        <SparklesIcon className="w-4 h-4 mr-1" /> Boost Ad
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                    {myAds.length === 0 && (
-                        <div className="col-span-full text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow">
-                            <p className="text-gray-500 dark:text-gray-400">You haven't posted any ads yet.</p>
-                            <button onClick={() => setModal('post_ad')} className="mt-4 px-4 py-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-gray-700 rounded">Post your first ad</button>
-                        </div>
-                    )}
-                </div>
+            
+            {currentList.length === 0 ? (
+                 <div className="text-center py-10 col-span-full bg-white dark:bg-gray-800 rounded-lg shadow"><p className="text-gray-500 dark:text-gray-400">No bookings in this category.</p></div>
+            ) : (
+                 renderTable(currentList)
             )}
 
             {modal === 'details' && selectedRequest && (
                 <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
             )}
-
             {modal === 'offer' && selectedRequest && (
-                <OfferModal type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest.id, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} />
+                <OfferModal type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} />
             )}
-
-            {modal === 'post_ad' && (
-                <PostBannerAdModal 
-                    user={user}
-                    onClose={() => setModal(null)}
-                    onAdPosted={fetchData}
-                />
-            )}
-
-            {boostingAd && (
+             {payingRequest && (
                 <CashfreeModal
                     user={user}
-                    collabType="boost_banner"
-                    baseAmount={adBoostPrice}
+                    collabType={payingRequest.type === 'Live TV' ? 'ad_slot' : 'banner_booking'}
+                    baseAmount={parseFloat(payingRequest.finalAmount?.replace(/[^0-9.-]+/g, "") || "0")}
                     platformSettings={platformSettings}
                     onClose={() => {
-                        setBoostingAd(null);
-                        fetchData();
+                        setPayingRequest(null);
+                        fetchRequests();
                     }}
                     transactionDetails={{
                         userId: user.id,
-                        description: `Banner Ad Boost: ${boostingAd.location}`,
-                        relatedId: boostingAd.id,
+                        description: `Payment for ${payingRequest.type}: ${payingRequest.campaignName}`,
+                        relatedId: payingRequest.id,
+                        collabId: payingRequest.collabId,
                     }}
                 />
+            )}
+            {disputingRequest && (
+                <DisputeModal
+                    user={user}
+                    collaboration={disputingRequest}
+                    onClose={() => setDisputingRequest(null)}
+                    onDisputeSubmitted={() => {
+                        setDisputingRequest(null);
+                        fetchRequests();
+                    }}
+                />
+            )}
+            {confirmAction && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+                        <h3 className="text-lg font-bold dark:text-gray-100">Confirm Action</h3>
+                        <p className="text-gray-600 dark:text-gray-300 my-4">Are you sure you want to approve this work? This will mark the collaboration as complete and release the final payment to the agency.</p>
+                        <div className="flex justify-end space-x-2">
+                            <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-600 dark:text-gray-200">Cancel</button>
+                            <button onClick={executeConfirmAction} className="px-4 py-2 text-sm rounded-md bg-green-600 text-white">Confirm &amp; Approve</button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
 };
 
-export default AdBookingsPage;
+export default MyAdBookingsPage;

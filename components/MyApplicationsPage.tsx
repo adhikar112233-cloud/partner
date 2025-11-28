@@ -4,6 +4,7 @@ import { User, CampaignApplication, CampaignApplicationStatus, ConversationParti
 import { apiService } from '../services/apiService';
 import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
+import CancellationPenaltyModal from './CancellationPenaltyModal';
 
 interface MyApplicationsPageProps {
     user: User; // The logged-in influencer
@@ -57,6 +58,8 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
     const [error, setError] = useState<string | null>(null);
     const [modal, setModal] = useState<'offer' | 'details' | null>(null);
     const [selectedApp, setSelectedApp] = useState<CampaignApplication | null>(null);
+    const [cancellingApp, setCancellingApp] = useState<CampaignApplication | null>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
     const [filter, setFilter] = useState<'pending' | 'active' | 'completed' | 'archived'>('pending');
 
     const fetchApplications = async () => {
@@ -94,6 +97,29 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
         }
     };
     
+    const handleConfirmCancellation = async (reason: string) => {
+        if (!cancellingApp) return;
+        setIsCancelling(true);
+        const penalty = platformSettings.cancellationPenaltyAmount || 0;
+        
+        try {
+            await apiService.cancelCollaboration(
+                user.id, 
+                cancellingApp.id, 
+                'campaign_applications', 
+                reason, 
+                penalty
+            );
+            setCancellingApp(null);
+            fetchApplications();
+        } catch (err) {
+            console.error(err);
+            alert("Failed to cancel collaboration. Please try again.");
+        } finally {
+            setIsCancelling(false);
+        }
+    };
+
     const handleAction = (app: CampaignApplication, action: 'message' | 'accept_offer' | 'recounter_offer' | 'cancel' | 'start_work' | 'complete_work' | 'get_payment' | 'view_details') => {
         setSelectedApp(app);
         switch(action) {
@@ -110,19 +136,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                  handleUpdate(app.id, { status: 'agreement_reached', finalAmount: app.currentOffer?.amount });
                  break;
             case 'cancel':
-                const penalty = platformSettings.cancellationPenaltyAmount || 0;
-                if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
-                    setIsLoading(true);
-                    apiService.cancelCollaboration(user.id, app.id, 'campaign_applications', 'Cancelled by influencer.', penalty)
-                        .then(() => {
-                            fetchApplications(); 
-                        })
-                        .catch((err) => {
-                            console.error(err);
-                            alert("Failed to cancel collaboration. Please try again.");
-                        })
-                        .finally(() => setIsLoading(false));
-                }
+                setCancellingApp(app);
                 break;
             case 'start_work':
                 handleUpdate(app.id, { workStatus: 'started' });
@@ -148,11 +162,9 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                 actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
-            case 'agreement_reached':
-                 actions.push({ label: 'Cancel', action: 'cancel', style: 'text-red-600 hover:bg-red-50' });
-                 break;
+            case 'agreement_reached': // Added for active cancellation
             case 'in_progress':
-                 actions.push({ label: 'Cancel', action: 'cancel', style: 'text-red-600 hover:bg-red-50' });
+                 actions.push({ label: 'Cancel Booking', action: 'cancel', style: 'text-red-600 hover:bg-red-50 font-bold border-red-200' });
                  if (app.paymentStatus === 'paid' && !app.workStatus) {
                     actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                  }
@@ -276,8 +288,8 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
             
             <div className="flex space-x-2 p-1 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-x-auto">
                 <FilterButton label="Pending Applications" filterType="pending" count={pending.length} />
-                <FilterButton label="Active" filterType="active" count={active.length} />
-                <FilterButton label="Completed" filterType="completed" count={completed.length} />
+                <FilterButton label="Accepted & In Progress" filterType="active" count={active.length} />
+                <FilterButton label="Completed Applications" filterType="completed" count={completed.length} />
                 <FilterButton label="Archived" filterType="archived" count={archived.length} />
             </div>
 
@@ -298,6 +310,14 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
             {modal === 'offer' && selectedApp && (
                 <OfferModal currentOffer={selectedApp.currentOffer!.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedApp.id, { status: 'influencer_counter_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'influencer' }})} />
             )}
+            
+            <CancellationPenaltyModal 
+                isOpen={!!cancellingApp}
+                onClose={() => setCancellingApp(null)}
+                onConfirm={handleConfirmCancellation}
+                penaltyAmount={platformSettings.cancellationPenaltyAmount || 0}
+                isProcessing={isCancelling}
+            />
         </div>
     );
 };

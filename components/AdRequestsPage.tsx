@@ -4,6 +4,7 @@ import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, Platform
 import { apiService } from '../services/apiService';
 import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
+import CancellationPenaltyModal from './CancellationPenaltyModal';
 
 interface AdRequestsPageProps {
     user: User; // The Live TV user
@@ -62,6 +63,10 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
     const [modal, setModal] = useState<'offer' | 'details' | null>(null);
     const [selectedRequest, setSelectedRequest] = useState<AdSlotRequest | null>(null);
     const [filter, setFilter] = useState<FilterType>('pending');
+    
+    // Cancellation State
+    const [cancellingReq, setCancellingReq] = useState<AdSlotRequest | null>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
 
     const fetchRequests = async () => {
         setIsLoading(true);
@@ -86,8 +91,8 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         const processing: AdSlotRequest[] = [];
         const completed: AdSlotRequest[] = [];
 
-        const pendingStatuses: AdBookingStatus[] = ['pending_approval', 'agency_offer', 'brand_offer'];
-        const processingStatuses: AdBookingStatus[] = ['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review', 'agreement_reached'];
+        const pendingStatuses: AdBookingStatus[] = ['pending_approval', 'agency_offer', 'brand_offer', 'agreement_reached'];
+        const processingStatuses: AdBookingStatus[] = ['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'];
         const completedStatuses: AdBookingStatus[] = ['completed', 'rejected'];
 
         requests.forEach(req => {
@@ -120,8 +125,31 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
             }
         }
     };
+    
+    const handleConfirmCancellation = async (reason: string) => {
+        if (!cancellingReq) return;
+        setIsCancelling(true);
+        const penalty = platformSettings.cancellationPenaltyAmount || 0;
+        
+        try {
+            await apiService.cancelCollaboration(
+                user.id, 
+                cancellingReq.id, 
+                'ad_slot_requests', 
+                reason, 
+                penalty
+            );
+            setCancellingReq(null);
+            fetchRequests(); // Refresh list to show rejection status
+        } catch (err) {
+            console.error(err);
+            alert("Failed to cancel booking. Please try again.");
+        } finally {
+            setIsCancelling(false);
+        }
+    };
 
-    const handleAction = (req: AdSlotRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'cancel_active' | 'view_details') => {
+    const handleAction = (req: AdSlotRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'view_details' | 'cancel_active') => {
         setSelectedRequest(req);
         switch(action) {
             case 'view_details':
@@ -139,6 +167,9 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                 const reason = prompt("Reason for rejection/cancellation (optional):");
                 handleUpdate(req.id, { status: 'rejected', rejectionReason: reason || "Not specified" });
                 break;
+            case 'cancel_active':
+                setCancellingReq(req);
+                break;
             case 'accept_offer':
                 handleUpdate(req.id, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount });
                 break;
@@ -150,21 +181,6 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                 break;
             case 'get_payment':
                 onInitiatePayout(req);
-                break;
-            case 'cancel_active':
-                const penalty = platformSettings.cancellationPenaltyAmount || 0;
-                if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
-                    setIsLoading(true);
-                    apiService.cancelCollaboration(user.id, req.id, 'ad_slot_requests', 'Cancelled by Live TV channel.', penalty)
-                        .then(() => {
-                            fetchRequests(); 
-                        })
-                        .catch((err) => {
-                            console.error(err);
-                            alert("Failed to cancel collaboration. Please try again.");
-                        })
-                        .finally(() => setIsLoading(false));
-                }
                 break;
         }
     };
@@ -186,11 +202,9 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                 actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
-            case 'agreement_reached':
-                 actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
-                 break;
+            case 'agreement_reached': // Added cancellation
             case 'in_progress':
-                actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Cancel Booking', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50 font-bold border-red-200' });
                 if (req.paymentStatus === 'paid' && !req.workStatus) {
                     actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                 }
@@ -322,6 +336,14 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
              {modal === 'offer' && selectedRequest && (
                 <OfferModal type={selectedRequest.status === 'pending_approval' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest.id, { status: 'agency_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'agency' }})} />
             )}
+            
+            <CancellationPenaltyModal 
+                isOpen={!!cancellingReq}
+                onClose={() => setCancellingReq(null)}
+                onConfirm={handleConfirmCancellation}
+                penaltyAmount={platformSettings.cancellationPenaltyAmount || 0}
+                isProcessing={isCancelling}
+            />
         </div>
     );
 };

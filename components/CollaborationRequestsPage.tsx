@@ -4,6 +4,7 @@ import { User, CollaborationRequest, CollabRequestStatus, ProfileData, Conversat
 import { apiService } from '../services/apiService';
 import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
+import CancellationPenaltyModal from './CancellationPenaltyModal';
 
 interface CollaborationRequestsPageProps {
     user: User; // The logged-in influencer
@@ -73,6 +74,10 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
     const [modal, setModal] = useState<'offer' | 'reject' | 'details' | null>(null);
     const [selectedRequest, setSelectedRequest] = useState<CollaborationRequest | null>(null);
     const [filter, setFilter] = useState<'pending' | 'active' | 'archived'>('pending');
+    
+    // Cancellation State
+    const [cancellingReq, setCancellingReq] = useState<CollaborationRequest | null>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
 
     useEffect(() => {
         setIsLoading(true);
@@ -113,7 +118,29 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
         }
     };
     
-    const handleAction = (req: CollaborationRequest, action: 'message' | 'accept_with_offer' | 'reject_with_reason' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel_active' | 'view_details') => {
+    const handleConfirmCancellation = async (reason: string) => {
+        if (!cancellingReq) return;
+        setIsCancelling(true);
+        const penalty = platformSettings.cancellationPenaltyAmount || 0;
+        
+        try {
+            await apiService.cancelCollaboration(
+                user.id, 
+                cancellingReq.id, 
+                'collaboration_requests', 
+                reason, 
+                penalty
+            );
+            setCancellingReq(null);
+        } catch (err) {
+            console.error(err);
+            alert("Failed to cancel collaboration. Please try again.");
+        } finally {
+            setIsCancelling(false);
+        }
+    };
+    
+    const handleAction = (req: CollaborationRequest, action: 'message' | 'accept_with_offer' | 'reject_with_reason' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'view_details' | 'cancel') => {
         setSelectedRequest(req);
         switch(action) {
             case 'view_details':
@@ -130,6 +157,9 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
             case 'reject_offer':
                 setModal('reject');
                 break;
+            case 'cancel':
+                setCancellingReq(req);
+                break;
             case 'accept_offer':
                  handleUpdate(req.id, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount });
                  break;
@@ -141,21 +171,6 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                 break;
             case 'get_payment':
                 onInitiatePayout(req);
-                break;
-            case 'cancel_active':
-                const penalty = platformSettings.cancellationPenaltyAmount || 0;
-                if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
-                    setIsLoading(true);
-                    apiService.cancelCollaboration(user.id, req.id, 'collaboration_requests', 'Cancelled by influencer.', penalty)
-                        .then(() => {
-                            // Listener handles update
-                        })
-                        .catch((err) => {
-                            console.error(err);
-                            alert("Failed to cancel collaboration. Please try again.");
-                        })
-                        .finally(() => setIsLoading(false));
-                }
                 break;
         }
     };
@@ -177,10 +192,8 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'agreement_reached':
-                 actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
-                 break;
             case 'in_progress':
-                 actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
+                 actions.push({ label: 'Cancel Booking', action: 'cancel', style: 'text-red-600 hover:bg-red-50 font-bold border-red-200' });
                  if (req.paymentStatus === 'paid' && !req.workStatus) {
                     actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                  }
@@ -329,6 +342,14 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
              {modal === 'reject' && selectedRequest && (
                 <RejectModal onClose={() => setModal(null)} onConfirm={(reason) => handleUpdate(selectedRequest.id, { status: 'rejected', rejectionReason: reason })} />
             )}
+            
+            <CancellationPenaltyModal 
+                isOpen={!!cancellingReq}
+                onClose={() => setCancellingReq(null)}
+                onConfirm={handleConfirmCancellation}
+                penaltyAmount={platformSettings.cancellationPenaltyAmount || 0}
+                isProcessing={isCancelling}
+            />
         </div>
     );
 };

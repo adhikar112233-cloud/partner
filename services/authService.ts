@@ -197,7 +197,6 @@ export const authService = {
                 socialMediaLinks: '',
                 location: '',
                 membershipActive: false,
-                isBoosted: false, // Ensure field exists
             };
             await setDoc(doc(db, 'influencers', uid), influencerProfileData);
         }
@@ -210,7 +209,6 @@ export const authService = {
                 audienceSize: 0,
                 niche: 'General',
                 ownerId: uid,
-                isBoosted: false, // Ensure field exists
             };
             await setDoc(doc(db, 'livetv_channels', uid), channelProfileData);
         }

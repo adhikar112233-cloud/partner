@@ -1,4 +1,4 @@
-
+// ... (previous imports)
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
     orderBy, limit, addDoc, serverTimestamp, onSnapshot, increment, 
@@ -30,7 +30,7 @@ export const apiService = {
         // Placeholder for any initialization logic if needed
     },
 
-    // ... Users & Auth related ...
+    // ... (getAllUsers to adminChangePassword - no changes)
     getAllUsers: async (): Promise<User[]> => {
         const snapshot = await getDocs(collection(db, 'users'));
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
@@ -88,7 +88,6 @@ export const apiService = {
                 }
                 return data;
             } else {
-                // Handle non-JSON response (likely HTML 404/500)
                 const text = await response.text();
                 console.error("Non-JSON response from backend:", text);
                 throw new Error("Backend function not found or failed. Please ensure 'functions' are deployed to Firebase.");
@@ -103,8 +102,20 @@ export const apiService = {
             pendingPenalty: increment(amount)
         });
     },
+    cancelCollaboration: async (userId: string, collaborationId: string, collectionName: string, reason: string, penaltyAmount: number) => {
+        const response = await fetch(`${BACKEND_URL}/cancel-collaboration`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, collaborationId, collectionName, reason, penaltyAmount })
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to cancel collaboration');
+        }
+        return await response.json();
+    },
 
-    // ... Platform Settings ...
+    // ... (rest of the file content from getPlatformSettings onwards)
     getPlatformSettings: async (): Promise<PlatformSettings> => {
         const docRef = doc(db, 'settings', 'platform');
         const docSnap = await getDoc(docRef);
@@ -113,6 +124,9 @@ export const apiService = {
         }
         throw new Error("Platform settings not found");
     },
+    // ...
+    // (omitting duplicate code for brevity, assuming standard apiService methods follow)
+    // ...
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
     },
@@ -122,19 +136,11 @@ export const apiService = {
         if (docSnap.exists()) {
             return docSnap.data() as Agreements;
         }
-        // Default empty structure if not found
-        return {
-            brand: '',
-            influencer: '',
-            livetv: '',
-            banneragency: ''
-        };
+        return { brand: '', influencer: '', livetv: '', banneragency: '' };
     },
     updateAgreements: async (agreements: Agreements) => {
         await setDoc(doc(db, 'settings', 'agreements'), agreements, { merge: true });
     },
-
-    // ... Banners ...
     getActivePlatformBanners: async (): Promise<PlatformBanner[]> => {
         const q = query(collection(db, 'platform_banners'), where('isActive', '==', true));
         const snapshot = await getDocs(q);
@@ -156,8 +162,6 @@ export const apiService = {
     uploadPlatformBannerImage: async (file: File): Promise<string> => {
         return uploadFile(`banners/${Date.now()}_${file.name}`, file);
     },
-
-    // ... Influencers ...
     getInfluencersPaginated: async (settings: PlatformSettings, options: { limit: number, startAfterDoc?: any }) => {
         let q = query(collection(db, 'influencers'), limit(options.limit));
         if (options.startAfterDoc) {
@@ -174,16 +178,11 @@ export const apiService = {
     updateInfluencerProfile: async (userId: string, data: any) => {
         await updateDoc(doc(db, 'influencers', userId), data);
     },
-
-    // ... Live TV ...
     getLiveTvChannels: async (settings: PlatformSettings): Promise<LiveTvChannel[]> => {
         const snapshot = await getDocs(collection(db, 'livetv_channels'));
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
     },
-
-    // ... Messaging ...
     getConversations: async (userId: string): Promise<any[]> => {
-        // Sort by lastMessage.timestamp descending to show newest first
         const q = query(collection(db, `users/${userId}/conversations`), orderBy('lastMessage.timestamp', 'desc'));
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -205,8 +204,6 @@ export const apiService = {
     },
     sendMessage: async (text: string, senderId: string, recipientId: string, attachments: any[] = []) => {
         const chatId = [senderId, recipientId].sort().join('_');
-        
-        // 1. Add message to the chat collection
         await addDoc(collection(db, `chats/${chatId}/messages`), {
             text,
             senderId,
@@ -214,8 +211,6 @@ export const apiService = {
             timestamp: serverTimestamp()
         });
         
-        // 2. Update Conversation list for both users (Sender and Recipient)
-        // This ensures the "Messages" dropdown works and shows the latest message
         const senderDocRef = doc(db, 'users', senderId);
         const recipientDocRef = doc(db, 'users', recipientId);
         
@@ -233,7 +228,6 @@ export const apiService = {
                 timestamp: serverTimestamp()
             };
 
-            // Update Sender's Conversation List (to show Recipient)
             const senderConvRef = doc(db, `users/${senderId}/conversations`, recipientId);
             await setDoc(senderConvRef, {
                 id: recipientId,
@@ -247,7 +241,6 @@ export const apiService = {
                 lastMessage: lastMessageData
             }, { merge: true });
 
-            // Update Recipient's Conversation List (to show Sender)
             const recipientConvRef = doc(db, `users/${recipientId}/conversations`, senderId);
             await setDoc(recipientConvRef, {
                 id: senderId,
@@ -262,7 +255,6 @@ export const apiService = {
             }, { merge: true });
         }
         
-        // 3. Notify recipient about new message
         const senderName = senderSnap.exists() ? senderSnap.data().name : 'User';
         
         await apiService.createNotification(recipientId, {
@@ -278,8 +270,6 @@ export const apiService = {
     uploadMessageAttachment: async (messageId: string, file: File): Promise<string> => {
         return uploadFile(`attachments/${messageId}/${file.name}`, file);
     },
-
-    // ... Notifications Helper ...
     createNotification: async (userId: string, notification: Omit<AppNotification, 'id' | 'timestamp'>) => {
         try {
             await addDoc(collection(db, `users/${userId}/notifications`), {
@@ -290,8 +280,6 @@ export const apiService = {
             console.error("Failed to create notification:", error);
         }
     },
-
-    // ... Collaborations ...
     getCollabRequestsForInfluencerListener: (userId: string, callback: (data: CollaborationRequest[]) => void, onError: (err: any) => void) => {
         const q = query(collection(db, 'collaboration_requests'), where('influencerId', '==', userId));
         return onSnapshot(q, (snapshot) => {
@@ -322,7 +310,6 @@ export const apiService = {
     },
     sendCollabRequest: async (request: any) => {
         const ref = await addDoc(collection(db, 'collaboration_requests'), { ...request, status: 'pending', timestamp: serverTimestamp() });
-        // Notify Influencer
         await apiService.createNotification(request.influencerId, {
             userId: request.influencerId,
             title: "New Collaboration Request",
@@ -342,7 +329,6 @@ export const apiService = {
 
         if (!currentData) return;
 
-        // Notify the other party
         const targetId = actorId === currentData.brandId ? currentData.influencerId : currentData.brandId;
         const targetRole = actorId === currentData.brandId ? 'influencer' : 'brand';
         
@@ -376,8 +362,6 @@ export const apiService = {
     deleteCollaboration: async (id: string, collectionName: string) => {
         await deleteDoc(doc(db, collectionName, id));
     },
-
-    // ... Campaigns ...
     createCampaign: async (campaign: any) => {
         await addDoc(collection(db, 'campaigns'), { ...campaign, status: 'open', timestamp: serverTimestamp() });
     },
@@ -401,7 +385,6 @@ export const apiService = {
             applicantIds: arrayUnion(application.influencerId)
         });
         
-        // Notify Brand
         await apiService.createNotification(application.brandId, {
             userId: application.brandId,
             title: "New Campaign Application",
@@ -435,7 +418,6 @@ export const apiService = {
         
         if (!currentData) return;
 
-        // Determine who to notify
         const isActorBrand = actorId === currentData.brandId;
         const targetId = isActorBrand ? currentData.influencerId : currentData.brandId;
         const targetView = isActorBrand ? View.MY_APPLICATIONS : View.CAMPAIGNS;
@@ -461,12 +443,9 @@ export const apiService = {
             isRead: false
         });
     },
-
-    // ... Ad Slots ...
     sendAdSlotRequest: async (request: any) => {
         const ref = await addDoc(collection(db, 'ad_slot_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
         
-        // Notify Live TV Channel
         await apiService.createNotification(request.liveTvId, {
             userId: request.liveTvId,
             title: "New Ad Slot Request",
@@ -514,8 +493,6 @@ export const apiService = {
             isRead: false
         });
     },
-
-    // ... Banner Ads ...
     createBannerAd: async (ad: any) => {
         await addDoc(collection(db, 'banner_ads'), { ...ad, timestamp: serverTimestamp() });
     },
@@ -539,7 +516,6 @@ export const apiService = {
     sendBannerAdBookingRequest: async (request: any) => {
         const ref = await addDoc(collection(db, 'banner_ad_booking_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
         
-        // Notify Agency
         await apiService.createNotification(request.agencyId, {
             userId: request.agencyId,
             title: "New Banner Booking",
@@ -587,8 +563,6 @@ export const apiService = {
             isRead: false
         });
     },
-
-    // ... Daily Payouts ...
     getActiveAdCollabsForAgency: async (userId: string, role: string): Promise<(AdSlotRequest | BannerAdBookingRequest)[]> => {
         if (role === 'livetv') {
             const q = query(collection(db, 'ad_slot_requests'), where('liveTvId', '==', userId), where('status', 'in', ['in_progress']));
@@ -625,11 +599,8 @@ export const apiService = {
             });
         }
     },
-
-    // ... Payouts & Refunds ...
     submitPayoutRequest: async (data: any) => {
         await addDoc(collection(db, 'payout_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });
-        // Reset the user's pending penalty since it is now attached to this request
         if (data.userId) {
             await updateDoc(doc(db, 'users', data.userId), {
                 pendingPenalty: 0
@@ -681,8 +652,6 @@ export const apiService = {
         }
         return await response.json();
     },
-
-    // ... Transactions ...
     getAllTransactions: async (): Promise<Transaction[]> => {
         const snapshot = await getDocs(collection(db, 'transactions'));
         return snapshot.docs.map(doc => ({ ...doc.data() } as Transaction));
@@ -692,8 +661,6 @@ export const apiService = {
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({ ...doc.data() } as Transaction));
     },
-
-    // ... Support ...
     getAllTickets: async (): Promise<SupportTicket[]> => {
         const snapshot = await getDocs(collection(db, 'support_tickets'));
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupportTicket));
@@ -722,8 +689,6 @@ export const apiService = {
     uploadTicketAttachment: async (ticketId: string, file: File): Promise<string> => {
         return uploadFile(`support_attachments/${ticketId}/${file.name}`, file);
     },
-
-    // ... Live Help ...
     getAllLiveHelpSessionsListener: (callback: (sessions: LiveHelpSession[]) => void) => {
         const q = query(collection(db, 'live_help_sessions'), orderBy('updatedAt', 'desc'));
         return onSnapshot(q, (snapshot) => {
@@ -784,8 +749,6 @@ export const apiService = {
     deleteQuickReply: async (id: string) => {
         await updateDoc(doc(db, 'quick_replies', id), { deleted: true });
     },
-
-    // ... Community ...
     getPosts: async (userId?: string): Promise<Post[]> => {
         const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'), limit(50));
         const snapshot = await getDocs(q);
@@ -840,8 +803,6 @@ export const apiService = {
         await updateDoc(doc(db, 'users', followerId), { following: arrayRemove(targetId) });
         await updateDoc(doc(db, 'users', targetId), { followers: arrayRemove(followerId) });
     },
-
-    // ... KYC & Verification ...
     getKycSubmissions: async (): Promise<User[]> => {
         const q = query(collection(db, 'users'), where('kycStatus', '==', 'pending'));
         const snapshot = await getDocs(q);
@@ -935,8 +896,6 @@ export const apiService = {
         });
         return await response.json();
     },
-
-    // ... Misc ...
     getBoostsForUser: async (userId: string): Promise<Boost[]> => {
         const q = query(collection(db, 'boosts'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
@@ -1010,23 +969,19 @@ export const apiService = {
         await new Promise(resolve => setTimeout(resolve, 1000));
     },
     sendPushNotification: async (title: string, body: string, targetRole: UserRole | 'all', url?: string) => {
-        // Fetch users
         let q = query(collection(db, 'users'));
         if (targetRole !== 'all') {
             q = query(collection(db, 'users'), where('role', '==', targetRole));
         }
         const snapshot = await getDocs(q);
         
-        // Loop through all users and create a notification doc for each
-        // In a real production app, this should be done via a batch job or PubSub 
-        // to avoid timeout on large user bases.
         for (const doc of snapshot.docs) {
             await apiService.createNotification(doc.id, {
                 userId: doc.id,
                 title,
                 body,
                 type: 'system',
-                view: View.DASHBOARD, // Default View
+                view: View.DASHBOARD,
                 isRead: false,
                 relatedId: url
             });

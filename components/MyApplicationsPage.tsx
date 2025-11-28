@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CampaignApplication, CampaignApplicationStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -117,13 +116,17 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
             case 'cancel':
                 const penalty = platformSettings.cancellationPenaltyAmount || 0;
                 if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
-                    handleUpdate(app.id, { status: 'rejected', rejectionReason: 'Cancelled by influencer.' });
-                    if (penalty > 0) {
-                        apiService.applyPenalty(user.id, penalty).then(() => {
-                            // Optionally refresh user or notify parent
-                            console.log("Penalty applied");
-                        });
-                    }
+                    // Use secure backend endpoint for cancellation and penalty
+                    setIsLoading(true);
+                    apiService.cancelCollaboration(user.id, app.id, 'campaign_applications', 'Cancelled by influencer.', penalty)
+                        .then(() => {
+                            fetchApplications(); // Refresh to see updated status
+                        })
+                        .catch((err) => {
+                            console.error(err);
+                            alert("Failed to cancel collaboration. Please try again.");
+                        })
+                        .finally(() => setIsLoading(false));
                 }
                 break;
             case 'start_work':

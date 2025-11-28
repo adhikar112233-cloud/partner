@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Transaction, PayoutRequest, AnyCollaboration, MembershipPlan, UserRole } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
-import { ProfileIcon, PaymentIcon, MembershipIcon, CollabIcon, CheckBadgeIcon, DocumentIcon, LogoIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons';
+import { ProfileIcon, PaymentIcon, MembershipIcon, CollabIcon, CheckBadgeIcon, DocumentIcon, LogoIcon, ChevronLeftIcon, ChevronRightIcon, ExclamationTriangleIcon } from './Icons';
 
 interface UserDetailViewProps {
     user: User;
@@ -39,6 +39,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
         plan: user.membership?.plan || 'free',
         expiryDate: toJsDate(user.membership?.expiresAt)?.toISOString().split('T')[0] || ''
     });
+    const [penaltyAmount, setPenaltyAmount] = useState<string>('0');
 
     // Determine navigation state
     const currentIndex = users ? users.findIndex(u => u.id === user.id) : -1;
@@ -82,6 +83,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
             plan: user.membership?.plan || 'free',
             expiryDate: toJsDate(user.membership?.expiresAt)?.toISOString().split('T')[0] || ''
         });
+        setPenaltyAmount(user.pendingPenalty?.toString() || '0');
 
         if (user.role === 'influencer') {
             apiService.getInfluencerProfile(user.id).then((data) => {
@@ -145,6 +147,23 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
         alert('Membership updated!');
     };
 
+    const handleUpdatePenalty = async () => {
+        const amount = parseFloat(penaltyAmount);
+        if (isNaN(amount) || amount < 0) {
+            alert("Please enter a valid positive number for the penalty.");
+            return;
+        }
+
+        try {
+            await apiService.updateUser(user.id, { pendingPenalty: amount });
+            onUpdateUser(user.id, { pendingPenalty: amount });
+            alert(`Penalty updated to ₹${amount}`);
+        } catch (error) {
+            console.error("Error updating penalty:", error);
+            alert("Failed to update penalty.");
+        }
+    };
+
     const TabButton = ({ tab, label, icon: Icon }: { tab: Tab, label: string, icon: any }) => (
         <button
             onClick={() => setActiveTab(tab)}
@@ -170,6 +189,11 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
                                 <div className="mt-1 flex gap-2 text-xs">
                                     <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">{user.piNumber}</span>
                                     <span className={`px-2 py-0.5 rounded ${user.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{user.isBlocked ? 'Blocked' : 'Active'}</span>
+                                    {user.pendingPenalty && user.pendingPenalty > 0 ? (
+                                        <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded flex items-center gap-1 font-bold">
+                                            <ExclamationTriangleIcon className="w-3 h-3" /> Penalty: ₹{user.pendingPenalty}
+                                        </span>
+                                    ) : null}
                                 </div>
                             </div>
                         </div>
@@ -203,7 +227,7 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
                 {/* Tabs */}
                 <div className="flex border-b dark:border-gray-700 overflow-x-auto flex-shrink-0 bg-white dark:bg-gray-800">
                     <TabButton tab="profile" label="Profile" icon={ProfileIcon} />
-                    <TabButton tab="financials" label="Financials" icon={PaymentIcon} />
+                    <TabButton tab="financials" label="Financials & Penalties" icon={PaymentIcon} />
                     <TabButton tab="membership" label="Membership" icon={MembershipIcon} />
                     <TabButton tab="collabs" label="Collab History" icon={CollabIcon} />
                     <TabButton tab="kyc" label="KYC & Verification" icon={CheckBadgeIcon} />
@@ -256,6 +280,48 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
 
                     {activeTab === 'financials' && (
                         <div className="space-y-6">
+                            {/* Penalty Management Section */}
+                            <div className="bg-red-50 dark:bg-red-900/10 p-4 sm:p-6 rounded-lg border border-red-200 dark:border-red-800 shadow-sm">
+                                <h3 className="font-bold text-lg mb-4 text-red-800 dark:text-red-300 border-b border-red-200 dark:border-red-800 pb-2 flex items-center gap-2">
+                                    <ExclamationTriangleIcon className="w-5 h-5" />
+                                    Penalty Management
+                                </h3>
+                                <p className="text-sm text-red-700 dark:text-red-400 mb-4">
+                                    Manage cancellation penalties for this user. Penalties are automatically deducted from future payouts.
+                                </p>
+                                <div className="flex flex-col sm:flex-row items-end gap-4">
+                                    <div className="flex-1 w-full">
+                                        <label className="block text-sm font-medium text-red-900 dark:text-red-300 mb-1">
+                                            Current Penalty Amount (₹)
+                                        </label>
+                                        <input 
+                                            type="number" 
+                                            value={penaltyAmount} 
+                                            onChange={e => setPenaltyAmount(e.target.value)} 
+                                            className="w-full p-2 border border-red-300 rounded bg-white dark:bg-gray-800 dark:border-red-700 dark:text-white font-bold"
+                                            min="0"
+                                        />
+                                    </div>
+                                    <div className="flex gap-2 w-full sm:w-auto">
+                                        <button 
+                                            onClick={handleUpdatePenalty} 
+                                            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 shadow-sm flex-1 sm:flex-none whitespace-nowrap"
+                                        >
+                                            Update Penalty
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                setPenaltyAmount('0');
+                                                // We intentionally don't auto-submit here to let admin review the 0 before clicking Update
+                                            }}
+                                            className="px-4 py-2 bg-white text-red-600 border border-red-300 rounded hover:bg-red-50 dark:bg-gray-800 dark:border-red-700 flex-1 sm:flex-none whitespace-nowrap"
+                                        >
+                                            Remove Penalty
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Saved Payment Details */}
                             <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg border dark:border-gray-700 shadow-sm">
                                 <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white border-b dark:border-gray-700 pb-2">Saved Payment Methods</h3>

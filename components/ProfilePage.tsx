@@ -4,7 +4,7 @@ import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import { Timestamp } from 'firebase/firestore';
-import { GiftIcon, CoinIcon, DocumentTextIcon } from './Icons';
+import { GiftIcon, CoinIcon, DocumentTextIcon, ShareIcon } from './Icons';
 import AgreementModal from './AgreementModal';
 
 interface ProfilePageProps {
@@ -105,6 +105,26 @@ const ReferralSection: React.FC<{ user: User; onUpdateUser: (updates: Partial<Us
         }
     };
 
+    const handleShare = async () => {
+        if (!shareLink) return;
+        
+        const shareData = {
+            title: 'Join BIGYAPON',
+            text: `Join BIGYAPON using my referral code ${user.referralCode} and earn rewards!`,
+            url: shareLink,
+        };
+
+        if (navigator.share) {
+            try {
+                await navigator.share(shareData);
+            } catch (error) {
+                console.log('Error sharing:', error);
+            }
+        } else {
+            copyLink();
+        }
+    };
+
     return (
         <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-gray-800 dark:to-gray-700 rounded-2xl p-6 shadow-inner border border-indigo-100 dark:border-gray-600">
             <div className="flex items-center justify-between mb-6">
@@ -192,6 +212,19 @@ const ReferralSection: React.FC<{ user: User; onUpdateUser: (updates: Partial<Us
                     )}
                 </div>
             </div>
+
+            {/* Bottom Share URL Option */}
+            {user.referralCode && (
+                <div className="mt-6 pt-4 border-t border-indigo-200 dark:border-gray-600 flex justify-center">
+                    <button 
+                        onClick={handleShare}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-white dark:bg-gray-900 text-indigo-600 dark:text-indigo-400 font-semibold rounded-lg shadow-sm border border-indigo-100 dark:border-gray-600 hover:bg-indigo-50 dark:hover:bg-gray-800 transition-colors w-full sm:w-auto justify-center"
+                    >
+                        <ShareIcon className="w-5 h-5" />
+                        Share Referral URL
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

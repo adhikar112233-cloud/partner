@@ -329,7 +329,7 @@ const DiscountSettingsPanel: React.FC<{ settings: PlatformSettings, setSettings:
                                 Percentage: <input type="number" value={(setting as DiscountSetting).percentage} readOnly className="w-16 p-1 border rounded dark:bg-gray-700" />%
                             </label>
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">Go to Settings > Platform Settings to edit.</p>
+                        <p className="text-xs text-gray-500 mt-2">Go to Settings &gt; Platform Settings to edit.</p>
                     </div>
                 ))}
             </div>

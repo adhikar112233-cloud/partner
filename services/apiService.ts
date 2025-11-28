@@ -27,7 +27,94 @@ const uploadFile = async (path: string, file: File): Promise<string> => {
 
 export const apiService = {
     initializeFirestoreData: async () => {
-        // Placeholder for any initialization logic if needed
+        try {
+            const influencersRef = collection(db, 'influencers');
+            const snapshot = await getDocs(query(influencersRef, limit(1)));
+            
+            if (snapshot.empty) {
+                console.log("No influencers found. Seeding dummy data...");
+                const dummyInfluencers = [
+                    {
+                        name: "Priya Sharma",
+                        handle: "priyastyle",
+                        avatar: "https://i.pravatar.cc/150?u=priya",
+                        bio: "Fashion and lifestyle content creator based in Mumbai. Loving the aesthetics!",
+                        followers: 150000,
+                        niche: "Fashion",
+                        engagementRate: 4.5,
+                        location: "Mumbai",
+                        isBoosted: true,
+                        isVerified: true
+                    },
+                    {
+                        name: "Rahul Tech",
+                        handle: "rahulreviews",
+                        avatar: "https://i.pravatar.cc/150?u=rahul",
+                        bio: "Unboxing the latest gadgets and tech reviews. Honest opinions only.",
+                        followers: 85000,
+                        niche: "Technology",
+                        engagementRate: 5.2,
+                        location: "Bangalore",
+                        isBoosted: false,
+                        isVerified: true
+                    },
+                    {
+                        name: "Sara Cooks",
+                        handle: "sarakitchen",
+                        avatar: "https://i.pravatar.cc/150?u=sara",
+                        bio: "Healthy recipes for a busy life. Join my culinary journey.",
+                        followers: 220000,
+                        niche: "Food",
+                        engagementRate: 3.8,
+                        location: "Delhi",
+                        isBoosted: false,
+                        isVerified: false
+                    },
+                    {
+                        name: "Amit Traveler",
+                        handle: "amittravels",
+                        avatar: "https://i.pravatar.cc/150?u=amit",
+                        bio: "Exploring the hidden gems of India. Travel vlogger.",
+                        followers: 320000,
+                        niche: "Travel",
+                        engagementRate: 6.1,
+                        location: "Jaipur",
+                        isBoosted: true,
+                        isVerified: true
+                    }
+                ];
+
+                const batch = writeBatch(db);
+                dummyInfluencers.forEach(inf => {
+                    const newRef = doc(collection(db, 'influencers'));
+                    const id = newRef.id;
+                    batch.set(newRef, { ...inf, id });
+                    
+                    // Create corresponding user doc for consistency
+                    const userRef = doc(db, 'users', id);
+                    batch.set(userRef, {
+                        ...inf,
+                        id,
+                        email: `${inf.handle}@example.com`,
+                        role: 'influencer',
+                        piNumber: `PI${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+                        kycStatus: 'approved',
+                        creatorVerificationStatus: 'approved',
+                        membership: { 
+                            plan: 'pro', 
+                            isActive: true, 
+                            startsAt: serverTimestamp(),
+                            expiresAt: Timestamp.fromDate(new Date(new Date().setFullYear(new Date().getFullYear() + 1))),
+                            usage: { directCollaborations: 0, campaigns: 0, liveTvBookings: 0, bannerAdBookings: 0 }
+                        }
+                    });
+                });
+                await batch.commit();
+                console.log("Dummy influencers seeded.");
+            }
+        } catch (e) {
+            console.error("Error seeding data:", e);
+        }
     },
 
     // ... (getAllUsers to adminChangePassword - no changes)

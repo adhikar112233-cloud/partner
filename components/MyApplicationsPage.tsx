@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CampaignApplication, CampaignApplicationStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -149,7 +148,11 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                 actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
+            case 'agreement_reached':
+                 actions.push({ label: 'Cancel', action: 'cancel', style: 'text-red-600 hover:bg-red-50' });
+                 break;
             case 'in_progress':
+                 actions.push({ label: 'Cancel', action: 'cancel', style: 'text-red-600 hover:bg-red-50' });
                  if (app.paymentStatus === 'paid' && !app.workStatus) {
                     actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                  }
@@ -182,7 +185,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
         const archived: CampaignApplication[] = []; 
 
         applications.forEach(app => {
-            if (['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'].includes(app.status)) {
+            if (['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review', 'agreement_reached'].includes(app.status)) {
                 active.push(app);
             } else if (app.status === 'completed') {
                 completed.push(app);
@@ -273,8 +276,8 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
             
             <div className="flex space-x-2 p-1 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-x-auto">
                 <FilterButton label="Pending Applications" filterType="pending" count={pending.length} />
-                <FilterButton label="Accepted & In Progress" filterType="active" count={active.length} />
-                <FilterButton label="Completed Applications" filterType="completed" count={completed.length} />
+                <FilterButton label="Active" filterType="active" count={active.length} />
+                <FilterButton label="Completed" filterType="completed" count={completed.length} />
                 <FilterButton label="Archived" filterType="archived" count={archived.length} />
             </div>
 

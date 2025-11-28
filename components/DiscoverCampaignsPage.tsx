@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, Campaign } from '../types';
 import { apiService } from '../services/apiService';
@@ -9,21 +10,21 @@ interface DiscoverCampaignsPageProps {
 }
 
 const CampaignCard: React.FC<{ campaign: Campaign; onApply: () => void; hasApplied: boolean; }> = ({ campaign, onApply, hasApplied }) => (
-    <div className="relative bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+    <div className={`relative bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col transition-all duration-300 transform hover:-translate-y-1 ${campaign.isBoosted ? 'ring-2 ring-indigo-400' : ''}`}>
         {campaign.isBoosted && (
-            <div className="absolute top-3 right-3 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full flex items-center shadow-md z-10">
-                <SparklesIcon className="w-4 h-4 mr-1" /> Boosted
+            <div className="absolute top-3 right-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center shadow-md z-10 animate-pulse">
+                <SparklesIcon className="w-3 h-3 mr-1" /> Boosted
             </div>
         )}
         <div className="p-6 flex-grow flex flex-col">
             <div className="flex items-center space-x-4">
-                <img src={campaign.brandAvatar} alt={campaign.brandName} className="w-12 h-12 rounded-full object-cover"/>
+                <img src={campaign.brandAvatar} alt={campaign.brandName} className="w-12 h-12 rounded-full object-cover border border-gray-100"/>
                 <div>
                     <h3 className="text-sm font-semibold text-gray-600">{campaign.brandName}</h3>
                     <h2 className="text-lg font-bold text-gray-800">{campaign.title}</h2>
                 </div>
             </div>
-            <p className="text-sm text-gray-600 mt-4 flex-grow">{campaign.description}</p>
+            <p className="text-sm text-gray-600 mt-4 flex-grow line-clamp-3">{campaign.description}</p>
             <div className="mt-6 space-y-3 text-sm">
                 <div className="flex justify-between">
                     <span className="text-gray-500">Location:</span>
@@ -71,6 +72,15 @@ const DiscoverCampaignsPage: React.FC<DiscoverCampaignsPageProps> = ({ user }) =
         setIsLoading(true);
         try {
             const openCampaigns = await apiService.getAllOpenCampaigns(user.location);
+            // Re-sort client side to guarantee boosted campaigns are top
+            openCampaigns.sort((a, b) => {
+                const aBoosted = a.isBoosted === true;
+                const bBoosted = b.isBoosted === true;
+                
+                if (aBoosted && !bBoosted) return -1;
+                if (!aBoosted && bBoosted) return 1;
+                return 0;
+            });
             setCampaigns(openCampaigns);
         } catch (error) {
             console.error("Failed to fetch campaigns:", error);

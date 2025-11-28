@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from './services/firebase';
 import { authService } from './services/authService';
@@ -225,7 +226,6 @@ const MembershipInactiveBanner: React.FC<{ onUpgrade: () => void }> = ({ onUpgra
 );
 
 const CreatorVerificationBanner: React.FC<{
-    // FIX: Changed status type to the full enum to resolve TypeScript error.
     status: CreatorVerificationStatus;
     onVerify: () => void;
     reason?: string;
@@ -254,10 +254,24 @@ const CreatorVerificationBanner: React.FC<{
     );
 };
 
-// Fix: Add pagination limit constant
 const INFLUENCER_PAGE_LIMIT = 12;
 
-// Fix: Reverted to default export to fix module resolution error.
+// Sorting helper to prioritize boosted users, then verified users
+const sortInfluencers = (list: Influencer[]) => {
+    return [...list].sort((a, b) => {
+        // 1. Boosted First
+        if (a.isBoosted && !b.isBoosted) return -1;
+        if (!a.isBoosted && b.isBoosted) return 1;
+        
+        // 2. Verified Second
+        if (a.isVerified && !b.isVerified) return -1;
+        if (!a.isVerified && b.isVerified) return 1;
+        
+        // 3. Fallback to name or default stability
+        return 0;
+    });
+};
+
 const App: React.FC = () => {
   if (!isFirebaseConfigured) {
     return <FirebaseConfigError />;
@@ -292,7 +306,6 @@ const App: React.FC = () => {
   const [allRefunds, setAllRefunds] = useState<RefundRequest[]>([]);
   const [allDailyPayouts, setAllDailyPayouts] = useState<DailyPayoutRequest[]>([]);
 
-  // Fix: Add state variables for pagination
   const [lastInfluencerDoc, setLastInfluencerDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreInfluencers, setHasMoreInfluencers] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -305,6 +318,10 @@ const App: React.FC = () => {
   const [liveHelpSessionId, setLiveHelpSessionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
+  
+  // App mode state for switching between Dashboard and Community
+  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -366,9 +383,11 @@ const App: React.FC = () => {
         
         // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
-          const influencerResult = await apiService.getInfluencersPaginated(platformSettings, { limit: INFLUENCER_PAGE_LIMIT });
-          setInfluencers(influencerResult.influencers);
-          setFilteredInfluencers(influencerResult.influencers);
+          const influencerResult = await apiService.getInfluencersPaginated({ limit: INFLUENCER_PAGE_LIMIT });
+          // Ensure client-side sort is applied even if backend returns roughly sorted data
+          const sortedInfluencers = sortInfluencers(influencerResult.influencers);
+          setInfluencers(sortedInfluencers);
+          setFilteredInfluencers(sortedInfluencers);
           setLastInfluencerDoc(influencerResult.lastVisible);
           setHasMoreInfluencers(influencerResult.influencers.length === INFLUENCER_PAGE_LIMIT);
           
@@ -388,9 +407,7 @@ const App: React.FC = () => {
                 apiService.getAllCampaignApplications(),
                 apiService.getAllAdSlotRequests(),
                 apiService.getAllBannerAdBookingRequests(),
-                // FIX: Corrected function name from 'getAllRefundRequests' to 'getAllRefunds'.
                 apiService.getAllRefunds(),
-                // FIX: Corrected function name from 'getAllDailyPayoutRequests' to 'getAllDailyPayouts' as suggested by the error.
                 apiService.getAllDailyPayouts(),
             ]);
             setAllUsers(allUserData);
@@ -407,20 +424,28 @@ const App: React.FC = () => {
       }
     }, [user, platformSettings]);
 
-  // Fix: Add function to load more influencers for pagination.
   const loadMoreInfluencers = useCallback(async () => {
     if (!platformSettings || !hasMoreInfluencers || isLoadingMore) return;
 
     setIsLoadingMore(true);
     try {
-        const result = await apiService.getInfluencersPaginated(platformSettings, {
+        const result = await apiService.getInfluencersPaginated({
             limit: INFLUENCER_PAGE_LIMIT,
             startAfterDoc: lastInfluencerDoc!,
         });
 
-        setInfluencers(prev => [...prev, ...result.influencers]);
+        const newInfluencers = result.influencers;
+        setInfluencers(prev => {
+            const combined = [...prev, ...newInfluencers];
+            // Sort combined list to keep boosters on top
+            return sortInfluencers(combined);
+        });
+        
         if (!searchQuery) {
-            setFilteredInfluencers(prev => [...prev, ...result.influencers]);
+            setFilteredInfluencers(prev => {
+                const combined = [...prev, ...newInfluencers];
+                return sortInfluencers(combined);
+            });
         }
         setLastInfluencerDoc(result.lastVisible);
         setHasMoreInfluencers(result.influencers.length === INFLUENCER_PAGE_LIMIT);
@@ -489,8 +514,8 @@ const App: React.FC = () => {
   const unreadCount = useMemo(() => notifications.filter(n => !n.isRead).length, [notifications]);
 
   const handleNotificationClick = (notification: AppNotification) => {
-    if (!notification.isRead) {
-        apiService.markNotificationAsRead(notification.id);
+    if (user && !notification.isRead) {
+        apiService.markNotificationAsRead(user.id, notification.id);
     }
     setActiveView(notification.view);
     setIsFeedOpen(false);
@@ -511,18 +536,25 @@ const App: React.FC = () => {
     setUser(updatedUser);
   };
   
-  const handleSearch = () => {
+  const handleSearch = async () => {
       const lowercasedQuery = searchQuery.toLowerCase().trim();
       
       if (!lowercasedQuery) {
-          setFilteredInfluencers(influencers);
+          setFilteredInfluencers(sortInfluencers(influencers));
           return;
       }
   
       setIsSearching(true);
-      // Simulate a small delay for better UX, since this is a client-side filter
-      // and could be instant.
-      setTimeout(() => {
+      
+      try {
+          // Use AI search via Gemini
+          const matchingIds = await findInfluencersWithAI(searchQuery, influencers);
+          const results = influencers.filter(inf => matchingIds.includes(inf.id));
+          // Apply sort to search results too: Boosted matches appear first
+          setFilteredInfluencers(sortInfluencers(results));
+      } catch (error) {
+          console.error("AI Search failed, falling back to local filter:", error);
+          // Fallback to simple local filtering if AI fails
           const results = influencers.filter(inf => {
               return (
                   inf.name.toLowerCase().includes(lowercasedQuery) ||
@@ -532,10 +564,10 @@ const App: React.FC = () => {
                   (inf.location && inf.location.toLowerCase().includes(lowercasedQuery))
               );
           });
-  
-          setFilteredInfluencers(results);
+          setFilteredInfluencers(sortInfluencers(results));
+      } finally {
           setIsSearching(false);
-      }, 300); 
+      }
   };
 
   const handleViewProfileClick = (profile: ProfileData) => {
@@ -599,6 +631,23 @@ const App: React.FC = () => {
   
   const handleStartLiveHelp = (sessionId: string) => {
     setLiveHelpSessionId(sessionId);
+  };
+
+  const handleToggleFollow = async (targetId: string) => {
+      if (!user) return;
+      const isFollowing = user.following?.includes(targetId);
+      try {
+          if (isFollowing) {
+              await apiService.unfollowUser(user.id, targetId);
+              // Update local state immediately for better UX
+              setUser(prev => prev ? { ...prev, following: prev.following?.filter(id => id !== targetId) } : null);
+          } else {
+              await apiService.followUser(user.id, targetId);
+              setUser(prev => prev ? { ...prev, following: [...(prev.following || []), targetId] } : null);
+          }
+      } catch (error) {
+          console.error("Failed to toggle follow:", error);
+      }
   };
 
   if (configError) {
@@ -729,7 +778,6 @@ const App: React.FC = () => {
                 />
               ))}
             </div>
-            {/* Fix: Add 'load more' button for pagination */}
             {hasMoreInfluencers && (
                 <div className="mt-8 text-center">
                     <button onClick={loadMoreInfluencers} disabled={isLoadingMore} className="px-6 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 disabled:opacity-50">
@@ -766,7 +814,7 @@ const App: React.FC = () => {
         if (!platformSettings.isCommunityFeedEnabled) {
             return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Community Feed Disabled</h2><p className="dark:text-gray-300">This feature is currently turned off by the administrator.</p></div>;
         }
-        return <CommunityPage user={user} />;
+        return <CommunityPage user={user} feedType={communityFeedFilter} onToggleFollow={handleToggleFollow} />;
       case View.MESSAGES:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Messages</h2><p className="dark:text-gray-300">Select a conversation from the header to start chatting.</p></div>;
       case View.COLLAB_REQUESTS:
@@ -807,6 +855,12 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
+        appMode={appMode}
+        communityFeedFilter={communityFeedFilter}
+        setCommunityFeedFilter={setCommunityFeedFilter}
+        onToggleFollow={handleToggleFollow}
+        theme={theme}
+        setTheme={setTheme}
       />
       <Sidebar 
         isMobile
@@ -817,6 +871,12 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
+        appMode={appMode}
+        communityFeedFilter={communityFeedFilter}
+        setCommunityFeedFilter={setCommunityFeedFilter}
+        onToggleFollow={handleToggleFollow}
+        theme={theme}
+        setTheme={setTheme}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <NotificationManager user={user} />
@@ -836,6 +896,7 @@ const App: React.FC = () => {
         )}
         <Header 
             user={user} 
+            activeView={activeView}
             setActiveView={setActiveView}
             platformSettings={platformSettings}
             onConversationSelected={handleConversationSelected}
@@ -844,13 +905,13 @@ const App: React.FC = () => {
             setTheme={setTheme}
             unreadCount={unreadCount}
             onActivityFeedToggle={() => setIsFeedOpen(prev => !prev)}
+            appMode={appMode}
+            setAppMode={setAppMode}
         />
 
-        {platformBanners.length > 0 && (
+        {platformBanners.length > 0 && activeView === View.DASHBOARD && (
             <ClickableImageBanner 
-                imageUrl={platformBanners[0].imageUrl}
-                targetUrl={platformBanners[0].targetUrl}
-                title={platformBanners[0].title}
+                banners={platformBanners}
             />
         )}
         

@@ -113,7 +113,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
         }
     };
     
-    const handleAction = (req: CollaborationRequest, action: 'message' | 'accept_with_offer' | 'reject_with_reason' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'view_details') => {
+    const handleAction = (req: CollaborationRequest, action: 'message' | 'accept_with_offer' | 'reject_with_reason' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel_active' | 'view_details') => {
         setSelectedRequest(req);
         switch(action) {
             case 'view_details':
@@ -142,6 +142,21 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
             case 'get_payment':
                 onInitiatePayout(req);
                 break;
+            case 'cancel_active':
+                const penalty = platformSettings.cancellationPenaltyAmount || 0;
+                if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
+                    setIsLoading(true);
+                    apiService.cancelCollaboration(user.id, req.id, 'collaboration_requests', 'Cancelled by influencer.', penalty)
+                        .then(() => {
+                            // Listener handles update
+                        })
+                        .catch((err) => {
+                            console.error(err);
+                            alert("Failed to cancel collaboration. Please try again.");
+                        })
+                        .finally(() => setIsLoading(false));
+                }
+                break;
         }
     };
 
@@ -161,7 +176,11 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                 actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
+            case 'agreement_reached':
+                 actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
+                 break;
             case 'in_progress':
+                 actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
                  if (req.paymentStatus === 'paid' && !req.workStatus) {
                     actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                  }
@@ -193,7 +212,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
         const archived: CollaborationRequest[] = [];
 
         requests.forEach(req => {
-            if (['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'].includes(req.status)) {
+            if (['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review', 'agreement_reached'].includes(req.status)) {
                 active.push(req);
             } else if (['completed', 'rejected'].includes(req.status)) {
                 archived.push(req);

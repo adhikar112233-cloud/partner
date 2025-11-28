@@ -86,8 +86,8 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         const processing: AdSlotRequest[] = [];
         const completed: AdSlotRequest[] = [];
 
-        const pendingStatuses: AdBookingStatus[] = ['pending_approval', 'agency_offer', 'brand_offer', 'agreement_reached'];
-        const processingStatuses: AdBookingStatus[] = ['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'];
+        const pendingStatuses: AdBookingStatus[] = ['pending_approval', 'agency_offer', 'brand_offer'];
+        const processingStatuses: AdBookingStatus[] = ['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review', 'agreement_reached'];
         const completedStatuses: AdBookingStatus[] = ['completed', 'rejected'];
 
         requests.forEach(req => {
@@ -121,7 +121,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         }
     };
 
-    const handleAction = (req: AdSlotRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'view_details') => {
+    const handleAction = (req: AdSlotRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'cancel_active' | 'view_details') => {
         setSelectedRequest(req);
         switch(action) {
             case 'view_details':
@@ -151,6 +151,21 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
             case 'get_payment':
                 onInitiatePayout(req);
                 break;
+            case 'cancel_active':
+                const penalty = platformSettings.cancellationPenaltyAmount || 0;
+                if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
+                    setIsLoading(true);
+                    apiService.cancelCollaboration(user.id, req.id, 'ad_slot_requests', 'Cancelled by Live TV channel.', penalty)
+                        .then(() => {
+                            fetchRequests(); 
+                        })
+                        .catch((err) => {
+                            console.error(err);
+                            alert("Failed to cancel collaboration. Please try again.");
+                        })
+                        .finally(() => setIsLoading(false));
+                }
+                break;
         }
     };
 
@@ -171,7 +186,11 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                 actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
+            case 'agreement_reached':
+                 actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
+                 break;
             case 'in_progress':
+                actions.push({ label: 'Cancel', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50' });
                 if (req.paymentStatus === 'paid' && !req.workStatus) {
                     actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                 }

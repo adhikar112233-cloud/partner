@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
@@ -68,6 +69,7 @@ const FirebaseConfigError: React.FC = () => (
 );
 
 const DatabaseConfigError: React.FC<{ message: string }> = ({ message }) => {
+    // ... (same as before)
     const projectId = firebaseConfig?.projectId || "your-project-id";
     const lowerMessage = message.toLowerCase();
     const isApiNotEnabled = lowerMessage.includes("cloud firestore api") || lowerMessage.includes("datastore.googleapis.com");
@@ -181,6 +183,7 @@ service cloud.firestore {
     );
 }
 
+// ... (MaintenancePage, NotificationBanner, KycRejectedBanner, MembershipInactiveBanner, CreatorVerificationBanner)
 const MaintenancePage: React.FC = () => (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl text-center">
@@ -255,7 +258,30 @@ const CreatorVerificationBanner: React.FC<{
 
 const INFLUENCER_PAGE_LIMIT = 12;
 
+// Sorting helper to prioritize boosted users, then verified users
+const sortInfluencers = (list: Influencer[]) => {
+    return [...list].sort((a, b) => {
+        // 1. Boosted First (Explicit boolean conversion)
+        const aBoosted = a.isBoosted === true;
+        const bBoosted = b.isBoosted === true;
+        
+        if (aBoosted && !bBoosted) return -1;
+        if (!aBoosted && bBoosted) return 1;
+        
+        // 2. Verified Second (Explicit boolean conversion)
+        const aVerified = a.isVerified === true;
+        const bVerified = b.isVerified === true;
+        
+        if (aVerified && !bVerified) return -1;
+        if (!aVerified && bVerified) return 1;
+        
+        // 3. Fallback to name or default stability
+        return 0;
+    });
+};
+
 const App: React.FC = () => {
+  // ... (Firebase check and state setup same as before)
   if (!isFirebaseConfigured) {
     return <FirebaseConfigError />;
   }
@@ -316,6 +342,7 @@ const App: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  // ... (refreshPlatformSettings same as before)
   const refreshPlatformSettings = useCallback(() => {
     apiService.getPlatformSettings()
       .then((settings) => {
@@ -367,8 +394,10 @@ const App: React.FC = () => {
         // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
           const influencerResult = await apiService.getInfluencersPaginated({ limit: INFLUENCER_PAGE_LIMIT });
-          setInfluencers(influencerResult.influencers);
-          setFilteredInfluencers(influencerResult.influencers);
+          // Ensure client-side sort is applied even if backend returns roughly sorted data
+          const sortedInfluencers = sortInfluencers(influencerResult.influencers);
+          setInfluencers(sortedInfluencers);
+          setFilteredInfluencers(sortedInfluencers);
           setLastInfluencerDoc(influencerResult.lastVisible);
           setHasMoreInfluencers(influencerResult.influencers.length === INFLUENCER_PAGE_LIMIT);
           
@@ -415,9 +444,18 @@ const App: React.FC = () => {
             startAfterDoc: lastInfluencerDoc!,
         });
 
-        setInfluencers(prev => [...prev, ...result.influencers]);
+        const newInfluencers = result.influencers;
+        setInfluencers(prev => {
+            const combined = [...prev, ...newInfluencers];
+            // Sort combined list to keep boosters on top
+            return sortInfluencers(combined);
+        });
+        
         if (!searchQuery) {
-            setFilteredInfluencers(prev => [...prev, ...result.influencers]);
+            setFilteredInfluencers(prev => {
+                const combined = [...prev, ...newInfluencers];
+                return sortInfluencers(combined);
+            });
         }
         setLastInfluencerDoc(result.lastVisible);
         setHasMoreInfluencers(result.influencers.length === INFLUENCER_PAGE_LIMIT);
@@ -428,6 +466,7 @@ const App: React.FC = () => {
     }
   }, [platformSettings, hasMoreInfluencers, isLoadingMore, lastInfluencerDoc, searchQuery]);
 
+  // ... (auth effect, params effect, refreshAllData effect, notification effect same as before)
   useEffect(() => {
     const unsubscribe = authService.onAuthChange((firebaseUser) => {
       setUser(firebaseUser);
@@ -512,7 +551,7 @@ const App: React.FC = () => {
       const lowercasedQuery = searchQuery.toLowerCase().trim();
       
       if (!lowercasedQuery) {
-          setFilteredInfluencers(influencers);
+          setFilteredInfluencers(sortInfluencers(influencers));
           return;
       }
   
@@ -522,7 +561,8 @@ const App: React.FC = () => {
           // Use AI search via Gemini
           const matchingIds = await findInfluencersWithAI(searchQuery, influencers);
           const results = influencers.filter(inf => matchingIds.includes(inf.id));
-          setFilteredInfluencers(results);
+          // Apply sort to search results too: Boosted matches appear first
+          setFilteredInfluencers(sortInfluencers(results));
       } catch (error) {
           console.error("AI Search failed, falling back to local filter:", error);
           // Fallback to simple local filtering if AI fails
@@ -535,12 +575,13 @@ const App: React.FC = () => {
                   (inf.location && inf.location.toLowerCase().includes(lowercasedQuery))
               );
           });
-          setFilteredInfluencers(results);
+          setFilteredInfluencers(sortInfluencers(results));
       } finally {
           setIsSearching(false);
       }
   };
 
+  // ... (handleViewProfileClick, handleConversationSelected, handleSendMessageFromDrawer, etc. same as before)
   const handleViewProfileClick = (profile: ProfileData) => {
     if (user && profile.id !== user.id) {
         setViewingProfile(profile);
@@ -637,6 +678,7 @@ const App: React.FC = () => {
     return <LoginPage platformSettings={platformSettings} />;
   }
 
+  // ... (rest of render logic remains same)
   if (platformSettings.isMaintenanceModeEnabled && user.role !== 'staff') {
     return <MaintenancePage />;
   }
@@ -655,6 +697,7 @@ const App: React.FC = () => {
   const showCreatorVerificationBanner = isCreator && (user.creatorVerificationStatus === 'not_submitted' || user.creatorVerificationStatus === 'rejected');
 
   const renderContent = () => {
+    // ... (cases remain same)
     switch (activeView) {
       case View.PARTNERS:
         return <OurPartnersPage />;
@@ -749,7 +792,13 @@ const App: React.FC = () => {
                 />
               ))}
             </div>
-            {hasMoreInfluencers && (
+            {filteredInfluencers.length === 0 && !isLoading && (
+                <div className="text-center py-20">
+                    <p className="text-gray-500 dark:text-gray-400 text-lg">No influencers found matching your criteria.</p>
+                    <button onClick={() => { setSearchQuery(''); handleSearch(); }} className="mt-4 text-indigo-600 hover:underline">Clear Search</button>
+                </div>
+            )}
+            {hasMoreInfluencers && filteredInfluencers.length > 0 && (
                 <div className="mt-8 text-center">
                     <button onClick={loadMoreInfluencers} disabled={isLoadingMore} className="px-6 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 disabled:opacity-50">
                         {isLoadingMore ? 'Loading...' : 'Load More Influencers'}

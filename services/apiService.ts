@@ -1,8 +1,9 @@
+
 // ... (previous imports)
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
     orderBy, limit, addDoc, serverTimestamp, onSnapshot, increment, 
-    arrayUnion, arrayRemove, startAfter, Timestamp, deleteDoc
+    arrayUnion, arrayRemove, startAfter, Timestamp, deleteDoc, writeBatch
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, BACKEND_URL } from './firebase';
@@ -929,11 +930,20 @@ export const apiService = {
             callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification)));
         }, onError);
     },
-    markNotificationAsRead: async (notifId: string) => {
-        console.warn("markNotificationAsRead requires userId in path or collection group update.");
+    markNotificationAsRead: async (userId: string, notifId: string) => {
+        await updateDoc(doc(db, `users/${userId}/notifications`, notifId), { isRead: true });
     },
     markAllNotificationsAsRead: async (userId: string) => {
-        console.warn("markAllNotificationsAsRead requires batch update implementation");
+        const q = query(collection(db, `users/${userId}/notifications`), where('isRead', '==', false));
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.empty) return;
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((doc) => {
+            batch.update(doc.ref, { isRead: true });
+        });
+        await batch.commit();
     },
     generateReferralCode: async (userId: string) => {
         const code = "REF" + Math.random().toString(36).substring(2, 8).toUpperCase();

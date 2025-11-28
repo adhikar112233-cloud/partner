@@ -1,22 +1,24 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { isFirebaseConfigured, db, auth } from '../services/firebase';
+import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
-import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification } from '../types';
-import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus } from '../types';
+import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import InfluencerCard from './InfluencerCard';
 import ChatWindow from './ChatWindow';
-import { SearchIcon } from './Icons';
+import { findInfluencersWithAI } from '../services/geminiService';
+import { SparklesIcon, LogoIcon, SearchIcon } from './Icons';
 import Dashboard from './Dashboard';
 import ProfilePage from './ProfilePage';
 import SettingsPanel from './SettingsPanel';
-import AdminPanel from './AdminPanel';
+import { AdminPanel } from './AdminPanel';
 import PostLoginWelcomePage from './PostLoginWelcomePage';
+import SendMessageModal from './SendMessageModal';
 import CollabRequestModal from './CollabRequestModal';
 import CollaborationRequestsPage from './CollaborationRequestsPage';
 import ProfileDetailDrawer from './ProfileDetailDrawer';
@@ -47,7 +49,6 @@ import CreatorVerificationPage from './CreatorVerificationPage';
 import ActivityFeed from './ActivityFeed';
 import OurPartnersPage from './OurPartnersPage';
 import PaymentSuccessPage from './PaymentSuccessPage';
-import LeaderboardPage from './LeaderboardPage';
 
 const FirebaseConfigError: React.FC = () => (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
@@ -67,30 +68,126 @@ const FirebaseConfigError: React.FC = () => (
 );
 
 const DatabaseConfigError: React.FC<{ message: string }> = ({ message }) => {
-    // Simplified error display
+    const projectId = firebaseConfig?.projectId || "your-project-id";
+    const lowerMessage = message.toLowerCase();
+    const isApiNotEnabled = lowerMessage.includes("cloud firestore api") || lowerMessage.includes("datastore.googleapis.com");
+    const isPermissionDenied = lowerMessage.includes("permission-denied") || lowerMessage.includes("insufficient permissions") || lowerMessage.includes("missing or insufficient permissions");
+    const isOfflineOrProjectNotFound = lowerMessage.includes("offline") || lowerMessage.includes("project not found");
+
+    const getErrorDetails = () => {
+        if (isPermissionDenied) {
+            return {
+                title: "Permission Denied",
+                description: "Your Firestore Security Rules are blocking access.",
+                fixTitle: "How to Fix: Update Security Rules",
+                fixSteps: (
+                    <>
+                        <p>To allow this app to work, you need to allow read/write access in your Firestore Security Rules.</p>
+                        <ol className="list-decimal list-inside space-y-3 mt-3">
+                            <li>Go to the <a href={`https://console.firebase.google.com/project/${projectId}/firestore/rules`} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-bold">Firestore Rules Tab</a> for project <strong>{projectId}</strong>.</li>
+                            <li><strong>Delete</strong> the existing rules and <strong>paste</strong> the following:</li>
+                        </ol>
+                        <pre className="bg-gray-800 text-green-400 p-4 rounded-lg text-sm overflow-x-auto font-mono border border-gray-700 shadow-inner my-3">
+{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}`}
+                        </pre>
+                        <p className="text-sm bg-yellow-50 p-3 rounded border border-yellow-200 text-yellow-800">
+                            <strong>Note:</strong> These rules allow <strong>public access</strong>. This is fine for development but should be restricted for production.
+                        </p>
+                        <p className="mt-2">Click <strong>Publish</strong>, wait 30 seconds, and then reload this page.</p>
+                    </>
+                )
+            };
+        }
+        
+        if (isApiNotEnabled || isOfflineOrProjectNotFound) {
+             return {
+                title: "Database Not Found",
+                description: isOfflineOrProjectNotFound ? `The project ID "${projectId}" might be incorrect or the database doesn't exist.` : `The Firestore database has not been created or enabled for project "${projectId}".`,
+                fixTitle: "How to Fix: Create Firestore Database",
+                fixSteps: (
+                    <ol className="list-decimal list-inside space-y-4 text-gray-700">
+                        <li className="pl-2">
+                            <strong>Open Firebase Console:</strong> Go to <a href={`https://console.firebase.google.com/project/${projectId}/firestore`} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-medium">Firestore Database for {projectId}</a>.
+                        </li>
+                        <li className="pl-2">
+                            <strong>Create Database:</strong> Click the <strong>Create Database</strong> button.
+                        </li>
+                        <li className="pl-2">
+                            <strong>Select Test Mode:</strong> When prompted, select <strong>Start in Test Mode</strong>. This sets the correct permissions for development.
+                        </li>
+                        <li className="pl-2">
+                            <strong>Location:</strong> Choose a location and click <strong>Enable</strong>. Wait a minute for it to provision.
+                        </li>
+                    </ol>
+                )
+            };
+        }
+
+        return {
+            title: "Database Connection Issue",
+            description: "An unexpected error occurred while trying to connect to Firestore.",
+            fixTitle: "Troubleshooting Steps",
+            fixSteps: (
+                 <ol className="list-decimal list-inside space-y-2">
+                    <li>Verify the <strong>projectId</strong> in <code>services/firebase.ts</code> matches your Firebase project.</li>
+                    <li>Ensure you have an active internet connection.</li>
+                    <li>Check the <a href="https://status.firebase.google.com/" target="_blank" rel="noreferrer" className="text-indigo-600 underline">Firebase Status Dashboard</a> for outages.</li>
+                </ol>
+            )
+        };
+    };
+
+    const { title, description, fixTitle, fixSteps } = getErrorDetails();
+
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
             <div className="max-w-3xl w-full bg-white rounded-2xl shadow-xl p-8 border-t-4 border-indigo-600">
-                <h1 className="text-2xl font-bold text-gray-900 mb-4">Database Connection Issue</h1>
+                <div className="flex items-center gap-4 mb-6">
+                    <div className="p-3 bg-red-100 text-red-600 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+                        <p className="text-gray-500">{description}</p>
+                    </div>
+                </div>
+
                 <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm text-red-800 mb-6 break-all border border-gray-300">
                     <strong>Error:</strong> {message}
                 </div>
-                <div className="flex justify-center">
-                    <button onClick={() => window.location.reload()} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors shadow-lg">
-                        Retry
+                
+                 <div className="space-y-4 text-gray-700">
+                    <h3 className="text-lg font-bold text-gray-900 border-b pb-2 mb-2">{fixTitle}</h3>
+                    {fixSteps}
+                </div>
+
+                <div className="mt-8 flex justify-center">
+                    <button 
+                        onClick={() => window.location.reload()} 
+                        className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors shadow-lg transform hover:-translate-y-0.5 active:translate-y-0"
+                    >
+                        I've Fixed It - Reload App
                     </button>
                 </div>
             </div>
         </div>
     );
-};
+}
 
 const MaintenancePage: React.FC = () => (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl text-center">
+            <LogoIcon showTagline />
             <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mt-8">Down for Maintenance</h1>
             <p className="mt-4 text-gray-600 dark:text-gray-300">
-                BIGYAPON is currently undergoing scheduled maintenance. We'll be back online shortly.
+                BIGYAPON is currently undergoing scheduled maintenance. We'll be back online shortly. Thank you for your patience!
             </p>
         </div>
     </div>
@@ -128,7 +225,7 @@ const MembershipInactiveBanner: React.FC<{ onUpgrade: () => void }> = ({ onUpgra
 );
 
 const CreatorVerificationBanner: React.FC<{
-    status: string;
+    status: CreatorVerificationStatus;
     onVerify: () => void;
     reason?: string;
 }> = ({ status, onVerify, reason }) => {
@@ -170,9 +267,6 @@ const App: React.FC = () => {
   const [configError, setConfigError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
-  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
-  
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -207,6 +301,10 @@ const App: React.FC = () => {
   const [liveHelpSessionId, setLiveHelpSessionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
+  
+  // App mode state for switching between Dashboard and Community
+  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -226,7 +324,11 @@ const App: React.FC = () => {
       })
       .catch(err => {
         console.error("Failed to reload platform settings:", err);
-        setConfigError(err.message || "An unexpected error occurred while connecting to the database.");
+        if (err.message && (err.message.includes("Cloud Firestore API") || err.code === "permission-denied" || err.message.includes("permission-denied"))) {
+             setConfigError("Permission denied: The Firestore database has not been initialized in the Firebase Console for project 'collabzz-757f1', or access is denied.");
+        } else {
+             setConfigError(err.message || "An unexpected error occurred while connecting to the database.");
+        }
     });
   }, []);
 
@@ -262,6 +364,7 @@ const App: React.FC = () => {
       if (user && platformSettings) {
         await apiService.initializeFirestoreData();
         
+        // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
           const influencerResult = await apiService.getInfluencersPaginated(platformSettings, { limit: INFLUENCER_PAGE_LIMIT });
           setInfluencers(influencerResult.influencers);
@@ -273,6 +376,7 @@ const App: React.FC = () => {
           setLiveTvChannels(channelData);
         }
 
+        // Data for Admin Panel (only for staff)
         if (user.role === 'staff') {
             const [
                 allUserData, transactions, payouts, direct, campaign, adslot, banner, refunds, dailyPayouts
@@ -294,6 +398,7 @@ const App: React.FC = () => {
             setAllRefunds(refunds);
             setAllDailyPayouts(dailyPayouts);
         } else {
+            // For non-staff, we still need allUsers for things like disputes, so fetch it separately.
             const allUserData = await apiService.getAllUsers();
             setAllUsers(allUserData);
         }
@@ -381,8 +486,8 @@ const App: React.FC = () => {
   const unreadCount = useMemo(() => notifications.filter(n => !n.isRead).length, [notifications]);
 
   const handleNotificationClick = (notification: AppNotification) => {
-    if (!notification.isRead) {
-        apiService.markNotificationAsRead(notification.id);
+    if (!notification.isRead && user) {
+        apiService.markNotificationAsRead(user.id, notification.id);
     }
     setActiveView(notification.view);
     setIsFeedOpen(false);
@@ -412,6 +517,8 @@ const App: React.FC = () => {
       }
   
       setIsSearching(true);
+      // Simulate a small delay for better UX, since this is a client-side filter
+      // and could be instant.
       setTimeout(() => {
           const results = influencers.filter(inf => {
               return (
@@ -476,6 +583,7 @@ const App: React.FC = () => {
         setActiveView(View.PAYOUT_REQUEST);
       } catch (error) {
         console.error("Failed to refresh settings before showing payout page:", error);
+        // Fallback to showing the page with potentially stale settings if the refresh fails
         setPayoutRequestCollab(collab);
         setActiveView(View.PAYOUT_REQUEST);
       }
@@ -491,19 +599,20 @@ const App: React.FC = () => {
   };
 
   const handleToggleFollow = async (targetId: string) => {
-    if (!user) return;
-    const isFollowing = user.following?.includes(targetId);
-    
-    // Optimistic update
-    let updatedUser = { ...user };
-    if (isFollowing) {
-        updatedUser.following = (user.following || []).filter(id => id !== targetId);
-        await apiService.unfollowUser(user.id, targetId);
-    } else {
-        updatedUser.following = [...(user.following || []), targetId];
-        await apiService.followUser(user.id, targetId);
-    }
-    setUser(updatedUser);
+      if (!user) return;
+      const isFollowing = user.following?.includes(targetId);
+      try {
+          if (isFollowing) {
+              await apiService.unfollowUser(user.id, targetId);
+              // Update local state immediately for better UX
+              setUser(prev => prev ? { ...prev, following: prev.following?.filter(id => id !== targetId) } : null);
+          } else {
+              await apiService.followUser(user.id, targetId);
+              setUser(prev => prev ? { ...prev, following: [...(prev.following || []), targetId] } : null);
+          }
+      } catch (error) {
+          console.error("Failed to toggle follow:", error);
+      }
   };
 
   if (configError) {
@@ -594,7 +703,6 @@ const App: React.FC = () => {
                       setRefundingCollab(null);
                       refreshAllData();
                   }}
-                  platformSettings={platformSettings}
                />;
       case View.PAYMENT_SUCCESS:
         return <PaymentSuccessPage user={user} onComplete={() => {
@@ -699,8 +807,6 @@ const App: React.FC = () => {
         return <MembershipPage user={user} platformSettings={platformSettings} onActivationSuccess={handleMembershipActivated} />;
       case View.PAYMENT_HISTORY:
         return <PaymentHistoryPage user={user} />;
-      case View.LEADERBOARD:
-        return <LeaderboardPage />;
       default:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Welcome</h2><p className="dark:text-gray-300">Select a view from the sidebar.</p></div>;
     }
@@ -753,30 +859,28 @@ const App: React.FC = () => {
                 reason={user.creatorVerificationDetails?.rejectionReason}
             />
         )}
-        
-        <div className="flex-shrink-0 z-20">
-            <Header 
-                user={user} 
-                activeView={activeView}
-                setActiveView={setActiveView}
-                platformSettings={platformSettings}
-                onConversationSelected={handleConversationSelected}
-                onMobileNavToggle={() => setIsMobileNavOpen(true)}
-                theme={theme}
-                setTheme={setTheme}
-                unreadCount={unreadCount}
-                onActivityFeedToggle={() => setIsFeedOpen(prev => !prev)}
-                appMode={appMode}
-                setAppMode={setAppMode}
+        <Header 
+            user={user} 
+            activeView={activeView}
+            setActiveView={setActiveView}
+            platformSettings={platformSettings}
+            onConversationSelected={handleConversationSelected}
+            onMobileNavToggle={() => setIsMobileNavOpen(true)}
+            theme={theme}
+            setTheme={setTheme}
+            unreadCount={unreadCount}
+            onActivityFeedToggle={() => setIsFeedOpen(prev => !prev)}
+            appMode={appMode}
+            setAppMode={setAppMode}
+        />
+
+        {platformBanners.length > 0 && activeView === View.DASHBOARD && (
+            <ClickableImageBanner 
+                banners={platformBanners}
             />
-        </div>
+        )}
         
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto scroll-smooth">
-          {platformBanners.length > 0 && (
-              <div className="mb-6">
-                  <ClickableImageBanner banners={platformBanners} />
-              </div>
-          )}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {renderContent()}
         </main>
       </div>

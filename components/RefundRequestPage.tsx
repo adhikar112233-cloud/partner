@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { User, AnyCollaboration, RefundRequest, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
 import { CheckBadgeIcon, PencilIcon } from './Icons';
+import CameraCapture from './CameraCapture';
 
 interface RefundRequestPageProps {
     user: User;
@@ -34,6 +35,7 @@ const RefundRequestPage: React.FC<RefundRequestPageProps> = ({ user, collaborati
     const [isBankVerified, setIsBankVerified] = useState(!!user.savedBankDetails?.isVerified);
     const [isUpiVerified, setIsUpiVerified] = useState(!!user.isUpiVerified);
     const [isEditing, setIsEditing] = useState(false);
+    const [selfieDataUrl, setSelfieDataUrl] = useState<string | null>(null);
     
     const isVerificationEnforced = platformSettings.isPayoutInstantVerificationEnabled;
 
@@ -69,6 +71,20 @@ const RefundRequestPage: React.FC<RefundRequestPageProps> = ({ user, collaborati
             setIsUpiVerified(false); 
         }
     };
+
+    const dataURLtoFile = (dataurl: string, filename: string): File => {
+        const arr = dataurl.split(',');
+        const mimeMatch = arr[0].match(/:(.*?);/);
+        if (!mimeMatch) throw new Error("Invalid Data URL");
+        const mime = mimeMatch[1];
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while(n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new File([u8arr], filename, {type:mime});
+    }
 
     const handleVerifyPaymentDetails = async () => {
         setError(null);
@@ -155,6 +171,12 @@ const RefundRequestPage: React.FC<RefundRequestPageProps> = ({ user, collaborati
                 bankDetailsString = `Account Holder: ${bankDetails.accountHolderName}\nAccount Number: ${bankDetails.accountNumber}\nIFSC: ${bankDetails.ifscCode}\nBank: ${bankDetails.bankName}`;
             }
 
+            let selfieUrl: string | undefined = undefined;
+            if (selfieDataUrl) {
+                const selfieFile = dataURLtoFile(selfieDataUrl, `refund_selfie_${user.id}.jpg`);
+                selfieUrl = await apiService.uploadPayoutSelfie(user.id, selfieFile);
+            }
+
             // Ensure we handle optional fields correctly for Firestore (null instead of undefined)
             await apiService.createRefundRequest({
                 collaborationId: collaboration.id,
@@ -169,6 +191,7 @@ const RefundRequestPage: React.FC<RefundRequestPageProps> = ({ user, collaborati
                 panNumber,
                 description,
                 collabId: collaboration.collabId || null,
+                idProofSelfieUrl: selfieUrl || null,
             });
             onSubmitted();
         } catch (err) {
@@ -300,6 +323,16 @@ const RefundRequestPage: React.FC<RefundRequestPageProps> = ({ user, collaborati
                                 placeholder="Briefly describe why you are requesting a refund for this completed dispute." 
                                 required 
                                 className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                        </div>
+
+                        <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-2xl shadow-inner">
+                            <h2 className="text-sm font-bold text-gray-800 dark:text-white mb-2">Identity Verification (Optional)</h2>
+                            <CameraCapture
+                                capturedImage={selfieDataUrl}
+                                onCapture={setSelfieDataUrl}
+                                onRetake={() => setSelfieDataUrl(null)}
+                                selfieInstruction="Take a live selfie to expedite your refund process."
                             />
                         </div>
 

@@ -352,6 +352,19 @@ const DetailsModal: React.FC<{ item: PayoutQueueItem, collaborations: CombinedCo
                                     </a>
                                 </section>
                             )}
+
+                            {'idProofSelfieUrl' in item.originalRequest && item.originalRequest.idProofSelfieUrl && (
+                                <section>
+                                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Verification Selfie</h3>
+                                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                                        <img 
+                                            src={item.originalRequest.idProofSelfieUrl} 
+                                            alt="Verification Selfie" 
+                                            className="w-full max-w-sm rounded-lg border dark:border-gray-600 shadow-sm" 
+                                        />
+                                    </div>
+                                </section>
+                            )}
                         </div>
                     )}
 

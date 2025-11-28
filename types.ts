@@ -388,6 +388,7 @@ export interface PayoutRequest {
     collabId?: string;
     isAccountVerified?: boolean;
     accountVerifiedName?: string;
+    idProofSelfieUrl?: string; // New field for live selfie
 }
 
 export interface RefundRequest {
@@ -406,6 +407,7 @@ export interface RefundRequest {
     panNumber: string;
     timestamp: any;
     collabId?: string;
+    idProofSelfieUrl?: string; // New field for live selfie
 }
 
 export interface DailyPayoutRequest {

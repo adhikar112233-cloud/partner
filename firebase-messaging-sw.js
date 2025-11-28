@@ -1,7 +1,7 @@
 // Scripts for service worker must be ES5.
 // We can't use import statements, so we use importScripts.
 importScripts("https://aistudiocdn.com/firebase@12.6.0/app-compat.js");
-importScripts("https://aistudiocdn.com/firebase@12.6.0/messaging-compat.js"); // Re-enabled to ensure a complete Firebase instance
+importScripts("https://aistudiocdn.com/firebase@12.6.0/messaging-compat.js");
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -15,22 +15,47 @@ const firebaseConfig = {
   measurementId: "G-QW74JFCEQ3"
 };
 
-// Initialize Firebase safely to prevent re-initialization errors
+// Initialize Firebase safely
 if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 
-// Re-enabled messaging logic to ensure a complete and valid Firebase instance.
 const messaging = firebase.messaging();
 
+// Handle background messages
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
   
-  const notificationTitle = payload.notification?.title || 'New Notification';
+  const notificationTitle = payload.notification?.title || 'New Activity';
   const notificationOptions = {
     body: payload.notification?.body || 'You have a new update.',
-    icon: '/favicon.svg'
+    icon: '/favicon.svg', // Ensure you have this icon or use a valid URL
+    data: payload.data
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// Handle notification click - Opens the app
+self.addEventListener('notificationclick', function(event) {
+  console.log('[firebase-messaging-sw.js] Notification click Received.', event);
+  
+  event.notification.close();
+
+  // This looks to see if the current is already open and focuses if it is
+  event.waitUntil(
+    clients.matchAll({
+      type: "window"
+    })
+    .then(function(clientList) {
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if (client.url === '/' && 'focus' in client)
+          return client.focus();
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
+    })
+  );
 });

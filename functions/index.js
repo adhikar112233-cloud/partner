@@ -59,18 +59,8 @@ async function createNotification(userId, title, body, type, relatedId, view) {
             isRead: false,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
-        // Note: Actual Push Notification (FCM) would be triggered here via admin.messaging().send() 
-        // if the user has an fcmToken stored in their profile.
-        const userDoc = await db.collection('users').doc(userId).get();
-        const fcmToken = userDoc.data()?.fcmToken;
-        if (fcmToken) {
-            try {
-                await admin.messaging().send({
-                    token: fcmToken,
-                    notification: { title, body }
-                });
-            } catch (e) { console.log("FCM Send Error", e); }
-        }
+        
+        // Push notification logic is now handled by the Firestore Trigger below
     } catch (e) {
         console.error("Notification Error:", e);
     }
@@ -463,10 +453,6 @@ app.post('/process-payout', async (req, res) => {
         }
 
         // Logic to call Cashfree Payouts API would be here.
-        // For demonstration, we mark it as approved/completed in DB.
-        // In production: 
-        // 1. Get Token 2. Add Beneficiary 3. Request Transfer 4. Handle Webhook for transfer status
-
         await docRef.update({ status: 'approved', processedAt: admin.firestore.FieldValue.serverTimestamp() });
         
         // Notify User
@@ -578,6 +564,59 @@ app.post('/admin-change-password', async (req, res) => {
         res.status(500).json({ message: e.message });
     }
 });
+
+// ==========================================
+// 9. PUSH NOTIFICATIONS TRIGGER
+// ==========================================
+
+// Trigger: When a notification document is created in Firestore, send a push notification
+exports.sendPushNotification = functions.firestore
+    .document('users/{userId}/notifications/{notificationId}')
+    .onCreate(async (snap, context) => {
+        const notification = snap.data();
+        const userId = context.params.userId;
+
+        // 1. Get the user's FCM token from their profile
+        const userDoc = await db.collection('users').doc(userId).get();
+        const fcmToken = userDoc.data()?.fcmToken;
+
+        if (!fcmToken) {
+            console.log(`No FCM token found for user ${userId}, skipping push notification.`);
+            return;
+        }
+
+        // 2. Construct the message payload
+        const payload = {
+            token: fcmToken,
+            notification: {
+                title: notification.title || 'New Activity',
+                body: notification.body || 'You have a new update in BIGYAPON.',
+            },
+            webpush: {
+                fcm_options: {
+                    link: '/' // Opens the app root; service worker can handle specific routing if needed
+                }
+            },
+            data: {
+                relatedId: notification.relatedId || '',
+                view: notification.view || 'dashboard',
+                type: notification.type || 'system'
+            }
+        };
+
+        // 3. Send via FCM
+        try {
+            await admin.messaging().send(payload);
+            console.log(`Push notification sent to user ${userId}`);
+        } catch (error) {
+            console.error(`Error sending push notification to user ${userId}:`, error);
+            
+            // If token is invalid, remove it
+            if (error.code === 'messaging/registration-token-not-registered' || error.code === 'messaging/invalid-argument') {
+                await db.collection('users').doc(userId).update({ fcmToken: null });
+            }
+        }
+    });
 
 // Export Main Function
 exports.createpayment = functions.https.onRequest(app);

@@ -193,7 +193,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
             }
 
             let selfieUrl: string | undefined = undefined;
-            if (platformSettings.payoutSettings.requireSelfieForPayout && selfieDataUrl) {
+            if (selfieDataUrl) {
                 const selfieFile = dataURLtoFile(selfieDataUrl, `payout_selfie_${user.id}.jpg`);
                 selfieUrl = await apiService.uploadPayoutSelfie(user.id, selfieFile);
             }
@@ -367,17 +367,20 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                     </div>
 
                     {/* Selfie Verification */}
-                    {platformSettings.payoutSettings.requireSelfieForPayout && (
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
+                        <div className="flex justify-between items-center mb-2">
                             <h2 className="text-xl font-bold text-gray-800 dark:text-white">Identity Verification</h2>
-                            <CameraCapture
-                                capturedImage={selfieDataUrl}
-                                onCapture={setSelfieDataUrl}
-                                onRetake={() => setSelfieDataUrl(null)}
-                                selfieInstruction="Hold a valid ID (Aadhaar, PAN, Voter ID) next to your face and take a clear selfie."
-                            />
+                            {!platformSettings.payoutSettings.requireSelfieForPayout && (
+                                <span className="text-xs text-gray-500 uppercase font-semibold">Optional</span>
+                            )}
                         </div>
-                    )}
+                        <CameraCapture
+                            capturedImage={selfieDataUrl}
+                            onCapture={setSelfieDataUrl}
+                            onRetake={() => setSelfieDataUrl(null)}
+                            selfieInstruction="Hold a valid ID (Aadhaar, PAN, Voter ID) next to your face and take a clear selfie."
+                        />
+                    </div>
                     
                     {error && <p className="text-red-600 text-sm text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-md">{error}</p>}
                     

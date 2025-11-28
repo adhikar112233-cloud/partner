@@ -4,6 +4,7 @@ import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/fire
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
 import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus } from '../types';
+// Fix: Add QueryDocumentSnapshot and DocumentData for pagination types.
 import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
@@ -16,7 +17,7 @@ import { SparklesIcon, LogoIcon, SearchIcon } from './Icons';
 import Dashboard from './Dashboard';
 import ProfilePage from './ProfilePage';
 import SettingsPanel from './SettingsPanel';
-import AdminPanel from './AdminPanel';
+import { AdminPanel } from './AdminPanel';
 import PostLoginWelcomePage from './PostLoginWelcomePage';
 import SendMessageModal from './SendMessageModal';
 import CollabRequestModal from './CollabRequestModal';
@@ -508,7 +509,7 @@ const App: React.FC = () => {
     setUser(updatedUser);
   };
   
-  const handleSearch = () => {
+  const handleSearch = async () => {
       const lowercasedQuery = searchQuery.toLowerCase().trim();
       
       if (!lowercasedQuery) {
@@ -517,9 +518,15 @@ const App: React.FC = () => {
       }
   
       setIsSearching(true);
-      // Simulate a small delay for better UX, since this is a client-side filter
-      // and could be instant.
-      setTimeout(() => {
+      
+      try {
+          // Use AI search via Gemini
+          const matchingIds = await findInfluencersWithAI(searchQuery, influencers);
+          const results = influencers.filter(inf => matchingIds.includes(inf.id));
+          setFilteredInfluencers(results);
+      } catch (error) {
+          console.error("AI Search failed, falling back to local filter:", error);
+          // Fallback to simple local filtering if AI fails
           const results = influencers.filter(inf => {
               return (
                   inf.name.toLowerCase().includes(lowercasedQuery) ||
@@ -529,10 +536,10 @@ const App: React.FC = () => {
                   (inf.location && inf.location.toLowerCase().includes(lowercasedQuery))
               );
           });
-  
           setFilteredInfluencers(results);
+      } finally {
           setIsSearching(false);
-      }, 300); 
+      }
   };
 
   const handleViewProfileClick = (profile: ProfileData) => {

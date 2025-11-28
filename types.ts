@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -125,6 +126,8 @@ export interface User {
     // New Creator Verification
     creatorVerificationStatus?: CreatorVerificationStatus;
     creatorVerificationDetails?: CreatorVerificationDetails;
+    isVerified?: boolean; // Verified Badge
+    isBoosted?: boolean; // Boost Status
 }
 
 export interface Influencer {
@@ -140,7 +143,7 @@ export interface Influencer {
     socialMediaLinks?: string;
     isBoosted?: boolean;
     membershipActive?: boolean;
-    isVerified?: boolean; // New: Creator Verification Badge
+    isVerified?: boolean; // Verified Badge
 }
 
 export interface DiscountSetting {
@@ -150,6 +153,12 @@ export interface DiscountSetting {
 
 export interface SocialMediaLink {
     platform: string;
+    url: string;
+}
+
+export interface TrainingVideo {
+    id: string;
+    title: string;
     url: string;
 }
 
@@ -180,6 +189,14 @@ export interface PlatformSettings {
     isCampaignBoostingEnabled: boolean;
     isBannerAdsEnabled?: boolean; // New flag for Banner Ads visibility
     
+    // Training Videos
+    trainingVideos?: {
+        brand: TrainingVideo[];
+        influencer: TrainingVideo[];
+        livetv: TrainingVideo[];
+        banneragency: TrainingVideo[];
+    };
+
     // KYC Settings
     isKycIdProofRequired: boolean;
     isKycSelfieRequired: boolean;
@@ -286,7 +303,8 @@ export enum View {
     PAYMENT_SUCCESS = 'payment_success',
     CREATOR_VERIFICATION = 'creator_verification',
     LEADERBOARD = 'leaderboard',
-    SHOPPING = 'shopping'
+    SHOPPING = 'shopping',
+    TRAINING = 'training'
 }
 
 export interface ProfileData {
@@ -297,7 +315,7 @@ export interface ProfileData {
     handle?: string;
     companyName?: string;
     bio?: string;
-    isVerified?: boolean; // New: Creator Verification Badge
+    isVerified?: boolean; // Verified Badge
 }
 
 export interface ConversationParticipant {
@@ -340,7 +358,7 @@ export interface LiveTvChannel {
     audienceSize: number;
     niche: string;
     isBoosted?: boolean;
-    isVerified?: boolean; // New: Creator Verification Badge
+    isVerified?: boolean; // Verified Badge
 }
 
 export interface BannerAd {
@@ -356,6 +374,7 @@ export interface BannerAd {
     bannerType: string;
     isBoosted?: boolean;
     timestamp?: any;
+    isVerified?: boolean; // Verified Badge (inherited from Agency user)
 }
 
 export interface Transaction {
@@ -464,6 +483,7 @@ export interface Campaign {
     status: 'open' | 'closed';
     isBoosted?: boolean;
     applicantIds?: string[];
+    isVerified?: boolean; // Verified Badge (Brand)
 }
 
 export interface CampaignApplication {
@@ -625,6 +645,7 @@ export interface Post {
     timestamp: any;
     isBlocked: boolean;
     visibility: 'public' | 'private';
+    isUserVerified?: boolean; // Verified Badge
 }
 
 export interface Comment {

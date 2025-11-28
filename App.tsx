@@ -225,7 +225,6 @@ const MembershipInactiveBanner: React.FC<{ onUpgrade: () => void }> = ({ onUpgra
 );
 
 const CreatorVerificationBanner: React.FC<{
-    // FIX: Changed status type to the full enum to resolve TypeScript error.
     status: CreatorVerificationStatus;
     onVerify: () => void;
     reason?: string;
@@ -257,7 +256,6 @@ const CreatorVerificationBanner: React.FC<{
 // Fix: Add pagination limit constant
 const INFLUENCER_PAGE_LIMIT = 12;
 
-// Fix: Reverted to default export to fix module resolution error.
 const App: React.FC = () => {
   if (!isFirebaseConfigured) {
     return <FirebaseConfigError />;
@@ -366,7 +364,8 @@ const App: React.FC = () => {
         
         // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
-          const influencerResult = await apiService.getInfluencersPaginated(platformSettings, { limit: INFLUENCER_PAGE_LIMIT });
+          // FIX: Passed 1 argument instead of 2.
+          const influencerResult = await apiService.getInfluencersPaginated({ limit: INFLUENCER_PAGE_LIMIT });
           setInfluencers(influencerResult.influencers);
           setFilteredInfluencers(influencerResult.influencers);
           setLastInfluencerDoc(influencerResult.lastVisible);
@@ -413,7 +412,8 @@ const App: React.FC = () => {
 
     setIsLoadingMore(true);
     try {
-        const result = await apiService.getInfluencersPaginated(platformSettings, {
+        // FIX: Passed 1 argument instead of 2.
+        const result = await apiService.getInfluencersPaginated({
             limit: INFLUENCER_PAGE_LIMIT,
             startAfterDoc: lastInfluencerDoc!,
         });
@@ -489,8 +489,9 @@ const App: React.FC = () => {
   const unreadCount = useMemo(() => notifications.filter(n => !n.isRead).length, [notifications]);
 
   const handleNotificationClick = (notification: AppNotification) => {
-    if (!notification.isRead) {
-        apiService.markNotificationAsRead(notification.id);
+    // FIX: Passed 2 arguments instead of 1.
+    if (!notification.isRead && user) {
+        apiService.markNotificationAsRead(user.id, notification.id);
     }
     setActiveView(notification.view);
     setIsFeedOpen(false);
@@ -807,6 +808,8 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
+        theme={theme}
+        setTheme={setTheme}
       />
       <Sidebar 
         isMobile
@@ -817,6 +820,8 @@ const App: React.FC = () => {
         setActiveView={setActiveView}
         userRole={user.role}
         platformSettings={platformSettings}
+        theme={theme}
+        setTheme={setTheme}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <NotificationManager user={user} />
@@ -836,6 +841,7 @@ const App: React.FC = () => {
         )}
         <Header 
             user={user} 
+            activeView={activeView}
             setActiveView={setActiveView}
             platformSettings={platformSettings}
             onConversationSelected={handleConversationSelected}
@@ -844,13 +850,13 @@ const App: React.FC = () => {
             setTheme={setTheme}
             unreadCount={unreadCount}
             onActivityFeedToggle={() => setIsFeedOpen(prev => !prev)}
+            appMode={appMode}
+            setAppMode={setAppMode}
         />
 
         {platformBanners.length > 0 && (
             <ClickableImageBanner 
-                imageUrl={platformBanners[0].imageUrl}
-                targetUrl={platformBanners[0].targetUrl}
-                title={platformBanners[0].title}
+                banners={platformBanners}
             />
         )}
         

@@ -1,9 +1,12 @@
 
 
+
+
 import React, { useState } from 'react';
-import { PlatformSettings, CompanyInfo } from '../types';
+import { PlatformSettings, CompanyInfo, TrainingVideo, UserRole } from '../types';
 import { apiService } from '../services/apiService';
 import { BACKEND_URL } from '../services/firebase';
+import { TrashIcon, AcademicCapIcon } from './Icons';
 
 interface SettingsPanelProps {
     onSettingsUpdate: () => void;
@@ -43,9 +46,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
     const [settings, setSettings] = useState<PlatformSettings | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    
+    // Training Video State
+    const [selectedTrainingRole, setSelectedTrainingRole] = useState<'brand' | 'influencer' | 'livetv' | 'banneragency'>('brand');
+    const [newVideoTitle, setNewVideoTitle] = useState('');
+    const [newVideoUrl, setNewVideoUrl] = useState('');
 
     React.useEffect(() => {
         apiService.getPlatformSettings().then(data => {
+            // Ensure trainingVideos structure exists
+            if (!data.trainingVideos) {
+                data.trainingVideos = { brand: [], influencer: [], livetv: [], banneragency: [] };
+            }
             setSettings(data);
             setIsLoading(false);
         });
@@ -72,6 +84,40 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 }
             });
         }
+    };
+
+    // Training Video Handlers
+    const handleAddTrainingVideo = () => {
+        if (!settings || !newVideoTitle.trim() || !newVideoUrl.trim()) return;
+        
+        const newVideo: TrainingVideo = {
+            id: Date.now().toString(),
+            title: newVideoTitle,
+            url: newVideoUrl
+        };
+
+        const updatedVideos = {
+            ...settings.trainingVideos,
+            [selectedTrainingRole]: [
+                ...(settings.trainingVideos?.[selectedTrainingRole] || []),
+                newVideo
+            ]
+        };
+
+        setSettings({ ...settings, trainingVideos: updatedVideos });
+        setNewVideoTitle('');
+        setNewVideoUrl('');
+    };
+
+    const handleRemoveTrainingVideo = (role: 'brand' | 'influencer' | 'livetv' | 'banneragency', videoId: string) => {
+        if (!settings) return;
+        
+        const updatedVideos = {
+            ...settings.trainingVideos,
+            [role]: (settings.trainingVideos?.[role] || []).filter(v => v.id !== videoId)
+        };
+
+        setSettings({ ...settings, trainingVideos: updatedVideos });
     };
 
     const handleSave = async () => {
@@ -102,6 +148,74 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
             </div>
             
             <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-200px)] overflow-y-auto">
+                
+                {/* Training Resources Section */}
+                <div className="px-6 py-3 bg-indigo-50 dark:bg-indigo-900/20"><h4 className="font-semibold text-indigo-800 dark:text-indigo-200 flex items-center gap-2"><AcademicCapIcon className="w-5 h-5"/> Training Resources</h4></div>
+                
+                <SettingRow label="Manage Videos" helpText="Add YouTube video links for user training. Select a role to manage their videos.">
+                    <div className="space-y-4">
+                        {/* Role Selector */}
+                        <div className="flex space-x-2 overflow-x-auto pb-2">
+                            {(['brand', 'influencer', 'livetv', 'banneragency'] as const).map(role => (
+                                <button
+                                    key={role}
+                                    onClick={() => setSelectedTrainingRole(role)}
+                                    className={`px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap ${selectedTrainingRole === role ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}
+                                >
+                                    {role.charAt(0).toUpperCase() + role.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Add New Video Form */}
+                        <div className="flex flex-col sm:flex-row gap-2 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border dark:border-gray-600">
+                            <input 
+                                type="text" 
+                                placeholder="Video Title (e.g. How to find influencers)" 
+                                value={newVideoTitle}
+                                onChange={e => setNewVideoTitle(e.target.value)}
+                                className="flex-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                            <input 
+                                type="url" 
+                                placeholder="YouTube URL" 
+                                value={newVideoUrl}
+                                onChange={e => setNewVideoUrl(e.target.value)}
+                                className="flex-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                            <button 
+                                onClick={handleAddTrainingVideo}
+                                disabled={!newVideoTitle || !newVideoUrl}
+                                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 disabled:opacity-50"
+                            >
+                                Add
+                            </button>
+                        </div>
+
+                        {/* Video List */}
+                        <div className="space-y-2">
+                            {(settings.trainingVideos?.[selectedTrainingRole] || []).length === 0 ? (
+                                <p className="text-sm text-gray-500 italic">No videos added for {selectedTrainingRole}.</p>
+                            ) : (
+                                (settings.trainingVideos?.[selectedTrainingRole] || []).map((video, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md shadow-sm">
+                                        <div className="flex-1 min-w-0 pr-4">
+                                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{video.title}</p>
+                                            <a href={video.url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline truncate block">{video.url}</a>
+                                        </div>
+                                        <button 
+                                            onClick={() => handleRemoveTrainingVideo(selectedTrainingRole, video.id)}
+                                            className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                                        >
+                                            <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </SettingRow>
+
                 {/* Company Information (New Section) */}
                 <div className="px-6 py-3 bg-purple-50 dark:bg-purple-900/20"><h4 className="font-semibold text-purple-800 dark:text-purple-200">Company Information (For Agreements)</h4></div>
                 <SettingRow label="Company Name" helpText="The official name of your company displayed in user agreements.">

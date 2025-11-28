@@ -1,3 +1,5 @@
+
+
 // ... (imports)
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
@@ -171,9 +173,10 @@ export const apiService = {
         return uploadFile(`banners/${Date.now()}_${file.name}`, file);
     },
     getInfluencersPaginated: async (options: { limit: number, startAfterDoc?: any }) => {
-        let q = query(collection(db, 'influencers'), limit(options.limit));
+        // We will perform client-side sorting for boosts as complex Firestore queries need index creation
+        let q = query(collection(db, 'influencers'), limit(options.limit * 2)); // Fetch more to allow for client-side boosting reorder
         if (options.startAfterDoc) {
-            q = query(collection(db, 'influencers'), startAfter(options.startAfterDoc), limit(options.limit));
+            q = query(collection(db, 'influencers'), startAfter(options.startAfterDoc), limit(options.limit * 2));
         }
         const snapshot = await getDocs(q);
         const influencers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Influencer));
@@ -188,7 +191,9 @@ export const apiService = {
     },
     getLiveTvChannels: async (settings: PlatformSettings): Promise<LiveTvChannel[]> => {
         const snapshot = await getDocs(collection(db, 'livetv_channels'));
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
+        const channels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
+        // Sort boosted channels to top
+        return channels.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     getConversations: async (userId: string): Promise<any[]> => {
         const q = query(collection(db, `users/${userId}/conversations`), orderBy('lastMessage.timestamp', 'desc'));
@@ -385,7 +390,8 @@ export const apiService = {
         if (location && location !== 'All') {
             campaigns = campaigns.filter(c => !c.location || c.location === 'All' || c.location === location);
         }
-        return campaigns;
+        // Sort boosted campaigns to top
+        return campaigns.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     applyToCampaign: async (application: any) => {
         const ref = await addDoc(collection(db, 'campaign_applications'), { ...application, status: 'pending_brand_review', timestamp: serverTimestamp() });
@@ -514,7 +520,8 @@ export const apiService = {
         if (location) {
             ads = ads.filter(ad => ad.location.toLowerCase().includes(location.toLowerCase()));
         }
-        return ads;
+        // Sort boosted ads to top
+        return ads.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     getBannerAdsForAgency: async (agencyId: string): Promise<BannerAd[]> => {
         const q = query(collection(db, 'banner_ads'), where('agencyId', '==', agencyId));

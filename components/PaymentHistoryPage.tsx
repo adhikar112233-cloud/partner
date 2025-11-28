@@ -1,7 +1,10 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Transaction, PayoutRequest } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
+import { ExclamationTriangleIcon } from './Icons';
+import CashfreeModal from './PhonePeModal';
 
 interface CombinedHistoryItem {
     date: Date | undefined;
@@ -12,6 +15,7 @@ interface CombinedHistoryItem {
     transactionId: string;
     collaborationId: string;
     collabId?: string;
+    deductedPenalty?: number;
 }
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
@@ -33,18 +37,22 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'all' | 'payments' | 'payouts'>('all');
+    const [showPayPenaltyModal, setShowPayPenaltyModal] = useState(false);
+    const [platformSettings, setPlatformSettings] = useState<any>(null);
 
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
             setError(null);
             try {
-                const [userTransactions, userPayouts] = await Promise.all([
+                const [userTransactions, userPayouts, settings] = await Promise.all([
                     apiService.getTransactionsForUser(user.id),
                     apiService.getPayoutHistoryForUser(user.id),
+                    apiService.getPlatformSettings()
                 ]);
                 setTransactions(userTransactions);
                 setPayouts(userPayouts);
+                setPlatformSettings(settings);
             } catch (err) {
                 console.error(err);
                 setError("Failed to load payment history.");
@@ -86,6 +94,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             transactionId: p.id,
             collaborationId: p.collaborationId,
             collabId: p.collabId,
+            deductedPenalty: p.deductedPenalty
         }));
 
         return [...mappedTransactions, ...mappedPayouts].sort((a, b) => {
@@ -105,8 +114,29 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
         <div className="space-y-6 h-full flex flex-col">
             <div>
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Payment History</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions and payouts.</p>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions, payouts, and penalties.</p>
             </div>
+
+            {/* Penalty Alert Section */}
+            {user.pendingPenalty && user.pendingPenalty > 0 && (
+                <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                        <ExclamationTriangleIcon className="w-6 h-6 text-red-600 dark:text-red-400 mt-1" />
+                        <div>
+                            <h3 className="font-bold text-red-800 dark:text-red-300">Pending Penalty: ₹{user.pendingPenalty.toLocaleString()}</h3>
+                            <p className="text-sm text-red-700 dark:text-red-400">
+                                This amount will be deducted from your next payout due to previous cancellations.
+                            </p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => setShowPayPenaltyModal(true)}
+                        className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-md transition-colors whitespace-nowrap"
+                    >
+                        Clear Penalty Now
+                    </button>
+                </div>
+            )}
 
             <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700">
                 <button 
@@ -153,7 +183,12 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                                 {filteredHistory.map((item, index) => (
                                     <tr key={`${item.transactionId}-${index}`}>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.date?.toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 max-w-xs truncate" title={item.description}>{item.description}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 max-w-xs truncate" title={item.description}>
+                                            {item.description}
+                                            {item.deductedPenalty ? (
+                                                <span className="block text-xs text-red-500 mt-1">Penalty Deducted: -₹{item.deductedPenalty}</span>
+                                            ) : null}
+                                        </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono dark:text-gray-400">{item.collabId || 'N/A'}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             <span className={`font-semibold ${item.type === 'Payment Made' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{item.type}</span>
@@ -168,6 +203,24 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                         </table>
                     </div>
                 </div>
+            )}
+
+            {showPayPenaltyModal && platformSettings && (
+                <CashfreeModal
+                    user={user}
+                    collabType="penalty_payment"
+                    baseAmount={user.pendingPenalty || 0}
+                    platformSettings={platformSettings}
+                    onClose={() => {
+                        setShowPayPenaltyModal(false);
+                        window.location.reload(); // Refresh to update user data
+                    }}
+                    transactionDetails={{
+                        userId: user.id,
+                        description: `Penalty Payment`,
+                        relatedId: user.id, // User paying for themselves
+                    }}
+                />
             )}
         </div>
     );

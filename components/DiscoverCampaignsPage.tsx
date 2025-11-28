@@ -1,8 +1,10 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { User, Campaign } from '../types';
 import { apiService } from '../services/apiService';
 import ApplyToCampaignModal from './ApplyToCampaignModal';
-import { SparklesIcon } from './Icons';
+import { SparklesIcon, VerifiedIcon } from './Icons';
 
 interface DiscoverCampaignsPageProps {
     user: User; // The influencer
@@ -19,7 +21,10 @@ const CampaignCard: React.FC<{ campaign: Campaign; onApply: () => void; hasAppli
             <div className="flex items-center space-x-4">
                 <img src={campaign.brandAvatar} alt={campaign.brandName} className="w-12 h-12 rounded-full object-cover"/>
                 <div>
-                    <h3 className="text-sm font-semibold text-gray-600">{campaign.brandName}</h3>
+                    <h3 className="text-sm font-semibold text-gray-600 flex items-center gap-1">
+                        {campaign.brandName}
+                        {campaign.isVerified && <VerifiedIcon className="w-3 h-3 text-blue-500" />}
+                    </h3>
                     <h2 className="text-lg font-bold text-gray-800">{campaign.title}</h2>
                 </div>
             </div>

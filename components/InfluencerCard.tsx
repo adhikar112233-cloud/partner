@@ -1,6 +1,8 @@
+
+
 import React from 'react';
 import { Influencer, ProfileData } from '../types';
-import { CollabIcon, MessagesIcon, InstagramIcon, YoutubeIcon, TiktokIcon, XIcon, SparklesIcon } from './Icons';
+import { CollabIcon, MessagesIcon, InstagramIcon, YoutubeIcon, TiktokIcon, XIcon, SparklesIcon, VerifiedIcon } from './Icons';
 
 interface InfluencerCardProps {
   influencer: Influencer;
@@ -71,7 +73,8 @@ const InfluencerCard: React.FC<InfluencerCardProps> = ({ influencer, onStartChat
               avatar: influencer.avatar, 
               role: 'influencer', 
               handle: influencer.handle, 
-              bio: influencer.bio 
+              bio: influencer.bio,
+              isVerified: influencer.isVerified 
             })} 
             className="rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             aria-label={`View profile of ${influencer.name}`}
@@ -79,7 +82,10 @@ const InfluencerCard: React.FC<InfluencerCardProps> = ({ influencer, onStartChat
             <img src={influencer.avatar} alt={influencer.name} className="w-16 h-16 rounded-full object-cover" />
           </button>
           <div>
-            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">{influencer.name}</h3>
+            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-1">
+                {influencer.name}
+                {influencer.isVerified && <VerifiedIcon className="w-4 h-4 text-blue-500" />}
+            </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">@{influencer.handle}</p>
           </div>
         </div>

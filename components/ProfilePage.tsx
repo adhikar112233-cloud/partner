@@ -1,11 +1,13 @@
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import { Timestamp } from 'firebase/firestore';
-import { GiftIcon, CoinIcon, DocumentTextIcon, ShareIcon } from './Icons';
+import { GiftIcon, CoinIcon, DocumentTextIcon, ShareIcon, VerifiedIcon } from './Icons';
 import AgreementModal from './AgreementModal';
 
 interface ProfilePageProps {
@@ -426,7 +428,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
           </div>
           
           <div className="mt-4 sm:mt-0 sm:ml-6 text-center sm:text-left">
-            <h1 className="text-3xl font-bold">{user.name}</h1>
+            <h1 className="text-3xl font-bold flex items-center justify-center sm:justify-start gap-2">
+                {user.name}
+                {user.isVerified && <VerifiedIcon className="w-6 h-6 text-blue-200" />}
+            </h1>
             <p className="text-indigo-100 font-medium">{user.email}</p>
             <p className="text-indigo-200 text-sm mt-1 capitalize">{user.role}</p>
             {user.pendingPenalty && user.pendingPenalty > 0 && (

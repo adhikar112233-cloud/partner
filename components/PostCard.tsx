@@ -1,9 +1,10 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Post, User, Comment } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
-import { GlobeIcon, LockClosedIcon, ImageIcon, TrashIcon } from './Icons';
+import { GlobeIcon, LockClosedIcon, ImageIcon, TrashIcon, VerifiedIcon } from './Icons';
 
 const formatTimeAgo = (timestamp: any) => {
     if (!timestamp?.toDate) return 'Just now';
@@ -234,7 +235,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onDelete, onUpda
                 <div className="flex items-center space-x-3">
                     <img src={post.userAvatar} alt={post.userName} className="w-10 h-10 rounded-full object-cover" />
                     <div>
-                        <p className="font-bold dark:text-gray-100">{post.userName}</p>
+                        <p className="font-bold dark:text-gray-100 flex items-center gap-1">
+                            {post.userName}
+                            {post.isUserVerified && <VerifiedIcon className="w-3 h-3 text-blue-500" />}
+                        </p>
                         <div className="flex items-center space-x-2">
                              <p className="text-xs text-gray-500 dark:text-gray-400">{formatTimeAgo(post.timestamp)}</p>
                              {post.visibility === 'private' ? <LockClosedIcon className="w-3 h-3 text-gray-400" /> : <GlobeIcon className="w-3 h-3 text-gray-400" />}

@@ -1,8 +1,10 @@
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
-import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon, ShoppingBagIcon } from './Icons';
+import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon, ShoppingBagIcon, AcademicCapIcon } from './Icons';
 import { authService } from '../services/authService';
 import FollowListModal from './FollowListModal';
 
@@ -110,6 +112,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     
     // Shopping Link (All standard users)
     { view: View.SHOPPING, label: 'Shopping', icon: ShoppingBagIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
+
+    // Training (All standard users)
+    { view: View.TRAINING, label: 'Training Center', icon: AcademicCapIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
 
     // Staff
     { view: View.ADMIN, label: 'Admin Panel', icon: AdminIcon, roles: ['staff'] },

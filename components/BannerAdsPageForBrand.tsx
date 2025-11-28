@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, BannerAd, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
-import { MessagesIcon, SparklesIcon } from './Icons';
+import { MessagesIcon, SparklesIcon, VerifiedIcon } from './Icons';
 import BannerAdBookingModal from './BannerAdBookingModal';
 
 interface BannerAdsPageForBrandProps {
@@ -16,7 +16,7 @@ const BannerAdCard: React.FC<{
     onMessage: (ad: BannerAd) => void;
 }> = ({ ad, onBookNow, onMessage }) => {
     return (
-        <div className="relative bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col transform hover:-translate-y-1 transition-transform duration-300">
+        <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden flex flex-col transform hover:-translate-y-1 transition-transform duration-300">
             {ad.isBoosted && (
                 <div className="absolute top-3 right-3 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full flex items-center shadow-md z-10">
                     <SparklesIcon className="w-4 h-4 mr-1" /> Boosted
@@ -24,22 +24,40 @@ const BannerAdCard: React.FC<{
             )}
             <img src={ad.photoUrl} alt={`Ad space in ${ad.location}`} className="w-full h-48 object-cover"/>
             <div className="p-5 flex-grow flex flex-col">
-                <h3 className="text-lg font-bold text-gray-800">{ad.location}</h3>
-                <p className="text-sm text-gray-500">{ad.address}</p>
-                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div><span className="font-semibold text-gray-500">Type:</span> {ad.bannerType}</div>
-                    <div><span className="font-semibold text-gray-500">Size:</span> {ad.size}</div>
+                <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white line-clamp-1">{ad.address}</h3>
+                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs rounded-full whitespace-nowrap">{ad.bannerType}</span>
                 </div>
-                <div className="mt-4 flex-grow"></div>
-                <div className="pt-4 border-t border-gray-200">
-                    <p className="text-lg font-bold text-indigo-600 text-center">
-                        ₹{(ad.feePerDay || 0).toLocaleString('en-IN')} <span className="text-sm font-normal text-gray-500">/ day</span>
+                
+                <div className="flex items-center gap-2 mb-3">
+                    <img src={ad.agencyAvatar} alt={ad.agencyName} className="w-6 h-6 rounded-full"/>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                        {ad.agencyName}
+                        {ad.isVerified && <VerifiedIcon className="w-3 h-3 text-blue-500" />}
                     </p>
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                        <button onClick={() => onMessage(ad)} className="w-full flex items-center justify-center px-4 py-3 text-sm font-semibold text-indigo-600 bg-indigo-100 rounded-lg hover:bg-indigo-200 transition-colors">
-                           <MessagesIcon className="w-5 h-5 mr-2" /> Message
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-300 mb-4">
+                    <div>
+                        <span className="block text-xs text-gray-400">Location</span>
+                        <span className="font-medium">{ad.location}</span>
+                    </div>
+                    <div>
+                        <span className="block text-xs text-gray-400">Size</span>
+                        <span className="font-medium">{ad.size}</span>
+                    </div>
+                </div>
+
+                <div className="mt-auto pt-4 border-t dark:border-gray-700 flex justify-between items-center">
+                    <div>
+                        <p className="text-xs text-gray-400">Daily Fee</p>
+                        <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">₹{ad.feePerDay.toLocaleString()}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => onMessage(ad)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-full transition-colors">
+                            <MessagesIcon className="w-5 h-5"/>
                         </button>
-                        <button onClick={() => onBookNow(ad)} className="w-full px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-teal-400 to-indigo-600 rounded-lg shadow-md hover:shadow-lg transition-colors">
+                        <button onClick={() => onBookNow(ad)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow transition-colors">
                             Book Now
                         </button>
                     </div>
@@ -51,86 +69,95 @@ const BannerAdCard: React.FC<{
 
 const BannerAdsPageForBrand: React.FC<BannerAdsPageForBrandProps> = ({ user, platformSettings, onStartChat }) => {
     const [ads, setAds] = useState<BannerAd[]>([]);
+    const [filteredAds, setFilteredAds] = useState<BannerAd[]>([]);
+    const [locationFilter, setLocationFilter] = useState('');
+    const [typeFilter, setTypeFilter] = useState('');
     const [isLoading, setIsLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [bookingAd, setBookingAd] = useState<BannerAd | null>(null);
-
-    const fetchAds = async (query: string) => {
-        setIsLoading(true);
-        try {
-            const data = await apiService.getBannerAds(query, platformSettings);
-            setAds(data);
-        } catch (error) {
-            console.error("Failed to fetch banner ads:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const [selectedAd, setSelectedAd] = useState<BannerAd | null>(null);
 
     useEffect(() => {
-        fetchAds(''); // Initial fetch for all ads
+        const fetchAds = async () => {
+            setIsLoading(true);
+            try {
+                const data = await apiService.getBannerAds('', platformSettings);
+                setAds(data);
+                setFilteredAds(data);
+            } catch (err) {
+                console.error("Failed to load banner ads", err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchAds();
     }, [platformSettings]);
 
-    const handleSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-        fetchAds(searchQuery);
-    };
+    useEffect(() => {
+        let result = ads;
+        if (locationFilter) {
+            result = result.filter(ad => ad.location.toLowerCase().includes(locationFilter.toLowerCase()));
+        }
+        if (typeFilter) {
+            result = result.filter(ad => ad.bannerType === typeFilter);
+        }
+        setFilteredAds(result);
+    }, [locationFilter, typeFilter, ads]);
 
-    const handleMessageAgency = (ad: BannerAd) => {
-        const agencyParticipant: ConversationParticipant = {
+    const handleMessage = (ad: BannerAd) => {
+        onStartChat({
             id: ad.agencyId,
             name: ad.agencyName,
             avatar: ad.agencyAvatar,
             role: 'banneragency',
-            companyName: ad.agencyName,
-        };
-        onStartChat(agencyParticipant);
+            companyName: ad.agencyName
+        });
     };
+
+    const bannerTypes = Array.from(new Set(ads.map(ad => ad.bannerType)));
+    const locations = Array.from(new Set(ads.map(ad => ad.location)));
 
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-3xl font-bold text-gray-800">Banner Ads Marketplace</h1>
-                <p className="text-gray-500 mt-1">Find the perfect outdoor advertising space for your brand.</p>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Banner Ads</h1>
+                <p className="text-gray-500 dark:text-gray-400">Browse and book physical ad spaces.</p>
             </div>
 
-            <form onSubmit={handleSearch} className="flex gap-2">
-                <input
-                    type="text"
-                    placeholder="Search by city (e.g., Mumbai, Delhi)..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
-                <button type="submit" className="px-5 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
-                    Search
-                </button>
-            </form>
+            <div className="flex flex-col sm:flex-row gap-4">
+                <select 
+                    value={locationFilter} 
+                    onChange={e => setLocationFilter(e.target.value)} 
+                    className="p-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                >
+                    <option value="">All Cities</option>
+                    {locations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                </select>
+                <select 
+                    value={typeFilter} 
+                    onChange={e => setTypeFilter(e.target.value)} 
+                    className="p-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                >
+                    <option value="">All Types</option>
+                    {bannerTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+            </div>
 
             {isLoading ? (
-                <div className="text-center p-8">Loading ad spaces...</div>
-            ) : ads.length === 0 ? (
-                <div className="text-center py-10 bg-white rounded-lg shadow">
-                    <p className="text-gray-500">No banner ads found for this location. Try another city or clear the search.</p>
-                </div>
+                <div className="text-center py-10">Loading ads...</div>
+            ) : filteredAds.length === 0 ? (
+                <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow"><p className="text-gray-500">No banner ads available.</p></div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {ads.map(ad => (
-                        <BannerAdCard 
-                            key={ad.id} 
-                            ad={ad}
-                            onBookNow={setBookingAd}
-                            onMessage={handleMessageAgency}
-                        />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredAds.map(ad => (
+                        <BannerAdCard key={ad.id} ad={ad} onBookNow={setSelectedAd} onMessage={handleMessage} />
                     ))}
                 </div>
             )}
-            
-            {bookingAd && (
+
+            {selectedAd && (
                 <BannerAdBookingModal 
-                    user={user}
-                    ad={bookingAd}
-                    onClose={() => setBookingAd(null)}
+                    user={user} 
+                    ad={selectedAd} 
+                    onClose={() => setSelectedAd(null)} 
                 />
             )}
         </div>

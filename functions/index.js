@@ -176,6 +176,11 @@ async function processPaymentSuccess(orderId, params) {
                     batch.update(db.collection('banner_ads').doc(relatedId), { isBoosted: true });
                 }
                 notificationBody = `Boosting activated for your ${targetType}!`;
+            } else if (collabType === 'penalty_payment') {
+                // Clear the penalty
+                const userRef = db.collection('users').doc(userId);
+                batch.update(userRef, { pendingPenalty: 0 });
+                notificationBody = "Your pending penalty has been cleared.";
             }
         }
 

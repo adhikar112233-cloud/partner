@@ -32,7 +32,7 @@ const CancellationPenaltyModal: React.FC<CancellationPenaltyModalProps> = ({ isO
                                 <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-800">
                                     <p className="font-bold text-red-700 dark:text-red-400 mb-1">⚠️ Cancellation Penalty</p>
                                     <p className="text-red-600 dark:text-red-300">
-                                        A penalty of <span className="font-bold">₹{penaltyAmount}</span> will be applied to your account and deducted from future payouts.
+                                        A penalty of <span className="font-bold">₹{penaltyAmount}</span> will be applied to your account and deducted from your next payout.
                                     </p>
                                 </div>
                             )}
@@ -64,7 +64,7 @@ const CancellationPenaltyModal: React.FC<CancellationPenaltyModalProps> = ({ isO
                         disabled={isProcessing || !reason.trim()}
                         className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 shadow-md transition-colors"
                     >
-                        {isProcessing ? 'Cancelling...' : (penaltyAmount > 0 ? `Confirm & Pay Penalty` : 'Confirm Cancellation')}
+                        {isProcessing ? 'Cancelling...' : (penaltyAmount > 0 ? `Confirm & Accept Penalty` : 'Confirm Cancellation')}
                     </button>
                 </div>
             </div>

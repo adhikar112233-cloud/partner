@@ -2,6 +2,7 @@
 
 
 
+
 import React, { useState } from 'react';
 import { PlatformSettings, CompanyInfo, TrainingVideo, UserRole } from '../types';
 import { apiService } from '../services/apiService';
@@ -147,7 +148,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 </button>
             </div>
             
-            <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-200px)] overflow-y-auto">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 
                 {/* Training Resources Section */}
                 <div className="px-6 py-3 bg-indigo-50 dark:bg-indigo-900/20"><h4 className="font-semibold text-indigo-800 dark:text-indigo-200 flex items-center gap-2"><AcademicCapIcon className="w-5 h-5"/> Training Resources</h4></div>

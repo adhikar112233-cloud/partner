@@ -1,4 +1,6 @@
 
+
+
 import React from 'react';
 import { User, PlatformSettings, TrainingVideo } from '../types';
 import { YoutubeIcon, AcademicCapIcon } from './Icons';
@@ -28,7 +30,7 @@ const TrainingPage: React.FC<TrainingPageProps> = ({ user, platformSettings }) =
     };
 
     return (
-        <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="max-w-7xl mx-auto px-4 py-8 pb-20">
             <div className="text-center mb-10">
                 <div className="inline-block p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full mb-4 text-indigo-600 dark:text-indigo-400">
                     <AcademicCapIcon className="w-10 h-10" />

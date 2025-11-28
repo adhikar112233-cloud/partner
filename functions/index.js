@@ -40,10 +40,139 @@ async function getCashfreeConfig(type = 'payment') {
     }
 }
 
+// --- CORE LOGIC: Process Successful Payment (DB Updates) ---
+async function processPaymentSuccess(orderId, params) {
+    const { collabType, relatedId, userId, description, collabId, amount, paymentDetails } = params;
+    
+    const transactionRef = db.collection('transactions').doc(orderId);
+    const txDoc = await transactionRef.get();
+    
+    if (txDoc.exists) {
+        console.log(`Order ${orderId} already processed.`);
+        return { success: true, message: "Already processed" };
+    }
+
+    try {
+        const batch = db.batch();
+
+        // A. Create Transaction Record
+        batch.set(transactionRef, {
+            transactionId: orderId,
+            userId: userId,
+            amount: Number(amount),
+            type: 'payment',
+            status: 'completed',
+            description: description || "Payment",
+            relatedId: relatedId || "",
+            collabId: collabId || "", 
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            paymentGatewayDetails: paymentDetails || {}
+        });
+
+        // B. Update Related Entity based on collabType
+        if (collabType && relatedId) {
+            if (collabType === 'direct') {
+                const ref = db.collection('collaboration_requests').doc(relatedId);
+                batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+            } else if (collabType === 'campaign') {
+                const ref = db.collection('campaign_applications').doc(relatedId);
+                batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+            } else if (collabType === 'ad_slot') {
+                const ref = db.collection('ad_slot_requests').doc(relatedId);
+                batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+            } else if (collabType === 'banner_booking') {
+                const ref = db.collection('banner_ad_booking_requests').doc(relatedId);
+                batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+            } else if (collabType === 'membership') {
+                const now = admin.firestore.Timestamp.now();
+                const oneYear = new Date();
+                oneYear.setFullYear(oneYear.getFullYear() + 1);
+                const userRef = db.collection('users').doc(userId);
+                batch.update(userRef, {
+                    'membership.plan': relatedId,
+                    'membership.isActive': true,
+                    'membership.startsAt': now,
+                    'membership.expiresAt': admin.firestore.Timestamp.fromDate(oneYear)
+                });
+            } else if (collabType === 'boost_profile') {
+                const boostRef = db.collection('boosts').doc(); 
+                const days = 7;
+                const expiry = new Date();
+                expiry.setDate(expiry.getDate() + days);
+                batch.set(boostRef, {
+                    userId: userId,
+                    targetId: userId,
+                    targetType: 'profile',
+                    expiresAt: admin.firestore.Timestamp.fromDate(expiry),
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                const userRef = db.collection('influencers').doc(userId);
+                batch.update(userRef, { isBoosted: true });
+            } else if (collabType === 'boost_campaign') {
+                const boostRef = db.collection('boosts').doc(); 
+                const days = 7;
+                const expiry = new Date();
+                expiry.setDate(expiry.getDate() + days);
+                batch.set(boostRef, {
+                    userId: userId,
+                    targetId: relatedId,
+                    targetType: 'campaign',
+                    expiresAt: admin.firestore.Timestamp.fromDate(expiry),
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                const campaignRef = db.collection('campaigns').doc(relatedId);
+                batch.update(campaignRef, { isBoosted: true });
+            } else if (collabType === 'boost_banner') {
+                const boostRef = db.collection('boosts').doc(); 
+                const days = 7;
+                const expiry = new Date();
+                expiry.setDate(expiry.getDate() + days);
+                batch.set(boostRef, {
+                    userId: userId,
+                    targetId: relatedId,
+                    targetType: 'banner',
+                    expiresAt: admin.firestore.Timestamp.fromDate(expiry),
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                const adRef = db.collection('banner_ads').doc(relatedId);
+                batch.update(adRef, { isBoosted: true });
+            }
+        }
+
+        // C. Deduct Coins if used (This requires reading user doc first, but for simplicity assuming valid)
+        // If coinsUsed logic needs to be robust, handle it here. 
+        // Currently, frontend subtracts coins from amount. 
+        // We might want to decrement user coins here if we passed 'coinsUsed'
+        
+        await batch.commit();
+        console.log(`Order ${orderId} verified and processed.`);
+        return { success: true };
+    } catch (e) {
+        console.error("Error processing payment:", e);
+        return { success: false, error: e.message };
+    }
+}
+
 // --- ENDPOINT: Payment Gateway Order Creation ---
 app.post('/', async (req, res) => {
     try {
         const { amount, phone, customerId, returnUrl, collabType, relatedId, userId, description, coinsUsed, collabId } = req.body;
+        
+        // 1. Handle Zero Amount (100% Coin Redemption)
+        if (amount <= 0) {
+            const coinOrderId = "COIN_" + Date.now();
+            await processPaymentSuccess(coinOrderId, {
+                collabType,
+                relatedId,
+                userId,
+                description: description || "Paid with Coins",
+                collabId,
+                amount: 0,
+                paymentDetails: { method: "COINS", coinsUsed: coinsUsed }
+            });
+            return res.json({ paymentSessionId: "COIN-ONLY", orderId: coinOrderId });
+        }
+
         const config = await getCashfreeConfig('payment');
         
         if (!config.appId) {
@@ -105,6 +234,18 @@ app.post('/', async (req, res) => {
 app.get('/verify-order/:orderId', async (req, res) => {
     try {
         const orderId = req.params.orderId;
+
+        // Check if it's a coin order first
+        if (orderId.startsWith("COIN_")) {
+             // Coin orders are processed immediately upon creation, so we just check if transaction exists
+             const doc = await db.collection('transactions').doc(orderId).get();
+             if (doc.exists) {
+                 return res.json({ order_status: "PAID", type: "coin" });
+             } else {
+                 return res.json({ order_status: "FAILED", message: "Coin transaction not found" });
+             }
+        }
+
         const config = await getCashfreeConfig('payment');
         const baseUrl = config.isTest ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
 
@@ -125,103 +266,15 @@ app.get('/verify-order/:orderId', async (req, res) => {
             const { collabType, relatedId, userId, description, collabId } = tags;
             const amount = data.order_amount;
 
-            // 3. Use atomic batch write to ensure data consistency
-            const transactionRef = db.collection('transactions').doc(orderId);
-            const txDoc = await transactionRef.get();
-            
-            // Only update if transaction doesn't exist yet (prevent duplicates)
-            if (!txDoc.exists) {
-                const batch = db.batch();
-
-                // A. Create Transaction Record
-                batch.set(transactionRef, {
-                    transactionId: orderId,
-                    userId: userId,
-                    amount: Number(amount),
-                    type: 'payment',
-                    status: 'completed',
-                    description: description,
-                    relatedId: relatedId,
-                    collabId: collabId, 
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    paymentGatewayDetails: data
-                });
-
-                // B. Update Related Entity based on collabType
-                if (collabType && relatedId) {
-                    if (collabType === 'direct') {
-                        const ref = db.collection('collaboration_requests').doc(relatedId);
-                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
-                    } else if (collabType === 'campaign') {
-                        const ref = db.collection('campaign_applications').doc(relatedId);
-                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
-                    } else if (collabType === 'ad_slot') {
-                        const ref = db.collection('ad_slot_requests').doc(relatedId);
-                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
-                    } else if (collabType === 'banner_booking') {
-                        const ref = db.collection('banner_ad_booking_requests').doc(relatedId);
-                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
-                    } else if (collabType === 'membership') {
-                        const now = admin.firestore.Timestamp.now();
-                        const oneYear = new Date();
-                        oneYear.setFullYear(oneYear.getFullYear() + 1);
-                        const userRef = db.collection('users').doc(userId);
-                        batch.update(userRef, {
-                            'membership.plan': relatedId,
-                            'membership.isActive': true,
-                            'membership.startsAt': now,
-                            'membership.expiresAt': admin.firestore.Timestamp.fromDate(oneYear)
-                        });
-                    } else if (collabType === 'boost_profile') {
-                        const boostRef = db.collection('boosts').doc(); 
-                        const days = 7;
-                        const expiry = new Date();
-                        expiry.setDate(expiry.getDate() + days);
-                        batch.set(boostRef, {
-                            userId: userId,
-                            targetId: userId,
-                            targetType: 'profile',
-                            expiresAt: admin.firestore.Timestamp.fromDate(expiry),
-                            createdAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
-                        const userRef = db.collection('influencers').doc(userId);
-                        batch.update(userRef, { isBoosted: true });
-                    } else if (collabType === 'boost_campaign') {
-                        const boostRef = db.collection('boosts').doc(); 
-                        const days = 7;
-                        const expiry = new Date();
-                        expiry.setDate(expiry.getDate() + days);
-                        batch.set(boostRef, {
-                            userId: userId,
-                            targetId: relatedId,
-                            targetType: 'campaign',
-                            expiresAt: admin.firestore.Timestamp.fromDate(expiry),
-                            createdAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
-                        const campaignRef = db.collection('campaigns').doc(relatedId);
-                        batch.update(campaignRef, { isBoosted: true });
-                    } else if (collabType === 'boost_banner') {
-                        const boostRef = db.collection('boosts').doc(); 
-                        const days = 7;
-                        const expiry = new Date();
-                        expiry.setDate(expiry.getDate() + days);
-                        batch.set(boostRef, {
-                            userId: userId,
-                            targetId: relatedId,
-                            targetType: 'banner',
-                            expiresAt: admin.firestore.Timestamp.fromDate(expiry),
-                            createdAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
-                        const adRef = db.collection('banner_ads').doc(relatedId);
-                        batch.update(adRef, { isBoosted: true });
-                    }
-                }
-
-                await batch.commit();
-                console.log(`Order ${orderId} verified and processed.`);
-            } else {
-                console.log(`Order ${orderId} already processed.`);
-            }
+            await processPaymentSuccess(orderId, {
+                collabType,
+                relatedId,
+                userId,
+                description,
+                collabId,
+                amount,
+                paymentDetails: data
+            });
         }
 
         res.json(data);

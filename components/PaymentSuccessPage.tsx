@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { auth, BACKEND_URL } from '../services/firebase';
 
@@ -11,6 +11,8 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
     const [status, setStatus] = useState<'Checking...' | 'PAID' | 'PENDING' | 'FAILED'>("Checking...");
     const [orderId, setOrderId] = useState<string | null>(null);
     const [countdown, setCountdown] = useState<number | null>(null);
+    const attemptsRef = useRef(0);
+    const maxAttempts = 10; // Check for up to 20 seconds (10 * 2s)
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -18,9 +20,8 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
         setOrderId(id);
 
         if (id) {
-            // Initial check with a small delay to allow webhook/backend processing
-            const timer = setTimeout(() => checkStatus(id), 1500);
-            return () => clearTimeout(timer);
+            // Start polling
+            checkStatus(id);
         } else {
             setStatus("FAILED");
         }
@@ -44,8 +45,9 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
     }, [status]);
 
     const checkStatus = async (id: string) => {
-        setStatus("Checking...");
         try {
+            attemptsRef.current += 1;
+            
             let headers: Record<string, string> = { "Content-Type": "application/json" };
             const currentUser = auth.currentUser;
             if (currentUser) {
@@ -53,7 +55,6 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 headers['Authorization'] = `Bearer ${token}`;
             }
 
-            // Using the verify-order endpoint added to the backend function
             const response = await fetch(`${BACKEND_URL}/verify-order/${id}`, {
                 method: 'GET',
                 headers: headers
@@ -63,15 +64,32 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 const data = await response.json();
                 if (data.order_status === 'PAID' || data.order_status === 'completed') {
                     setStatus("PAID");
+                } else if (data.order_status === 'PENDING' || data.order_status === 'ACTIVE') {
+                    // Still pending, retry if attempts left
+                    if (attemptsRef.current < maxAttempts) {
+                        setTimeout(() => checkStatus(id), 2000);
+                    } else {
+                        setStatus("PENDING");
+                    }
                 } else {
-                    setStatus(data.order_status || "PENDING");
+                    // Failed or other status
+                    setStatus(data.order_status || "FAILED");
                 }
             } else {
-                setStatus("FAILED");
+                // If API fail, retry a few times
+                if (attemptsRef.current < maxAttempts) {
+                    setTimeout(() => checkStatus(id), 2000);
+                } else {
+                    setStatus("FAILED");
+                }
             }
         } catch (e) {
             console.error(e);
-            setStatus("FAILED");
+            if (attemptsRef.current < maxAttempts) {
+                setTimeout(() => checkStatus(id), 2000);
+            } else {
+                setStatus("FAILED");
+            }
         }
     };
 
@@ -119,7 +137,10 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         
                         <div className="flex flex-col gap-3">
                             <button 
-                                onClick={() => orderId && checkStatus(orderId)}
+                                onClick={() => {
+                                    attemptsRef.current = 0; // Reset attempts
+                                    if (orderId) checkStatus(orderId);
+                                }}
                                 className="w-full py-3 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-colors"
                             >
                                 Check Status Again

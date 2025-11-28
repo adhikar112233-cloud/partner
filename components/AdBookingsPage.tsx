@@ -3,8 +3,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd } from '../types';
 import { apiService } from '../services/apiService';
 import PostBannerAdModal from './PostBannerAdModal';
-import { SparklesIcon, TrashIcon } from './Icons';
+import { SparklesIcon, TrashIcon, MessagesIcon, EyeIcon } from './Icons';
 import CashfreeModal from './PhonePeModal';
+import CollabDetailsModal from './CollabDetailsModal';
 
 interface AdBookingsPageProps {
     user: User; // The Banner Agency user
@@ -77,7 +78,7 @@ const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings,
     const [myAds, setMyAds] = useState<BannerAd[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [modal, setModal] = useState<'offer' | 'post_ad' | null>(null);
+    const [modal, setModal] = useState<'offer' | 'post_ad' | 'details' | null>(null);
     const [selectedRequest, setSelectedRequest] = useState<BannerAdBookingRequest | null>(null);
     const [filter, setFilter] = useState<'pending' | 'processing' | 'completed'>('pending');
     const [boostingAd, setBoostingAd] = useState<BannerAd | null>(null);
@@ -132,9 +133,12 @@ const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings,
         setSelectedRequest(null);
     };
 
-    const handleAction = (req: BannerAdBookingRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel') => {
+    const handleAction = (req: BannerAdBookingRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'view_details') => {
         setSelectedRequest(req);
         switch(action) {
+            case 'view_details':
+                setModal('details');
+                break;
             case 'message':
                 onStartChat({ id: req.brandId, name: req.brandName, avatar: req.brandAvatar, role: 'brand' });
                 break;
@@ -173,38 +177,39 @@ const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings,
     }, [platformSettings]);
 
     const renderRequestActions = (req: BannerAdBookingRequest) => {
-        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, disabled?: boolean, title?: string}[] = [];
+        const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, disabled?: boolean, title?: string, icon?: any}[] = [];
         const isEndDatePassed = new Date(req.endDate) < new Date();
+
+        actions.push({ label: 'Details', action: 'view_details', style: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700', icon: <EyeIcon className="w-4 h-4" /> });
+        actions.push({ label: 'Message', action: 'message', style: 'text-indigo-600 hover:bg-indigo-50', icon: <MessagesIcon className="w-4 h-4" /> });
 
         switch (req.status) {
             case 'pending_approval':
-                actions.push({ label: 'Message', action: 'message', style: 'bg-gray-200 text-gray-800' });
-                actions.push({ label: 'Reject', action: 'reject', style: 'bg-red-500 text-white' });
-                actions.push({ label: 'Accept with Offer', action: 'accept_with_offer', style: 'bg-green-500 text-white' });
+                actions.push({ label: 'Reject', action: 'reject', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Accept & Offer', action: 'accept_with_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'brand_offer':
-                actions.push({ label: 'Message', action: 'message', style: 'bg-gray-200 text-gray-800' });
-                actions.push({ label: 'Cancel', action: 'cancel', style: 'bg-red-500 text-white' });
-                actions.push({ label: 'Counter Offer', action: 'recounter_offer', style: 'bg-blue-500 text-white' });
-                actions.push({ label: 'Accept Offer', action: 'accept_offer', style: 'bg-green-500 text-white' });
+                actions.push({ label: 'Cancel', action: 'cancel', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
+                actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'in_progress':
                 if (req.paymentStatus === 'paid' && !req.workStatus) {
-                    actions.push({ label: 'Start Work', action: 'start_work', style: 'bg-indigo-600 text-white' });
+                    actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
                 }
                 if (req.workStatus === 'started') {
                     actions.push({ 
-                        label: 'Complete Work', 
+                        label: 'Complete', 
                         action: 'complete_work', 
-                        style: 'bg-teal-500 text-white', 
+                        style: 'text-teal-600 hover:bg-teal-50 font-bold', 
                         disabled: !isEndDatePassed,
-                        title: isEndDatePassed ? 'Mark the ad campaign as complete' : `This button will be active on ${req.endDate}`
+                        title: isEndDatePassed ? 'Mark as complete' : `Active until ${req.endDate}`
                     });
                 }
                 break;
             case 'completed':
                  if (req.paymentStatus === 'paid') {
-                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'bg-green-500 text-white' });
+                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
                  }
                  break;
         }
@@ -212,10 +217,10 @@ const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings,
         if (actions.length === 0) return null;
 
         return (
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
                 {actions.map(a => (
-                    <button key={a.label} onClick={() => handleAction(req, a.action)} disabled={a.disabled} title={a.title} className={`px-4 py-2 text-sm font-semibold rounded-lg hover:opacity-80 ${a.style} ${a.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                        {a.label}
+                    <button key={a.label} onClick={() => handleAction(req, a.action)} disabled={a.disabled} title={a.title} className={`px-3 py-1 text-xs font-semibold rounded border border-gray-200 dark:border-gray-600 flex items-center gap-1 ${a.style} ${a.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        {a.icon} {a.label}
                     </button>
                 ))}
             </div>
@@ -241,10 +246,11 @@ const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings,
                                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400">From: {req.brandName}</p>
                                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm dark:text-gray-300">
                                         <div><span className="font-semibold text-gray-500 dark:text-gray-400">Ad Location:</span> {req.bannerAdLocation}</div>
-                                        <div><span className="font-semibold text-gray-500 dark:text-gray-400">Dates:</span> {req.startDate} to {req.endDate}</div>
                                         {req.status === 'brand_offer' && <div className="col-span-full text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Brand's Offer:</span> {req.currentOffer?.amount}</div>}
                                     </div>
-                                    {renderRequestActions(req)}
+                                    <div className="mt-4">
+                                        {renderRequestActions(req)}
+                                    </div>
                                 </div>
                             </div>
                         </li>
@@ -338,8 +344,12 @@ const AdBookingsPage: React.FC<AdBookingsPageProps> = ({ user, platformSettings,
                 </div>
             )}
 
+            {modal === 'details' && selectedRequest && (
+                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
+            )}
+
             {modal === 'offer' && selectedRequest && (
-                <OfferModal type={selectedRequest.status === 'pending_approval' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest.id, { status: 'agency_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'agency' }})} />
+                <OfferModal type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest.id, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} />
             )}
 
             {modal === 'post_ad' && (

@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CollaborationRequest, CollabRequestStatus, ProfileData, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
-import { TrashIcon, MessagesIcon } from './Icons';
+import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
+import CollabDetailsModal from './CollabDetailsModal';
 
 interface CollaborationRequestsPageProps {
     user: User; // The logged-in influencer
@@ -11,15 +12,6 @@ interface CollaborationRequestsPageProps {
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiatePayout: (collab: CollaborationRequest) => void;
 }
-
-const toJsDate = (ts: any): Date | undefined => {
-    if (!ts) return undefined;
-    if (ts instanceof Date) return ts;
-    if (typeof ts.toDate === 'function') return ts.toDate();
-    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
-    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
-    return undefined;
-};
 
 const RequestStatusBadge: React.FC<{ status: CollabRequestStatus }> = ({ status }) => {
     const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize whitespace-nowrap";
@@ -78,7 +70,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
     const [requests, setRequests] = useState<CollaborationRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [modal, setModal] = useState<'offer' | 'reject' | null>(null);
+    const [modal, setModal] = useState<'offer' | 'reject' | 'details' | null>(null);
     const [selectedRequest, setSelectedRequest] = useState<CollaborationRequest | null>(null);
     const [filter, setFilter] = useState<'pending' | 'active' | 'archived'>('pending');
 
@@ -121,9 +113,12 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
         }
     };
     
-    const handleAction = (req: CollaborationRequest, action: 'message' | 'accept_with_offer' | 'reject_with_reason' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'start_work' | 'complete_work' | 'get_payment') => {
+    const handleAction = (req: CollaborationRequest, action: 'message' | 'accept_with_offer' | 'reject_with_reason' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'view_details') => {
         setSelectedRequest(req);
         switch(action) {
+            case 'view_details':
+                setModal('details');
+                break;
             case 'message':
                  onStartChat({ id: req.brandId, name: req.brandName, avatar: req.brandAvatar, role: 'brand', companyName: req.brandName });
                  break;
@@ -153,6 +148,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
     const renderRequestActions = (req: CollaborationRequest) => {
         const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, icon?: any}[] = [];
         
+        actions.push({ label: 'Details', action: 'view_details', style: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700', icon: <EyeIcon className="w-4 h-4" /> });
         actions.push({ label: 'Message', action: 'message', style: 'text-indigo-600 hover:bg-indigo-50', icon: <MessagesIcon className="w-4 h-4" /> });
 
         switch (req.status) {
@@ -201,7 +197,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                 active.push(req);
             } else if (['completed', 'rejected'].includes(req.status)) {
                 archived.push(req);
-            } else { // Catches 'pending', 'brand_offer', 'influencer_offer', 'agreement_reached'
+            } else { 
                 pending.push(req);
             }
         });
@@ -231,23 +227,14 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date & Time</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Brand / Request</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cancel Reason</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {data.map((req) => (
                         <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                                {toJsDate(req.timestamp)?.toLocaleString()}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
-                                {req.collabId || req.id.substring(0, 8)}
-                            </td>
                             <td className="px-6 py-4">
                                 <div className="flex items-center">
                                     <div className="flex-shrink-0 h-10 w-10">
@@ -256,14 +243,16 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                                     <div className="ml-4">
                                         <div className="text-sm font-medium text-gray-900 dark:text-white">{req.brandName}</div>
                                         <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{req.title}</div>
+                                        {req.budget && (
+                                            <div className="text-xs font-bold text-green-600 dark:text-green-400 mt-1">
+                                                Budget: {req.budget}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <RequestStatusBadge status={req.status} />
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                                {req.rejectionReason || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <div className="flex items-center gap-2">
@@ -310,6 +299,10 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                     {filter === 'active' && renderTable(active)}
                     {filter === 'archived' && renderTable(archived)}
                 </>
+            )}
+            
+            {modal === 'details' && selectedRequest && (
+                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
             )}
             {modal === 'offer' && selectedRequest && (
                 <OfferModal request={selectedRequest} type={selectedRequest.status === 'pending' ? 'accept' : 'recounter'} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest.id, { status: 'influencer_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'influencer' }})} />

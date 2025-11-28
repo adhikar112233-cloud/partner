@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CampaignApplication, CampaignApplicationStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
-import { TrashIcon, MessagesIcon } from './Icons';
+import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
+import CollabDetailsModal from './CollabDetailsModal';
 
 interface MyApplicationsPageProps {
     user: User; // The logged-in influencer
@@ -9,15 +11,6 @@ interface MyApplicationsPageProps {
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiatePayout: (collab: CampaignApplication) => void;
 }
-
-const toJsDate = (ts: any): Date | undefined => {
-    if (!ts) return undefined;
-    if (ts instanceof Date) return ts;
-    if (typeof ts.toDate === 'function') return ts.toDate();
-    if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
-    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
-    return undefined;
-};
 
 const ApplicationStatusBadge: React.FC<{ status: CampaignApplicationStatus }> = ({ status }) => {
     const baseClasses = "px-3 py-1 text-xs font-medium rounded-full capitalize";
@@ -62,7 +55,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
     const [applications, setApplications] = useState<CampaignApplication[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [modal, setModal] = useState<'offer' | null>(null);
+    const [modal, setModal] = useState<'offer' | 'details' | null>(null);
     const [selectedApp, setSelectedApp] = useState<CampaignApplication | null>(null);
     const [filter, setFilter] = useState<'pending' | 'active' | 'completed' | 'archived'>('pending');
 
@@ -101,9 +94,12 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
         }
     };
     
-    const handleAction = (app: CampaignApplication, action: 'message' | 'accept_offer' | 'recounter_offer' | 'cancel' | 'start_work' | 'complete_work' | 'get_payment') => {
+    const handleAction = (app: CampaignApplication, action: 'message' | 'accept_offer' | 'recounter_offer' | 'cancel' | 'start_work' | 'complete_work' | 'get_payment' | 'view_details') => {
         setSelectedApp(app);
         switch(action) {
+            case 'view_details':
+                setModal('details');
+                break;
             case 'message':
                  onStartChat({ id: app.brandId, name: app.brandName, avatar: app.brandAvatar, role: 'brand' });
                  break;
@@ -116,11 +112,10 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
             case 'cancel':
                 const penalty = platformSettings.cancellationPenaltyAmount || 0;
                 if (window.confirm(`⚠️ Warning: Cancelling this collaboration will incur a penalty of ₹${penalty}, which will be deducted from your next payout.\n\nAre you sure you want to proceed with cancellation?`)) {
-                    // Use secure backend endpoint for cancellation and penalty
                     setIsLoading(true);
                     apiService.cancelCollaboration(user.id, app.id, 'campaign_applications', 'Cancelled by influencer.', penalty)
                         .then(() => {
-                            fetchApplications(); // Refresh to see updated status
+                            fetchApplications(); 
                         })
                         .catch((err) => {
                             console.error(err);
@@ -144,6 +139,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
     const renderActions = (app: CampaignApplication) => {
         const actions: {label: string, action: Parameters<typeof handleAction>[1], style: string, icon?: any}[] = [];
         
+        actions.push({ label: 'Details', action: 'view_details', style: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700', icon: <EyeIcon className="w-4 h-4" /> });
         actions.push({ label: 'Message', action: 'message', style: 'text-indigo-600 hover:bg-indigo-50', icon: <MessagesIcon className="w-4 h-4" /> });
 
         switch (app.status) {
@@ -182,7 +178,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
         const active: CampaignApplication[] = [];
         const pending: CampaignApplication[] = [];
         const completed: CampaignApplication[] = [];
-        const archived: CampaignApplication[] = []; // for rejected
+        const archived: CampaignApplication[] = []; 
 
         applications.forEach(app => {
             if (['in_progress', 'work_submitted', 'disputed', 'brand_decision_pending', 'refund_pending_admin_review'].includes(app.status)) {
@@ -191,7 +187,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                 completed.push(app);
             } else if (app.status === 'rejected') {
                 archived.push(app);
-            } else { // Catches 'pending_brand_review', 'brand_counter_offer', 'influencer_counter_offer', 'agreement_reached'
+            } else { 
                 pending.push(app);
             }
         });
@@ -221,23 +217,14 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date & Time</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Brand / Campaign</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cancel Reason</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {data.map((app) => (
                         <tr key={app.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                                {toJsDate(app.timestamp)?.toLocaleString()}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
-                                {app.collabId || app.id.substring(0, 8)}
-                            </td>
                             <td className="px-6 py-4">
                                 <div className="flex items-center">
                                     <div className="flex-shrink-0 h-10 w-10">
@@ -251,9 +238,6 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <ApplicationStatusBadge status={app.status} />
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                                {app.rejectionReason || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <div className="flex items-center gap-2">
@@ -304,6 +288,9 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                 </>
             )}
 
+            {modal === 'details' && selectedApp && (
+                <CollabDetailsModal collab={selectedApp} onClose={() => { setModal(null); setSelectedApp(null); }} />
+            )}
             {modal === 'offer' && selectedApp && (
                 <OfferModal currentOffer={selectedApp.currentOffer!.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedApp.id, { status: 'influencer_counter_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'influencer' }})} />
             )}

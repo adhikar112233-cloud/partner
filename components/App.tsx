@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
@@ -305,7 +304,7 @@ const App: React.FC = () => {
   const [liveHelpSessionId, setLiveHelpSessionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
-  
+
   // App Mode for Dashboard/Community Toggle
   const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
   const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');

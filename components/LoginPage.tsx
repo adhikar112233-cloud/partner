@@ -99,6 +99,37 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         clearRecaptcha('signup');
     };
 
+    // Helper to format error messages
+    const getFriendlyErrorMessage = (err: any) => {
+        const code = err.code || '';
+        const message = err.message || '';
+
+        if (code === 'auth/invalid-credential' || message.includes('invalid-credential')) {
+            return "Invalid credentials. Please check your details.";
+        }
+        if (code === 'auth/user-not-found') {
+            return "Account not found. Please sign up.";
+        }
+        if (code === 'auth/wrong-password') {
+            return "Incorrect password.";
+        }
+        if (code === 'auth/too-many-requests') {
+            return "Too many attempts. Please try again later.";
+        }
+        if (code === 'auth/invalid-email') {
+            return "Invalid email address format.";
+        }
+        if (code === 'auth/email-already-in-use') {
+            return "This email is already registered.";
+        }
+        if (code === 'auth/network-request-failed') {
+            return "Network error. Please check your internet connection.";
+        }
+        
+        // Strip Firebase wrapper for other errors
+        return message.replace('Firebase: ', '').replace('Error (auth/', '').replace(').', '').replace(/-/g, ' ');
+    };
+
     // LOGIN: Send OTP
     const handleSendOtp = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -139,17 +170,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             setTimer(60); 
         } catch (err: any) {
             console.error("OTP Error:", err);
-            if (err.code === 'auth/invalid-phone-number') {
-                setError("The phone number is invalid.");
-            } else if (err.code === 'auth/too-many-requests') {
-                setError("Too many requests. Please try again later.");
-            } else if (err.code === 'auth/internal-error' || err.message?.includes('internal-error')) {
-                setError("Firebase Configuration Error (auth/internal-error). Ensure 'Phone' sign-in is enabled in Firebase Console and your domain is authorized.");
-            } else if (err.code === 'auth/captcha-check-failed') {
-                setError("Captcha Check Failed. Ensure your domain is added to Authorized Domains in Firebase Console.");
-            } else {
-                setError(err.message || "Failed to send OTP. Please try again.");
-            }
+            setError(getFriendlyErrorMessage(err));
             clearRecaptcha('login');
         } finally {
             setIsLoading(false);
@@ -164,7 +185,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             if (!confirmationResultRef.current) throw new Error("Session expired. Please resend OTP.");
             await authService.verifyLoginOtp(confirmationResultRef.current, otp);
         } catch (err: any) {
-            setError(err.message || "Invalid OTP. Please check the code and try again.");
+            setError("Invalid OTP. Please check the code and try again.");
         } finally {
             setIsLoading(false);
         }
@@ -178,7 +199,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         try {
             await authService.login(identifier, password);
         } catch (err: any) {
-            setError(err.message || "Authentication failed.");
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -229,15 +250,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             setTimer(60);
         } catch (err: any) {
             console.error("Signup OTP Error:", err);
-            if (err.code === 'auth/internal-error' || err.message?.includes('internal-error')) {
-                setError("Configuration Error (auth/internal-error). Please verify Firebase Phone Auth is enabled and domain is authorized.");
-            } else if (err.code === 'auth/captcha-check-failed') {
-                setError("Captcha failed. Please check Authorized Domains in Firebase Console.");
-            } else if (err.message.includes("reCAPTCHA has already been rendered")) {
-                setError("System busy. Please refresh and try again.");
-            } else {
-                setError(err.message || "Failed to send OTP.");
-            }
+            setError(getFriendlyErrorMessage(err));
             clearRecaptcha('signup');
         } finally {
             setIsLoading(false);
@@ -260,7 +273,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
             
         } catch (err: any) {
             console.error("Verification/Registration error:", err);
-            setError(err.message || "Verification or Registration failed.");
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -271,7 +284,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
         try {
             await authService.signInWithGoogle(role);
         } catch (err: any) {
-            setError(err.message || "Google sign-in failed.");
+            setError(getFriendlyErrorMessage(err));
         }
     };
 

@@ -729,11 +729,36 @@ const DisputeResolutionModal: React.FC<{
 }> = ({ dispute, onClose, onResolve }) => {
     const [isResolving, setIsResolving] = useState(false);
 
-    const handleResolveAction = async () => {
+    const handleAction = async (action: 'refund' | 'payout' | 'reverify') => {
         setIsResolving(true);
         try {
-            await apiService.updateDispute(dispute.id, { status: 'resolved' });
-            onResolve(); // This calls the parent's update handler which we will hook to refresh local disputes
+            await apiService.updateDispute(dispute.id, { 
+                status: 'resolved',
+                resolution: action 
+            });
+
+            // Update underlying collaboration based on action
+            const updateData: any = {};
+            
+            if (action === 'refund') {
+                updateData.status = 'rejected';
+                // Trigger for refund logic should ideally be handled by payment service, 
+                // but setting status to 'rejected' usually triggers manual refund flow in our current system
+                updateData.rejectionReason = "Admin resolved dispute in favor of Brand (Refund).";
+            } else if (action === 'payout') {
+                updateData.status = 'completed';
+                // Payout status will flow into payout queue naturally if completed
+            } else if (action === 'reverify') {
+                updateData.status = 'work_submitted'; // Reset to review stage
+            }
+
+            // Execute the update on the correct collection
+            if (dispute.collaborationType === 'direct') await apiService.updateCollaborationRequest(dispute.collaborationId, updateData, 'admin');
+            else if (dispute.collaborationType === 'campaign') await apiService.updateCampaignApplication(dispute.collaborationId, updateData, 'admin');
+            else if (dispute.collaborationType === 'ad_slot') await apiService.updateAdSlotRequest(dispute.collaborationId, updateData, 'admin');
+            else if (dispute.collaborationType === 'banner_booking') await apiService.updateBannerAdBookingRequest(dispute.collaborationId, updateData, 'admin');
+
+            onResolve(); 
             onClose();
         } catch (error) {
             console.error("Failed to resolve dispute", error);
@@ -745,25 +770,52 @@ const DisputeResolutionModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[110] p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Resolve Dispute</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">Resolve Dispute</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 text-2xl">&times;</button>
+                </div>
+                
                 <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm">
-                    Are you sure you want to resolve this dispute? This will mark it as closed in the system.
+                    Choose an action to resolve the dispute for <strong>{dispute.collaborationTitle}</strong>.
                 </p>
-                <div className="flex justify-end gap-3">
+
+                <div className="space-y-3">
+                    <button 
+                        onClick={() => handleAction('refund')}
+                        disabled={isResolving}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                    >
+                        <span className="font-semibold">1. Refund to Brand</span>
+                        <span className="text-xs opacity-70">Mark as Rejected & Refund</span>
+                    </button>
+
+                    <button 
+                        onClick={() => handleAction('payout')}
+                        disabled={isResolving}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
+                    >
+                        <span className="font-semibold">2. Payout to Creator</span>
+                        <span className="text-xs opacity-70">Mark as Completed</span>
+                    </button>
+
+                    <button 
+                        onClick={() => handleAction('reverify')}
+                        disabled={isResolving}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                    >
+                        <span className="font-semibold">3. Brand Re-verify</span>
+                        <span className="text-xs opacity-70">Reset to 'Work Submitted'</span>
+                    </button>
+                </div>
+
+                <div className="mt-6 text-center">
                     <button 
                         onClick={onClose}
                         disabled={isResolving}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                        className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 hover:underline"
                     >
                         Cancel
-                    </button>
-                    <button 
-                        onClick={handleResolveAction}
-                        disabled={isResolving}
-                        className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:opacity-50"
-                    >
-                        {isResolving ? 'Resolving...' : 'Confirm Resolve'}
                     </button>
                 </div>
             </div>

@@ -486,7 +486,7 @@ const App: React.FC = () => {
   const unreadCount = useMemo(() => notifications.filter(n => !n.isRead).length, [notifications]);
 
   const handleNotificationClick = (notification: AppNotification) => {
-    if (!notification.isRead && user) {
+    if (user && !notification.isRead) {
         apiService.markNotificationAsRead(user.id, notification.id);
     }
     setActiveView(notification.view);

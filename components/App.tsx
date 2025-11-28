@@ -884,14 +884,15 @@ const App: React.FC = () => {
             appMode={appMode}
             setAppMode={setAppMode}
         />
-
-        {platformBanners.length > 0 && activeView === View.DASHBOARD && (
-            <ClickableImageBanner 
-                banners={platformBanners}
-            />
-        )}
         
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          {platformBanners.length > 0 && activeView !== View.ADMIN && (
+            <div className="mb-6">
+                <ClickableImageBanner 
+                    banners={platformBanners}
+                />
+            </div>
+          )}
           {renderContent()}
         </main>
       </div>

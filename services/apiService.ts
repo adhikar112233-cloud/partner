@@ -102,6 +102,18 @@ export const apiService = {
             pendingPenalty: increment(amount)
         });
     },
+    updatePenalty: async (userId: string, amount: number) => {
+        const response = await fetch(`${BACKEND_URL}/update-penalty`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, amount })
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to update penalty');
+        }
+        return await response.json();
+    },
     cancelCollaboration: async (userId: string, collaborationId: string, collectionName: string, reason: string, penaltyAmount: number) => {
         const response = await fetch(`${BACKEND_URL}/cancel-collaboration`, {
             method: 'POST',

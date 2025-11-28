@@ -155,12 +155,13 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
         }
 
         try {
-            await apiService.updateUser(user.id, { pendingPenalty: amount });
+            // Updated to use the secure backend endpoint
+            await apiService.updatePenalty(user.id, amount);
             onUpdateUser(user.id, { pendingPenalty: amount });
             alert(`Penalty updated to ₹${amount}`);
         } catch (error) {
             console.error("Error updating penalty:", error);
-            alert("Failed to update penalty.");
+            alert("Failed to update penalty via secure backend.");
         }
     };
 

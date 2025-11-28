@@ -115,7 +115,7 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
                 userName: user.name,
                 userRole: user.role,
                 collaborationId: selectedCollabId,
-                collabId: collab.collabId,
+                collabId: collab.collabId || null,
                 collaborationType: user.role === 'livetv' ? 'ad_slot' : 'banner_booking',
             };
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, AnyCollaboration, RefundRequest, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -163,11 +162,11 @@ const RefundRequestPage: React.FC<RefundRequestPageProps> = ({ user, collaborati
                 brandName: user.companyName || user.name,
                 brandAvatar: user.avatar || '',
                 amount: finalAmount,
-                bankDetails: bankDetailsString || undefined,
-                upiId: refundMethod === 'upi' ? upiId : undefined,
+                bankDetails: bankDetailsString || null,
+                upiId: refundMethod === 'upi' ? upiId : null,
                 panNumber,
                 description,
-                collabId: collaboration.collabId,
+                collabId: collaboration.collabId || null,
             });
             onSubmitted();
         } catch (err) {

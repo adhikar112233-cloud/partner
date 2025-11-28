@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, AnyCollaboration, PayoutRequest, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -206,7 +205,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                 collaborationType: getCollaborationType(),
                 collaborationTitle: collaborationTitle,
                 amount: finalPayoutAmount,
-                collabId: collaboration.collabId,
+                collabId: collaboration.collabId || null,
                 isAccountVerified: isVerificationEnforced, // Mark based on setting
                 accountVerifiedName: payoutMethod === 'bank' ? bankDetails.accountHolderName : user.name,
                 deductedPenalty: pendingPenalty // Store the deducted penalty

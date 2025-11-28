@@ -86,7 +86,7 @@ const DisputeModal: React.FC<DisputeModalProps> = ({ user, collaboration, onClos
                 disputedAgainstAvatar: partner.avatar,
                 reason,
                 amount: finalAmount,
-                collabId: collaboration.collabId,
+                collabId: collaboration.collabId || null,
             });
             onDisputeSubmitted();
         } catch (err) {

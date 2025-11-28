@@ -165,6 +165,28 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
         }
     };
 
+    const handleKycAction = async (status: 'approved' | 'rejected') => {
+        let reason;
+        if (status === 'rejected') {
+            reason = prompt("Reason for rejection:");
+            if (!reason) return;
+        }
+        
+        try {
+            await apiService.updateKycStatus(user.id, status, reason);
+            onUpdateUser(user.id, { kycStatus: status });
+            // If approved, optimistically update UI to show verified badge effect if user object had it
+            if (status === 'approved') {
+                 // The backend handles the isVerified update on public collections, 
+                 // but we can update local user state if needed for UI consistency
+            }
+            alert(`KYC ${status} successfully.`);
+        } catch (error) {
+            console.error("Failed to update KYC status:", error);
+            alert("Failed to update status.");
+        }
+    };
+
     const TabButton = ({ tab, label, icon: Icon }: { tab: Tab, label: string, icon: any }) => (
         <button
             onClick={() => setActiveTab(tab)}
@@ -547,6 +569,13 @@ const UserDetailView: React.FC<UserDetailViewProps> = ({ user, users, onSelectUs
                                     {user.kycDetails?.idProofUrl && <a href={user.kycDetails.idProofUrl} target="_blank" className="text-indigo-600 text-sm underline">View ID Proof</a>}
                                     {user.kycDetails?.selfieUrl && <a href={user.kycDetails.selfieUrl} target="_blank" className="text-indigo-600 text-sm underline">View Selfie</a>}
                                 </div>
+                                
+                                {user.kycStatus === 'pending' && (
+                                    <div className="mt-4 flex gap-3">
+                                        <button onClick={() => handleKycAction('approved')} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Approve KYC</button>
+                                        <button onClick={() => handleKycAction('rejected')} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Reject KYC</button>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded border">

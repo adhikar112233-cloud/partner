@@ -625,6 +625,7 @@ export interface Post {
     timestamp: any;
     isBlocked: boolean;
     visibility: 'public' | 'private';
+    isVerified?: boolean; // New field for verification status on posts
 }
 
 export interface Comment {

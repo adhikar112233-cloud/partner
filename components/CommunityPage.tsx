@@ -44,6 +44,7 @@ const CreatePostForm: React.FC<{ user: User; onPostCreated: () => void; }> = ({ 
                  timestamp: serverTimestamp(),
                  isBlocked: false,
                  visibility,
+                 isVerified: user.kycStatus === 'approved' // Add verification status
             };
             const createdPost = await apiService.createPost(newPost);
 

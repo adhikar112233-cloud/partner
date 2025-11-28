@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo } from 'react';
 import { User, LiveTvChannel } from '../types';
 import AdSlotRequestModal from './AdSlotRequestModal';
-import { SparklesIcon } from './Icons';
+import { SparklesIcon, CheckBadgeIcon } from './Icons';
 
 interface LiveTvPageForBrandProps {
   user: User;
@@ -67,7 +68,10 @@ const LiveTvPageForBrand: React.FC<LiveTvPageForBrandProps> = ({ user, channels 
                                 <div className="flex items-center space-x-4">
                                     <img src={channel.logo} alt={channel.name} className="w-16 h-16 rounded-lg object-cover bg-gray-200"/>
                                     <div>
-                                        <h3 className="text-lg font-bold text-gray-800">{channel.name}</h3>
+                                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-1">
+                                            {channel.name}
+                                            {channel.isVerified && <CheckBadgeIcon className="w-5 h-5 text-blue-500" />}
+                                        </h3>
                                         <p className="text-sm text-gray-500">{channel.niche}</p>
                                     </div>
                                 </div>

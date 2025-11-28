@@ -1,5 +1,4 @@
-
-// ... (previous imports)
+// ... (imports)
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
     orderBy, limit, addDoc, serverTimestamp, onSnapshot, increment, 
@@ -128,7 +127,6 @@ export const apiService = {
         return await response.json();
     },
 
-    // ... (rest of the file content from getPlatformSettings onwards)
     getPlatformSettings: async (): Promise<PlatformSettings> => {
         const docRef = doc(db, 'settings', 'platform');
         const docSnap = await getDoc(docRef);
@@ -137,9 +135,6 @@ export const apiService = {
         }
         throw new Error("Platform settings not found");
     },
-    // ...
-    // (omitting duplicate code for brevity, assuming standard apiService methods follow)
-    // ...
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
     },
@@ -175,14 +170,43 @@ export const apiService = {
     uploadPlatformBannerImage: async (file: File): Promise<string> => {
         return uploadFile(`banners/${Date.now()}_${file.name}`, file);
     },
-    getInfluencersPaginated: async (settings: PlatformSettings, options: { limit: number, startAfterDoc?: any }) => {
-        let q = query(collection(db, 'influencers'), limit(options.limit));
+    getInfluencersPaginated: async (options: { limit: number, startAfterDoc?: any }) => {
+        // Updated query to sort by isBoosted descending first
+        let q;
         if (options.startAfterDoc) {
-            q = query(collection(db, 'influencers'), startAfter(options.startAfterDoc), limit(options.limit));
+            q = query(
+                collection(db, 'influencers'), 
+                orderBy('isBoosted', 'desc'), 
+                startAfter(options.startAfterDoc), 
+                limit(options.limit)
+            );
+        } else {
+            q = query(
+                collection(db, 'influencers'), 
+                orderBy('isBoosted', 'desc'), 
+                limit(options.limit)
+            );
         }
-        const snapshot = await getDocs(q);
-        const influencers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Influencer));
-        return { influencers, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
+        
+        try {
+            const snapshot = await getDocs(q);
+            const influencers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Influencer));
+            return { influencers, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
+        } catch (error) {
+            console.warn("Sorting by isBoosted failed (likely missing index). Falling back to default order.", error);
+            // Fallback for dev environment without index
+            let fallbackQ;
+            if (options.startAfterDoc) {
+                fallbackQ = query(collection(db, 'influencers'), startAfter(options.startAfterDoc), limit(options.limit));
+            } else {
+                fallbackQ = query(collection(db, 'influencers'), limit(options.limit));
+            }
+            const snapshot = await getDocs(fallbackQ);
+            const influencers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Influencer));
+            // Client-side sort for the fallback page
+            influencers.sort((a, b) => (b.isBoosted === a.isBoosted) ? 0 : b.isBoosted ? 1 : -1);
+            return { influencers, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
+        }
     },
     getInfluencerProfile: async (userId: string): Promise<any> => {
         const docSnap = await getDoc(doc(db, 'influencers', userId));
@@ -193,7 +217,9 @@ export const apiService = {
     },
     getLiveTvChannels: async (settings: PlatformSettings): Promise<LiveTvChannel[]> => {
         const snapshot = await getDocs(collection(db, 'livetv_channels'));
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
+        const channels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
+        // Sort boosted channels to top
+        return channels.sort((a, b) => (b.isBoosted === a.isBoosted) ? 0 : b.isBoosted ? 1 : -1);
     },
     getConversations: async (userId: string): Promise<any[]> => {
         const q = query(collection(db, `users/${userId}/conversations`), orderBy('lastMessage.timestamp', 'desc'));
@@ -376,7 +402,7 @@ export const apiService = {
         await deleteDoc(doc(db, collectionName, id));
     },
     createCampaign: async (campaign: any) => {
-        await addDoc(collection(db, 'campaigns'), { ...campaign, status: 'open', timestamp: serverTimestamp() });
+        await addDoc(collection(db, 'campaigns'), { ...campaign, status: 'open', isBoosted: false, timestamp: serverTimestamp() });
     },
     getCampaignsForBrand: async (brandId: string): Promise<Campaign[]> => {
         const q = query(collection(db, 'campaigns'), where('brandId', '==', brandId));
@@ -390,7 +416,8 @@ export const apiService = {
         if (location && location !== 'All') {
             campaigns = campaigns.filter(c => !c.location || c.location === 'All' || c.location === location);
         }
-        return campaigns;
+        // Sort boosted campaigns to top
+        return campaigns.sort((a, b) => (b.isBoosted === a.isBoosted) ? 0 : b.isBoosted ? 1 : -1);
     },
     applyToCampaign: async (application: any) => {
         const ref = await addDoc(collection(db, 'campaign_applications'), { ...application, status: 'pending_brand_review', timestamp: serverTimestamp() });
@@ -507,7 +534,7 @@ export const apiService = {
         });
     },
     createBannerAd: async (ad: any) => {
-        await addDoc(collection(db, 'banner_ads'), { ...ad, timestamp: serverTimestamp() });
+        await addDoc(collection(db, 'banner_ads'), { ...ad, isBoosted: false, timestamp: serverTimestamp() });
     },
     uploadBannerAdPhoto: async (userId: string, file: File): Promise<string> => {
         return uploadFile(`banner_ads/${userId}_${Date.now()}`, file);
@@ -519,7 +546,8 @@ export const apiService = {
         if (location) {
             ads = ads.filter(ad => ad.location.toLowerCase().includes(location.toLowerCase()));
         }
-        return ads;
+        // Sort boosted ads to top
+        return ads.sort((a, b) => (b.isBoosted === a.isBoosted) ? 0 : b.isBoosted ? 1 : -1);
     },
     getBannerAdsForAgency: async (agencyId: string): Promise<BannerAd[]> => {
         const q = query(collection(db, 'banner_ads'), where('agencyId', '==', agencyId));
@@ -824,7 +852,23 @@ export const apiService = {
     updateKycStatus: async (userId: string, status: string, reason?: string) => {
         const updateData: any = { kycStatus: status };
         if (reason) updateData['kycDetails.rejectionReason'] = reason;
+        
         await updateDoc(doc(db, 'users', userId), updateData);
+
+        // Sync verification status to public profiles if approved
+        if (status === 'approved') {
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userData = userDoc.data() as User;
+            
+            // Set verify flag on the main user record too for consistency
+            await updateDoc(doc(db, 'users', userId), { isVerified: true });
+
+            if (userData.role === 'influencer') {
+                await updateDoc(doc(db, 'influencers', userId), { isVerified: true });
+            } else if (userData.role === 'livetv') {
+                await updateDoc(doc(db, 'livetv_channels', userId), { isVerified: true });
+            }
+        }
     },
     getPendingCreatorVerifications: async (): Promise<User[]> => {
         const q = query(collection(db, 'users'), where('creatorVerificationStatus', '==', 'pending'));
@@ -835,7 +879,19 @@ export const apiService = {
         const updateData: any = { creatorVerificationStatus: status };
         if (reason) updateData['creatorVerificationDetails.rejectionReason'] = reason;
         if (status === 'approved') updateData['isVerified'] = true;
+        
         await updateDoc(doc(db, 'users', userId), updateData);
+
+        // Also sync public profiles
+        if (status === 'approved') {
+             const userDoc = await getDoc(doc(db, 'users', userId));
+             const userData = userDoc.data() as User;
+             if (userData.role === 'influencer') {
+                await updateDoc(doc(db, 'influencers', userId), { isVerified: true });
+             } else if (userData.role === 'livetv') {
+                await updateDoc(doc(db, 'livetv_channels', userId), { isVerified: true });
+             }
+        }
     },
     submitKyc: async (userId: string, data: KycDetails, idProof: File | null, addressProof: File | null, pan: File | null) => {
         const updates: any = { kycStatus: 'pending', kycDetails: { ...data } };

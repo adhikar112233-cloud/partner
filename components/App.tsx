@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
@@ -367,7 +366,7 @@ const App: React.FC = () => {
         
         // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
-          const influencerResult = await apiService.getInfluencersPaginated(platformSettings, { limit: INFLUENCER_PAGE_LIMIT });
+          const influencerResult = await apiService.getInfluencersPaginated({ limit: INFLUENCER_PAGE_LIMIT });
           setInfluencers(influencerResult.influencers);
           setFilteredInfluencers(influencerResult.influencers);
           setLastInfluencerDoc(influencerResult.lastVisible);
@@ -411,7 +410,7 @@ const App: React.FC = () => {
 
     setIsLoadingMore(true);
     try {
-        const result = await apiService.getInfluencersPaginated(platformSettings, {
+        const result = await apiService.getInfluencersPaginated({
             limit: INFLUENCER_PAGE_LIMIT,
             startAfterDoc: lastInfluencerDoc!,
         });

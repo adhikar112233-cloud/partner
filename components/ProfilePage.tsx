@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
@@ -428,8 +429,13 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
             <h1 className="text-3xl font-bold">{user.name}</h1>
             <p className="text-indigo-100 font-medium">{user.email}</p>
             <p className="text-indigo-200 text-sm mt-1 capitalize">{user.role}</p>
+            {user.pendingPenalty && user.pendingPenalty > 0 && (
+                <div className="mt-2 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold inline-block border border-red-200">
+                    ⚠️ Pending Penalty: ₹{user.pendingPenalty}
+                </div>
+            )}
             {user.role === 'influencer' && (
-               <button onClick={() => setActiveView(View.BOOST_PROFILE)} className="mt-2 text-xs bg-purple-500 hover:bg-purple-400 px-3 py-1 rounded-full font-semibold transition-colors shadow-sm">
+               <button onClick={() => setActiveView(View.BOOST_PROFILE)} className="mt-2 ml-2 text-xs bg-purple-500 hover:bg-purple-400 px-3 py-1 rounded-full font-semibold transition-colors shadow-sm text-white">
                    Boost Profile 🚀
                </button>
             )}

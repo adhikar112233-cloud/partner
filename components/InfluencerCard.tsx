@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Influencer, ProfileData } from '../types';
-import { CollabIcon, MessagesIcon, InstagramIcon, YoutubeIcon, TiktokIcon, XIcon, SparklesIcon } from './Icons';
+import { CollabIcon, MessagesIcon, InstagramIcon, YoutubeIcon, TiktokIcon, XIcon, SparklesIcon, CheckBadgeIcon } from './Icons';
 
 interface InfluencerCardProps {
   influencer: Influencer;
@@ -79,7 +80,10 @@ const InfluencerCard: React.FC<InfluencerCardProps> = ({ influencer, onStartChat
             <img src={influencer.avatar} alt={influencer.name} className="w-16 h-16 rounded-full object-cover" />
           </button>
           <div>
-            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">{influencer.name}</h3>
+            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-1">
+                {influencer.name}
+                {influencer.isVerified && <CheckBadgeIcon className="w-5 h-5 text-blue-500" />}
+            </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">@{influencer.handle}</p>
           </div>
         </div>

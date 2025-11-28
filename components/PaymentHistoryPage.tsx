@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Transaction, PayoutRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -35,7 +36,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
     const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'all' | 'payments' | 'payouts'>('all');
+    const [activeTab, setActiveTab] = useState<'all' | 'payments' | 'payouts' | 'penalties'>('all');
     const [showPayPenaltyModal, setShowPayPenaltyModal] = useState(false);
     const [platformSettings, setPlatformSettings] = useState<any>(null);
 
@@ -106,6 +107,12 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
     const filteredHistory = useMemo(() => {
         if (activeTab === 'payments') return combinedHistory.filter(item => item.type === 'Payment Made');
         if (activeTab === 'payouts') return combinedHistory.filter(item => item.type === 'Payout');
+        if (activeTab === 'penalties') {
+            return combinedHistory.filter(item => 
+                (item.deductedPenalty && item.deductedPenalty > 0) || 
+                (item.description && item.description.toLowerCase().includes('penalty'))
+            );
+        }
         return combinedHistory;
     }, [activeTab, combinedHistory]);
 
@@ -117,27 +124,37 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             </div>
 
             {/* Penalty Alert Section */}
-            {user.pendingPenalty && user.pendingPenalty > 0 && (
+            {(user.pendingPenalty && user.pendingPenalty > 0) || activeTab === 'penalties' ? (
                 <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div className="flex items-start gap-3">
                         <ExclamationTriangleIcon className="w-6 h-6 text-red-600 dark:text-red-400 mt-1" />
                         <div>
-                            <h3 className="font-bold text-red-800 dark:text-red-300">Pending Penalty: ₹{user.pendingPenalty.toLocaleString()}</h3>
-                            <p className="text-sm text-red-700 dark:text-red-400">
-                                This amount will be deducted from your next payout due to previous cancellations.
-                            </p>
+                            <h3 className="font-bold text-red-800 dark:text-red-300">
+                                {user.pendingPenalty && user.pendingPenalty > 0 ? `Pending Penalty: ₹${user.pendingPenalty.toLocaleString()}` : "No Pending Penalties"}
+                            </h3>
+                            {user.pendingPenalty && user.pendingPenalty > 0 ? (
+                                <p className="text-sm text-red-700 dark:text-red-400">
+                                    This amount will be deducted from your next payout due to previous cancellations.
+                                </p>
+                            ) : (
+                                <p className="text-sm text-green-700 dark:text-green-400">
+                                    You have no outstanding penalties.
+                                </p>
+                            )}
                         </div>
                     </div>
-                    <button 
-                        onClick={() => setShowPayPenaltyModal(true)}
-                        className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-md transition-colors whitespace-nowrap"
-                    >
-                        Clear Penalty Now
-                    </button>
+                    {user.pendingPenalty && user.pendingPenalty > 0 && (
+                        <button 
+                            onClick={() => setShowPayPenaltyModal(true)}
+                            className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-md transition-colors whitespace-nowrap"
+                        >
+                            Clear Penalty Now
+                        </button>
+                    )}
                 </div>
-            )}
+            ) : null}
 
-            <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
                 <button 
                     onClick={() => setActiveTab('all')} 
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'all' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
@@ -155,6 +172,12 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'payouts' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
                 >
                     Payouts
+                </button>
+                <button 
+                    onClick={() => setActiveTab('penalties')} 
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'penalties' ? 'border-red-600 text-red-600 dark:border-red-400 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
+                >
+                    Penalties
                 </button>
             </div>
 

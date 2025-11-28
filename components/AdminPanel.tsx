@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, PlatformBanner, UserRole, StaffPermission, RefundRequest, DailyPayoutRequest, Dispute, CombinedCollabItem, Partner, DiscountSetting, Leaderboard, LeaderboardEntry, Agreements, KycDetails, CreatorVerificationDetails } from '../types';
@@ -201,7 +203,7 @@ const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabIt
 const StaffManagementPanel: React.FC<{ staffUsers: User[], onUpdate: () => void, platformSettings: PlatformSettings }> = ({ staffUsers, onUpdate, platformSettings }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     return (
-        <div className="p-6">
+        <div className="p-6 h-full overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Staff Management</h2>
                 <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Add Staff</button>
@@ -315,7 +317,7 @@ const DiscountSettingsPanel: React.FC<{ settings: PlatformSettings, setSettings:
     };
     
     return (
-        <div className="p-6">
+        <div className="p-6 h-full overflow-y-auto">
             <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Discount Settings</h2>
             <div className="space-y-4">
                 {Object.entries(settings.discountSettings || {}).map(([key, setting]) => (
@@ -353,12 +355,12 @@ const AgreementsPanel: React.FC = () => {
     };
 
     return (
-        <div className="p-6 h-full flex flex-col">
+        <div className="p-6 h-full flex flex-col overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Legal Agreements</h2>
                 <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">Save All</button>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-6">
+            <div className="flex-1 space-y-6">
                 {Object.keys(agreements).map((role) => (
                     <div key={role}>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 capitalize">{role} Agreement</label>

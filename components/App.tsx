@@ -16,7 +16,7 @@ import { SparklesIcon, LogoIcon, SearchIcon } from './Icons';
 import Dashboard from './Dashboard';
 import ProfilePage from './ProfilePage';
 import SettingsPanel from './SettingsPanel';
-import { AdminPanel } from './AdminPanel';
+import AdminPanel from './AdminPanel';
 import PostLoginWelcomePage from './PostLoginWelcomePage';
 import SendMessageModal from './SendMessageModal';
 import CollabRequestModal from './CollabRequestModal';

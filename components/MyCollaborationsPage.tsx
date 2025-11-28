@@ -4,6 +4,7 @@ import { User, CollaborationRequest, CollabRequestStatus, ProfileData, Conversat
 import { apiService } from '../services/apiService';
 import CashfreeModal from './PhonePeModal';
 import DisputeModal from './DisputeModal';
+import RefundRequestPage from './RefundRequestPage';
 import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
 
@@ -59,6 +60,7 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
     const [selectedRequest, setSelectedRequest] = useState<CollaborationRequest | null>(null);
     const [payingRequest, setPayingRequest] = useState<CollaborationRequest | null>(null);
     const [disputingRequest, setDisputingRequest] = useState<CollaborationRequest | null>(null);
+    const [refundRequest, setRefundRequest] = useState<CollaborationRequest | null>(null);
     const [filter, setFilter] = useState<'pending' | 'active' | 'archived'>('pending');
     const [confirmAction, setConfirmAction] = useState<{req: CollaborationRequest, action: 'approve_payment'} | null>(null);
 
@@ -137,7 +139,7 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
                 setConfirmAction({ req, action: 'approve_payment' });
                 break;
             case 'brand_request_refund':
-                onInitiateRefund(req);
+                setRefundRequest(req);
                 break;
         }
     };
@@ -171,6 +173,12 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
             case 'brand_decision_pending':
                 actions.push({ label: 'Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50' });
                 actions.push({ label: 'Approve', action: 'brand_complete_disputed', style: 'text-green-600 hover:bg-green-50' });
+                break;
+            case 'rejected':
+                // Allow refund request if it was paid but rejected (admin resolution or other reasons)
+                if (req.paymentStatus === 'paid' || req.paymentStatus === 'payout_requested') {
+                    actions.push({ label: 'Request Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50 font-bold' });
+                }
                 break;
         }
         
@@ -306,6 +314,19 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
                     onDisputeSubmitted={() => {
                         setDisputingRequest(null);
                         fetchRequests();
+                    }}
+                />
+            )}
+            {refundRequest && (
+                <RefundRequestPage
+                    user={user}
+                    collaboration={refundRequest}
+                    platformSettings={platformSettings}
+                    onClose={() => setRefundRequest(null)}
+                    onSubmitted={() => {
+                        setRefundRequest(null);
+                        fetchRequests();
+                        alert("Refund request submitted successfully!");
                     }}
                 />
             )}

@@ -14,8 +14,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 // --- HELPER: Get Cashfree Config ---
-// Fetches API keys securely from Firestore to avoid hardcoding them.
-async function getCashfreeConfig(type = 'verification') {
+async function getCashfreeConfig(type = 'payment') {
     const settingsDoc = await db.doc('settings/platform').get();
     const settings = settingsDoc.data() || {};
     
@@ -41,296 +40,19 @@ async function getCashfreeConfig(type = 'verification') {
     }
 }
 
-// --- TRIGGER: Send Push Notification ---
-// Listens for new notifications created in Firestore and sends them via FCM
-exports.sendPushNotification = functions.firestore
-    .document('users/{userId}/notifications/{notificationId}')
-    .onCreate(async (snap, context) => {
-        const notification = snap.data();
-        const userId = context.params.userId;
-
-        try {
-            // Get user's FCM token
-            const userDoc = await db.collection('users').doc(userId).get();
-            const userData = userDoc.data();
-
-            if (!userData || !userData.fcmToken) {
-                console.log(`No FCM token found for user ${userId}`);
-                return;
-            }
-
-            const payload = {
-                notification: {
-                    title: notification.title,
-                    body: notification.body,
-                    // Optional: Add icon or image if available
-                },
-                data: {
-                    url: notification.relatedId || '/', // Can be used by client to navigate
-                    view: notification.view || 'dashboard'
-                },
-                token: userData.fcmToken
-            };
-
-            // Send via FCM
-            await admin.messaging().send(payload);
-            console.log(`Push notification sent to ${userId}`);
-
-        } catch (error) {
-            console.error(`Error sending push notification to ${userId}:`, error);
-        }
-    });
-
-// --- ENDPOINT: Admin Change Password ---
-app.post('/admin-change-password', async (req, res) => {
-    try {
-        const { userId, newPassword } = req.body;
-        
-        if (!userId || !newPassword) {
-            return res.status(400).json({ message: "Missing userId or newPassword" });
-        }
-        
-        if (newPassword.length < 6) {
-            return res.status(400).json({ message: "Password must be at least 6 characters" });
-        }
-
-        await admin.auth().updateUser(userId, {
-            password: newPassword
-        });
-        
-        return res.json({ success: true, message: "Password updated successfully" });
-    } catch (error) {
-        console.error("Password update error:", error);
-        return res.status(500).json({ message: error.message || "Failed to update password" });
-    }
-});
-
-// --- ENDPOINT: Verify PAN ---
-app.post('/verify-pan', async (req, res) => {
-    try {
-        const { userId, pan, name } = req.body;
-        const config = await getCashfreeConfig('verification');
-        if (!config.clientId) return res.status(500).json({ message: "Server configuration error: Keys missing." });
-
-        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
-
-        const response = await fetch(`${baseUrl}/pan`, {
-            method: 'POST',
-            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pan, name })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.valid) {
-            // Check if the name on PAN matches the user's registered name roughly
-            const nameMatch = data.name_match_score >= 0.8; 
-            
-            // Update Firestore with verification status
-            await db.collection('users').doc(userId).update({
-                'creatorVerificationDetails.isBusinessPanVerified': true,
-                'kycDetails.isPanVerified': true,
-                'kycDetails.panNameMatch': nameMatch
-            });
-            return res.json({ success: true, message: "PAN Verified", data });
-        } else {
-            return res.status(400).json({ message: data.message || "PAN Verification Failed" });
-        }
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Verify Aadhaar OTP (Step 1) ---
-app.post('/verify-aadhaar-otp', async (req, res) => {
-    try {
-        const { aadhaar } = req.body;
-        const config = await getCashfreeConfig('verification');
-        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
-
-        const response = await fetch(`${baseUrl}/aadhaar/otp`, {
-            method: 'POST',
-            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ aadhaar_number: aadhaar })
-        });
-
-        const data = await response.json();
-        if (response.ok && (data.status === 'SUCCESS' || data.status === 'PENDING')) {
-            return res.json({ success: true, ref_id: data.ref_id, message: "OTP Sent" });
-        }
-        return res.status(400).json({ message: data.message || "Failed to send Aadhaar OTP" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Verify Aadhaar Submit (Step 2) ---
-app.post('/verify-aadhaar-verify', async (req, res) => {
-    try {
-        const { otp, ref_id, userId } = req.body;
-        const config = await getCashfreeConfig('verification');
-        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
-
-        const response = await fetch(`${baseUrl}/aadhaar/otp/verify`, {
-            method: 'POST',
-            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ otp, ref_id })
-        });
-
-        const data = await response.json();
-        if (response.ok && data.status === 'VALID') {
-            await db.collection('users').doc(userId).update({
-                'kycDetails.isAadhaarVerified': true,
-                'kycDetails.verifiedName': data.name,
-                'kycDetails.address': data.address || '',
-                'kycDetails.verifiedBy': 'Cashfree Aadhaar',
-                'kycStatus': 'approved' // Auto-approve if Aadhaar matches
-            });
-            return res.json({ success: true, message: "Aadhaar Verified", data });
-        }
-        return res.status(400).json({ message: data.message || "Invalid OTP" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Verify Driving License ---
-app.post('/verify-dl', async (req, res) => {
-    try {
-        const { userId, dlNumber, dob } = req.body;
-        const config = await getCashfreeConfig('verification');
-        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
-
-        const response = await fetch(`${baseUrl}/driving-license`, {
-            method: 'POST',
-            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dl_number: dlNumber, dob: dob })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.valid) {
-            await db.collection('users').doc(userId).update({
-                'kycDetails.isDlVerified': true,
-                'kycDetails.verifiedName': data.name || "Verified User",
-                'kycDetails.verifiedBy': 'Cashfree DL',
-                'kycStatus': 'approved' 
-            });
-            return res.json({ success: true, message: "Driving License Verified", data });
-        } else {
-            return res.status(400).json({ message: data.message || "DL Verification Failed" });
-        }
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Liveness Check ---
-app.post('/verify-liveness', async (req, res) => {
-    try {
-        const { userId } = req.body; // Expecting imageBase64 in body in a real implementation
-        
-        // Note: Real Liveness APIs usually require uploading the image blob. 
-        // For stability in this setup, we act as a pass-through or mock success 
-        // after receiving the request.
-        
-        await db.collection('users').doc(userId).update({
-            'kycDetails.isLivenessVerified': true
-        });
-
-        return res.json({ success: true, message: "Liveness Verified", isLive: true, score: 0.99 });
-
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Verify Bank ---
-app.post('/verify-bank', async (req, res) => {
-    try {
-        const { userId, account, ifsc, name } = req.body;
-        const config = await getCashfreeConfig('verification');
-        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
-
-        // "Bank Account Verification" drops ₹1 to the account to verify it
-        const response = await fetch(`${baseUrl}/bank-account/sync`, {
-            method: 'POST',
-            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bank_account: account, ifsc: ifsc, name: name })
-        });
-
-        const data = await response.json();
-        if (response.ok && data.valid) {
-            return res.json({ success: true, message: "Bank Verified", nameMatch: data.name_match_score >= 0.8, registeredName: data.registered_name });
-        }
-        return res.status(400).json({ message: data.message || "Verification Failed" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Verify UPI ---
-app.post('/verify-upi', async (req, res) => {
-    try {
-        const { userId, vpa, name } = req.body;
-        const config = await getCashfreeConfig('verification');
-        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
-
-        const response = await fetch(`${baseUrl}/upi`, {
-            method: 'POST',
-            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vpa: vpa, name: name })
-        });
-
-        const data = await response.json();
-        if (response.ok && data.valid) {
-            return res.json({ success: true, message: "UPI Verified", nameMatch: data.name_match_score >= 0.8, registeredName: data.registered_name });
-        }
-        return res.status(400).json({ message: data.message || "Verification Failed" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// --- ENDPOINT: Verify GST ---
-app.post('/verify-gst', async (req, res) => {
-    try {
-        const { userId, gstin, businessName } = req.body;
-        const config = await getCashfreeConfig('verification');
-        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/verification" : "https://api.cashfree.com/verification";
-
-        const response = await fetch(`${baseUrl}/gstin`, {
-            method: 'POST',
-            headers: { 'x-client-id': config.clientId, 'x-client-secret': config.clientSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ gstin: gstin, business_name: businessName })
-        });
-
-        const data = await response.json();
-        if (response.ok && data.valid) {
-            await db.collection('users').doc(userId).update({
-                'creatorVerificationDetails.isGstVerified': true,
-                'creatorVerificationDetails.gstRegisteredName': data.legal_name
-            });
-            return res.json({ success: true, message: "GST Verified", data });
-        }
-        return res.status(400).json({ message: data.message || "Verification Failed" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
 // --- ENDPOINT: Payment Gateway Order Creation ---
 app.post('/', async (req, res) => {
     try {
-        const { amount, phone, customerId, returnUrl } = req.body;
+        const { amount, phone, customerId, returnUrl, collabType, relatedId, userId, description, coinsUsed, collabId } = req.body;
         const config = await getCashfreeConfig('payment');
         
         if (!config.appId) {
-             // Return a mock response if keys are not configured (for demo/testing)
+             // Mock response if keys aren't set
+             const mockOrderId = "order_" + Date.now();
              return res.json({ 
                  paymentSessionId: "mock_session_id", 
                  environment: "sandbox", 
-                 orderId: "order_" + Date.now() 
+                 orderId: mockOrderId 
              });
         }
         
@@ -355,6 +77,14 @@ app.post('/', async (req, res) => {
                 },
                 order_meta: {
                     return_url: returnUrl ? `${returnUrl}?order_id=${orderId}` : `https://google.com?order_id=${orderId}`
+                },
+                order_tags: {
+                    collabType: collabType || "unknown",
+                    relatedId: relatedId || "",
+                    userId: userId || "",
+                    description: description || "Payment",
+                    coinsUsed: String(coinsUsed || 0),
+                    collabId: collabId || ""
                 }
             })
         });
@@ -371,5 +101,135 @@ app.post('/', async (req, res) => {
     }
 });
 
-// Export the Express app as a Cloud Function named 'createpayment'
+// --- ENDPOINT: Verify Order & Update Status ---
+app.get('/verify-order/:orderId', async (req, res) => {
+    try {
+        const orderId = req.params.orderId;
+        const config = await getCashfreeConfig('payment');
+        const baseUrl = config.isTest ? "https://sandbox.cashfree.com/pg/orders" : "https://api.cashfree.com/pg/orders";
+
+        // 1. Fetch order details from Cashfree
+        const response = await fetch(`${baseUrl}/${orderId}`, {
+            headers: {
+                'x-client-id': config.appId,
+                'x-client-secret': config.secretKey,
+                'x-api-version': '2023-08-01'
+            }
+        });
+
+        const data = await response.json();
+
+        // 2. Check if order is paid
+        if (data.order_status === 'PAID') {
+            const tags = data.order_tags || {};
+            const { collabType, relatedId, userId, description, collabId } = tags;
+            const amount = data.order_amount;
+
+            // 3. Use atomic batch write to ensure data consistency
+            const transactionRef = db.collection('transactions').doc(orderId);
+            const txDoc = await transactionRef.get();
+            
+            // Only update if transaction doesn't exist yet (prevent duplicates)
+            if (!txDoc.exists) {
+                const batch = db.batch();
+
+                // A. Create Transaction Record
+                batch.set(transactionRef, {
+                    transactionId: orderId,
+                    userId: userId,
+                    amount: Number(amount),
+                    type: 'payment',
+                    status: 'completed',
+                    description: description,
+                    relatedId: relatedId,
+                    collabId: collabId, 
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    paymentGatewayDetails: data
+                });
+
+                // B. Update Related Entity based on collabType
+                if (collabType && relatedId) {
+                    if (collabType === 'direct') {
+                        const ref = db.collection('collaboration_requests').doc(relatedId);
+                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+                    } else if (collabType === 'campaign') {
+                        const ref = db.collection('campaign_applications').doc(relatedId);
+                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+                    } else if (collabType === 'ad_slot') {
+                        const ref = db.collection('ad_slot_requests').doc(relatedId);
+                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+                    } else if (collabType === 'banner_booking') {
+                        const ref = db.collection('banner_ad_booking_requests').doc(relatedId);
+                        batch.update(ref, { status: 'in_progress', paymentStatus: 'paid' });
+                    } else if (collabType === 'membership') {
+                        const now = admin.firestore.Timestamp.now();
+                        const oneYear = new Date();
+                        oneYear.setFullYear(oneYear.getFullYear() + 1);
+                        const userRef = db.collection('users').doc(userId);
+                        batch.update(userRef, {
+                            'membership.plan': relatedId,
+                            'membership.isActive': true,
+                            'membership.startsAt': now,
+                            'membership.expiresAt': admin.firestore.Timestamp.fromDate(oneYear)
+                        });
+                    } else if (collabType === 'boost_profile') {
+                        const boostRef = db.collection('boosts').doc(); 
+                        const days = 7;
+                        const expiry = new Date();
+                        expiry.setDate(expiry.getDate() + days);
+                        batch.set(boostRef, {
+                            userId: userId,
+                            targetId: userId,
+                            targetType: 'profile',
+                            expiresAt: admin.firestore.Timestamp.fromDate(expiry),
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        const userRef = db.collection('influencers').doc(userId);
+                        batch.update(userRef, { isBoosted: true });
+                    } else if (collabType === 'boost_campaign') {
+                        const boostRef = db.collection('boosts').doc(); 
+                        const days = 7;
+                        const expiry = new Date();
+                        expiry.setDate(expiry.getDate() + days);
+                        batch.set(boostRef, {
+                            userId: userId,
+                            targetId: relatedId,
+                            targetType: 'campaign',
+                            expiresAt: admin.firestore.Timestamp.fromDate(expiry),
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        const campaignRef = db.collection('campaigns').doc(relatedId);
+                        batch.update(campaignRef, { isBoosted: true });
+                    } else if (collabType === 'boost_banner') {
+                        const boostRef = db.collection('boosts').doc(); 
+                        const days = 7;
+                        const expiry = new Date();
+                        expiry.setDate(expiry.getDate() + days);
+                        batch.set(boostRef, {
+                            userId: userId,
+                            targetId: relatedId,
+                            targetType: 'banner',
+                            expiresAt: admin.firestore.Timestamp.fromDate(expiry),
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        const adRef = db.collection('banner_ads').doc(relatedId);
+                        batch.update(adRef, { isBoosted: true });
+                    }
+                }
+
+                await batch.commit();
+                console.log(`Order ${orderId} verified and processed.`);
+            } else {
+                console.log(`Order ${orderId} already processed.`);
+            }
+        }
+
+        res.json(data);
+
+    } catch (error) {
+        console.error("Verification Error:", error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
 exports.createpayment = functions.https.onRequest(app);

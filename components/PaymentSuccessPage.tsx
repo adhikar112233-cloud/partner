@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { auth, BACKEND_URL } from '../services/firebase';
@@ -19,7 +18,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
         setOrderId(id);
 
         if (id) {
-            // Initial check with a small delay to allow webhook processing
+            // Initial check with a small delay to allow webhook/backend processing
             const timer = setTimeout(() => checkStatus(id), 1500);
             return () => clearTimeout(timer);
         } else {
@@ -54,6 +53,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                 headers['Authorization'] = `Bearer ${token}`;
             }
 
+            // Using the verify-order endpoint added to the backend function
             const response = await fetch(`${BACKEND_URL}/verify-order/${id}`, {
                 method: 'GET',
                 headers: headers
@@ -89,7 +89,7 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                         <p className="text-gray-500 dark:text-gray-400 mb-2">
                             Order ID: <span className="font-mono font-medium select-all bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-sm">{orderId || '...'}</span>
                         </p>
-                        <p className="text-green-600 dark:text-green-400 font-semibold mb-8">Transaction Verified</p>
+                        <p className="text-green-600 dark:text-green-400 font-semibold mb-8">Transaction Verified & History Updated</p>
                         
                         {countdown !== null && (
                             <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">Redirecting in {countdown}s...</p>
@@ -108,13 +108,13 @@ const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({ user, onComplet
                              <span className="text-4xl">⏳</span>
                         </div>
                         <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
-                            {status === 'Checking...' ? 'Verifying Payment...' : 'Payment Pending'}
+                            {status === 'Checking...' ? 'Verifying Payment...' : status === 'PENDING' ? 'Payment Pending' : 'Verification Failed'}
                         </h2>
                         <p className="text-gray-600 dark:text-gray-400 mb-2">
                             Order ID: <span className="font-mono text-sm bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{orderId || '...'}</span>
                         </p>
                         <p className="text-sm text-gray-500 dark:text-gray-500 mb-8">
-                            Please wait while we confirm your transaction status with the gateway.
+                            {status === 'FAILED' ? "We couldn't verify the payment status. Please try again or contact support." : "Please wait while we confirm your transaction status with the gateway."}
                         </p>
                         
                         <div className="flex flex-col gap-3">

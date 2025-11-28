@@ -1,7 +1,8 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
-import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon } from './Icons';
+import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon, ShoppingBagIcon } from './Icons';
 import { authService } from '../services/authService';
 import FollowListModal from './FollowListModal';
 
@@ -107,6 +108,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     { view: View.COLLAB_REQUESTS, label: 'Direct Requests', icon: CollabIcon, roles: ['influencer'] },
     { view: View.BOOST_PROFILE, label: 'Boost Profile', icon: RocketIcon, roles: ['influencer', 'livetv', 'banneragency'] },
     
+    // Shopping Link (All standard users)
+    { view: View.SHOPPING, label: 'Shopping', icon: ShoppingBagIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
+
     // Staff
     { view: View.ADMIN, label: 'Admin Panel', icon: AdminIcon, roles: ['staff'] },
     { view: View.SETTINGS, label: 'Settings', icon: SettingsIcon, roles: ['staff'], requiredPermission: 'super_admin' },
@@ -148,6 +152,17 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
   }
 
   const handleItemClick = (view: View, filter?: 'global' | 'my_posts' | 'following') => {
+    if (view === View.SHOPPING) {
+        const url = platformSettings.shoppingUrl;
+        if (url) {
+            window.open(url, '_blank');
+        } else {
+            alert("No shopping store link configured yet.");
+        }
+        if (isMobile) onClose();
+        return;
+    }
+
     setActiveView(view);
     if (filter && setCommunityFeedFilter) {
         setCommunityFeedFilter(filter);

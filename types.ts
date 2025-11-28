@@ -1,3 +1,4 @@
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -169,7 +170,8 @@ export interface PlatformSettings {
     isNotificationBannerEnabled: boolean;
     notificationBannerText?: string;
     youtubeTutorialUrl?: string;
-    loanAndRechargeUrl?: string; // New field for Loan & Recharge redirection
+    loanAndRechargeUrl?: string;
+    shoppingUrl?: string; // New field for Shopping redirection
     socialMediaLinks: SocialMediaLink[];
     isSocialMediaFabEnabled: boolean;
     isStaffRegistrationEnabled: boolean;
@@ -283,7 +285,8 @@ export enum View {
     PARTNERS = 'partners',
     PAYMENT_SUCCESS = 'payment_success',
     CREATOR_VERIFICATION = 'creator_verification',
-    LEADERBOARD = 'leaderboard'
+    LEADERBOARD = 'leaderboard',
+    SHOPPING = 'shopping'
 }
 
 export interface ProfileData {

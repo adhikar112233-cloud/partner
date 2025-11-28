@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { PlatformSettings, CompanyInfo } from '../types';
 import { apiService } from '../services/apiService';
@@ -138,6 +139,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                 </SettingRow>
                 <SettingRow label="Loan & Recharge URL" helpText="Link for the Loan & Recharge icon in the header. If empty, it shows 'Coming Soon'.">
                     <input type="url" value={settings.loanAndRechargeUrl || ''} onChange={e => handleSettingChange('loanAndRechargeUrl', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="https://example.com" />
+                </SettingRow>
+                <SettingRow label="Shopping Link / Store URL" helpText="Link for the 'Shopping' menu item in the sidebar.">
+                    <input type="url" value={settings.shoppingUrl || ''} onChange={e => handleSettingChange('shoppingUrl', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="https://myshop.com" />
                 </SettingRow>
                 <SettingRow label="YouTube Tutorial Link" helpText="Link for the YouTube tutorial icon in the header.">
                     <input type="url" value={settings.youtubeTutorialUrl || ''} onChange={e => handleSettingChange('youtubeTutorialUrl', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="https://youtube.com/..." />

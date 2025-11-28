@@ -47,6 +47,7 @@ import CreatorVerificationPage from './CreatorVerificationPage';
 import ActivityFeed from './ActivityFeed';
 import OurPartnersPage from './OurPartnersPage';
 import PaymentSuccessPage from './PaymentSuccessPage';
+import LeaderboardPage from './LeaderboardPage';
 
 const FirebaseConfigError: React.FC = () => (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
@@ -698,6 +699,8 @@ const App: React.FC = () => {
         return <MembershipPage user={user} platformSettings={platformSettings} onActivationSuccess={handleMembershipActivated} />;
       case View.PAYMENT_HISTORY:
         return <PaymentHistoryPage user={user} />;
+      case View.LEADERBOARD:
+        return <LeaderboardPage />;
       default:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Welcome</h2><p className="dark:text-gray-300">Select a view from the sidebar.</p></div>;
     }

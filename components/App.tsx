@@ -305,6 +305,7 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
   
+  // Added missing state definitions
   const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
   const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
 
@@ -794,11 +795,11 @@ const App: React.FC = () => {
       case View.MESSAGES:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Messages</h2><p className="dark:text-gray-300">Select a conversation from the header to start chatting.</p></div>;
       case View.COLLAB_REQUESTS:
-        return <CollaborationRequestsPage user={user} onViewProfile={handleViewProfileClick} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+        return <CollaborationRequestsPage user={user} onViewProfile={handleViewProfileClick} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
       case View.MY_COLLABORATIONS:
         return <MyCollaborationsPage user={user} onViewProfile={handleViewProfileClick} onStartChat={handleConversationSelected} onInitiateRefund={handleInitiateRefund} platformSettings={platformSettings} />;
       case View.MY_APPLICATIONS:
-          return <MyApplicationsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+          return <MyApplicationsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
       case View.CAMPAIGNS:
         if (user.role === 'brand') return <CampaignsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiateRefund={handleInitiateRefund} />;
         if (user.role === 'influencer') return <DiscoverCampaignsPage user={user} />;
@@ -806,10 +807,10 @@ const App: React.FC = () => {
       case View.AD_BOOKINGS:
         return <MyAdBookingsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiateRefund={handleInitiateRefund} />;
       case View.LIVETV:
-        if (user.role === 'livetv') return <AdRequestsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+        if (user.role === 'livetv') return <AdRequestsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Live TV</h2><p className="dark:text-gray-300">This feature is not available for your account type.</p></div>;
       case View.BANNERADS:
-        if (user.role === 'banneragency') return <AdBookingsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+        if (user.role === 'banneragency') return <AdBookingsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Banner Ads</h2><p className="dark:text-gray-300">This feature is not available for your account type.</p></div>;
       case View.SUPPORT:
         if (user.role === 'staff') return <SupportAdminPage user={user} />;

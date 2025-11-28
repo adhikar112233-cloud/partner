@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -17,6 +16,7 @@ interface MyAdBookingsPageProps {
     platformSettings: PlatformSettings;
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiateRefund: (collab: BannerAdBookingRequest | AdSlotRequest) => void;
+    refreshUser?: () => void;
 }
 
 const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) => {
@@ -40,6 +40,7 @@ const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) =
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
+// ... (OfferModal remains unchanged)
 const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, onClose, onConfirm }) => {
     const [amount, setAmount] = useState('');
     return (
@@ -82,7 +83,8 @@ const TabButton: React.FC<{
 };
 
 
-export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund }) => {
+export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund, refreshUser }) => {
+    // ... (rest of the component logic)
     const [requests, setRequests] = useState<AdRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -93,14 +95,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
     const [confirmAction, setConfirmAction] = useState<{req: AdRequest, action: 'approve_payment'} | null>(null);
     const [activeTab, setActiveTab] = useState<'pending' | 'inProgress' | 'completed'>('pending');
     
-    // Cancellation State - Though this page is primarily for Brands (who don't pay penalties usually, but just cancel),
-    // if "banneragency" users use a similar view, they might need it.
-    // However, AdBookingsPage is usually for Agency to see *their* bookings (incoming requests).
-    // Let's check `App.tsx`: `View.BANNERADS` maps to `AdBookingsPage` for `banneragency`.
-    // Wait, the file I'm editing is `components/AdBookingsPage.tsx`. In App.tsx:
-    // `if (user.role === 'banneragency') return <AdBookingsPage ... />`
-    // So YES, this IS the Agency view.
-    
+    // Cancellation State
     const [cancellingReq, setCancellingReq] = useState<AdRequest | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
 
@@ -188,6 +183,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
             );
             setCancellingReq(null);
             fetchRequests();
+            if (refreshUser) refreshUser(); // Update penalty balance immediately
         } catch (err) {
             console.error(err);
             alert("Failed to cancel booking. Please try again.");
@@ -236,6 +232,13 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 onInitiateRefund(req); // Using the prop name, but implementation in App.tsx maps it to onInitiatePayout for agency role
                 break;
         }
+    };
+
+    const executeConfirmAction = () => {
+        if (!confirmAction) return;
+        const { req } = confirmAction;
+        handleUpdate(req, { status: 'completed' });
+        setConfirmAction(null);
     };
 
     const renderRequestActions = (req: AdRequest) => {
@@ -301,13 +304,13 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                                     <div className="flex-shrink-0 h-10 w-10">
                                         <img 
                                             className="h-10 w-10 rounded-full object-cover" 
-                                            src={req.brandAvatar} 
+                                            src={req.type === 'Live TV' ? (req as AdSlotRequest).liveTvAvatar : (req as BannerAdBookingRequest).agencyAvatar} 
                                             alt="" 
                                         />
                                     </div>
                                     <div className="ml-4">
                                         <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                            {req.brandName}
+                                            {req.type === 'Live TV' ? (req as AdSlotRequest).liveTvName : (req as BannerAdBookingRequest).agencyName}
                                         </div>
                                         <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{req.campaignName}</div>
                                         <span className="text-xs text-indigo-500 bg-indigo-50 px-1 rounded">{req.type}</span>

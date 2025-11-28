@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CollaborationRequest, CollabRequestStatus, ProfileData, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -12,6 +11,7 @@ interface CollaborationRequestsPageProps {
     onViewProfile: (profile: ProfileData) => void;
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiatePayout: (collab: CollaborationRequest) => void;
+    refreshUser?: () => void;
 }
 
 const RequestStatusBadge: React.FC<{ status: CollabRequestStatus }> = ({ status }) => {
@@ -33,6 +33,7 @@ const RequestStatusBadge: React.FC<{ status: CollabRequestStatus }> = ({ status 
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
+// ... (OfferModal and RejectModal components remain unchanged)
 const OfferModal: React.FC<{ request: CollaborationRequest; type: 'accept' | 'recounter'; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ request, type, onClose, onConfirm }) => {
     const [amount, setAmount] = useState('');
     return (
@@ -67,7 +68,7 @@ const RejectModal: React.FC<{ onClose: () => void; onConfirm: (reason: string) =
     );
 };
 
-const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ user, platformSettings, onViewProfile, onStartChat, onInitiatePayout }) => {
+const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ user, platformSettings, onViewProfile, onStartChat, onInitiatePayout, refreshUser }) => {
     const [requests, setRequests] = useState<CollaborationRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -132,6 +133,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                 penalty
             );
             setCancellingReq(null);
+            if (refreshUser) refreshUser(); // Update penalty balance immediately
         } catch (err) {
             console.error(err);
             alert("Failed to cancel collaboration. Please try again.");
@@ -219,6 +221,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
         );
     };
     
+    // ... (Memoized filters and render logic remain unchanged)
     const { active, pending, archived } = useMemo(() => {
         const active: CollaborationRequest[] = [];
         const pending: CollaborationRequest[] = [];

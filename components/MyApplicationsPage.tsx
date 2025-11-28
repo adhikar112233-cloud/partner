@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CampaignApplication, CampaignApplicationStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -11,6 +10,7 @@ interface MyApplicationsPageProps {
     platformSettings: PlatformSettings;
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiatePayout: (collab: CampaignApplication) => void;
+    refreshUser?: () => void;
 }
 
 const ApplicationStatusBadge: React.FC<{ status: CampaignApplicationStatus }> = ({ status }) => {
@@ -35,6 +35,7 @@ const ApplicationStatusBadge: React.FC<{ status: CampaignApplicationStatus }> = 
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
+// ... (OfferModal remains unchanged)
 const OfferModal: React.FC<{ currentOffer: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ currentOffer, onClose, onConfirm }) => {
     const [amount, setAmount] = useState('');
     return (
@@ -52,7 +53,8 @@ const OfferModal: React.FC<{ currentOffer: string; onClose: () => void; onConfir
     );
 };
 
-export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, platformSettings, onStartChat, onInitiatePayout }) => {
+export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, platformSettings, onStartChat, onInitiatePayout, refreshUser }) => {
+    // ... (rest of the component logic)
     const [applications, setApplications] = useState<CampaignApplication[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -112,6 +114,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
             );
             setCancellingApp(null);
             fetchApplications();
+            if (refreshUser) refreshUser(); // Update penalty balance immediately
         } catch (err) {
             console.error(err);
             alert("Failed to cancel collaboration. Please try again.");

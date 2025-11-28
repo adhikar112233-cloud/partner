@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -11,6 +10,7 @@ interface AdRequestsPageProps {
     platformSettings: PlatformSettings;
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiatePayout: (collab: AdSlotRequest) => void;
+    refreshUser?: () => void;
 }
 
 const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) => {
@@ -34,6 +34,7 @@ const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) =
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
+// ... (OfferModal remains unchanged)
 const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, onClose, onConfirm }) => {
     const [amount, setAmount] = useState('');
     return (
@@ -56,7 +57,8 @@ const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string
 
 type FilterType = 'pending' | 'processing' | 'completed';
 
-const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings, onStartChat, onInitiatePayout }) => {
+const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings, onStartChat, onInitiatePayout, refreshUser }) => {
+    // ... (rest of the component logic)
     const [requests, setRequests] = useState<AdSlotRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -141,6 +143,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
             );
             setCancellingReq(null);
             fetchRequests(); // Refresh list to show rejection status
+            if (refreshUser) refreshUser();
         } catch (err) {
             console.error(err);
             alert("Failed to cancel booking. Please try again.");

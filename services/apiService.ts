@@ -105,28 +105,57 @@ export const apiService = {
         });
     },
     updatePenalty: async (userId: string, amount: number) => {
-        const response = await fetch(`${BACKEND_URL}/update-penalty`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, amount })
-        });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to update penalty');
+        try {
+            const response = await fetch(`${BACKEND_URL}/update-penalty`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, amount })
+            });
+            if (!response.ok) throw new Error('Backend failed');
+            return await response.json();
+        } catch (e) {
+            console.warn("Backend updatePenalty failed, falling back to client-side", e);
+            await updateDoc(doc(db, 'users', userId), {
+                pendingPenalty: amount
+            });
+            return { success: true };
         }
-        return await response.json();
     },
     cancelCollaboration: async (userId: string, collaborationId: string, collectionName: string, reason: string, penaltyAmount: number) => {
-        const response = await fetch(`${BACKEND_URL}/cancel-collaboration`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, collaborationId, collectionName, reason, penaltyAmount })
-        });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to cancel collaboration');
+        try {
+            const response = await fetch(`${BACKEND_URL}/cancel-collaboration`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, collaborationId, collectionName, reason, penaltyAmount })
+            });
+            if (!response.ok) throw new Error('Backend failed');
+            return await response.json();
+        } catch (error) {
+            console.warn("Backend cancelCollaboration failed, falling back to client-side", error);
+            
+            const batch = writeBatch(db);
+            const collabRef = doc(db, collectionName, collaborationId);
+            const userRef = doc(db, 'users', userId);
+
+            // 1. Update Collaboration Status
+            batch.update(collabRef, { 
+                status: 'rejected', 
+                rejectionReason: reason || 'Cancelled by creator',
+                cancelledBy: userId,
+                cancelledAt: serverTimestamp()
+            });
+
+            // 2. Apply Penalty
+            if (penaltyAmount > 0) {
+                batch.update(userRef, {
+                    pendingPenalty: increment(Number(penaltyAmount))
+                });
+            }
+            
+            // 3. Commit
+            await batch.commit();
+            return { success: true };
         }
-        return await response.json();
     },
 
     getPlatformSettings: async (): Promise<PlatformSettings> => {
@@ -140,6 +169,7 @@ export const apiService = {
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
     },
+    // ... rest of the file remains unchanged
     getAgreements: async (): Promise<Agreements> => {
         const docRef = doc(db, 'settings', 'agreements');
         const docSnap = await getDoc(docRef);

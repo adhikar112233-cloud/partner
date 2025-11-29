@@ -1,6 +1,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAdBookingRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -52,12 +54,13 @@ const OfferModal: React.FC<{
 
     useEffect(() => {
         if (dailyRate && !isNaN(Number(dailyRate))) {
-            const pricing = calculateAdPricing(Number(dailyRate), req.startDate, req.endDate, platformSettings);
+            const pricingType = 'liveTvId' in req ? 'ad_slot' : 'banner_booking';
+            const pricing = calculateAdPricing(Number(dailyRate), req.startDate, req.endDate, platformSettings, pricingType);
             setCalculations(pricing);
         } else {
             setCalculations(null);
         }
-    }, [dailyRate, req.startDate, req.endDate, platformSettings]);
+    }, [dailyRate, req.startDate, req.endDate, platformSettings, req]);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">

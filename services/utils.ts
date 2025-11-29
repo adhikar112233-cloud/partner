@@ -1,4 +1,6 @@
 
+
+
 import { EmiItem, PlatformSettings } from '../types';
 
 export const calculateDurationDays = (startDate: string, endDate: string): number => {
@@ -9,16 +11,25 @@ export const calculateDurationDays = (startDate: string, endDate: string): numbe
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
-export const calculateAdPricing = (dailyRate: number, startDate: string, endDate: string, settings: PlatformSettings) => {
+export const calculateAdPricing = (dailyRate: number, startDate: string, endDate: string, settings: PlatformSettings, type?: 'ad_slot' | 'banner_booking') => {
     const durationDays = calculateDurationDays(startDate, endDate);
     const baseTotal = dailyRate * durationDays;
     
+    // Determine Fee Rate
+    let feeRate = settings.paymentProcessingChargeRate; // Default generic fee
+    
+    if (type === 'ad_slot' && settings.liveTvBookingFeeRate !== undefined) {
+        feeRate = settings.liveTvBookingFeeRate;
+    } else if (type === 'banner_booking' && settings.bannerAdBookingFeeRate !== undefined) {
+        feeRate = settings.bannerAdBookingFeeRate;
+    }
+
     // Fees (if applicable to brand)
     const processingFee = settings.isBrandPlatformFeeEnabled 
-        ? baseTotal * (settings.paymentProcessingChargeRate / 100) 
+        ? baseTotal * (feeRate / 100) 
         : 0;
     
-    // GST on Fees (if applicable to brand) - assuming GST applies to the service + fee or just fee? 
+    // GST on Fees (if applicable to brand)
     // Standard model: (Base + Fee) + GST. 
     // BUT the prompt says "total price 140000+gst+other fees".
     // Let's assume GST is applied on the Base + Processing Fee.

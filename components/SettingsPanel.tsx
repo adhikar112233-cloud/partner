@@ -1,4 +1,6 @@
 
+
+
 import React, { useState } from 'react';
 import { PlatformSettings, CompanyInfo, TrainingVideo, UserRole, DiscountSetting } from '../types';
 import { apiService } from '../services/apiService';
@@ -384,11 +386,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
 
                 {/* Financial Rates */}
                 <div className="px-6 py-3 bg-gray-50 dark:bg-gray-700"><h4 className="font-semibold text-gray-600 dark:text-gray-300">Financial Rates</h4></div>
-                <SettingRow label="Platform Commission Rate (%)" helpText="Percentage deducted from creator earnings.">
+                <SettingRow label="Platform Commission Rate (%)" helpText="Percentage deducted from creator earnings (Payouts).">
                     <input type="number" value={settings.platformCommissionRate} onChange={e => handleSettingChange('platformCommissionRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
-                <SettingRow label="Brand Processing Fee Rate (%)" helpText="Percentage added to brand payments.">
+                <SettingRow label="Default Brand Processing Fee Rate (%)" helpText="Generic percentage added to brand payments if not specified otherwise.">
                     <input type="number" value={settings.paymentProcessingChargeRate} onChange={e => handleSettingChange('paymentProcessingChargeRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="Live TV Booking Fee (%)" helpText="Specific processing fee percentage for Live TV Ad bookings.">
+                    <input type="number" value={settings.liveTvBookingFeeRate ?? 5} onChange={e => handleSettingChange('liveTvBookingFeeRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </SettingRow>
+                <SettingRow label="Banner Ad Booking Fee (%)" helpText="Specific processing fee percentage for Banner Ad bookings.">
+                    <input type="number" value={settings.bannerAdBookingFeeRate ?? 5} onChange={e => handleSettingChange('bannerAdBookingFeeRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </SettingRow>
                 <SettingRow label="GST Rate (%)" helpText="Applicable tax rate.">
                     <input type="number" value={settings.gstRate} onChange={e => handleSettingChange('gstRate', Number(e.target.value))} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />

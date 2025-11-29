@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, Transaction, PayoutRequest, RefundRequest } from '../types';
+import { User, Transaction, PayoutRequest, RefundRequest, DailyPayoutRequest } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
-import { ExclamationTriangleIcon } from './Icons';
+import { ExclamationTriangleIcon, BanknotesIcon } from './Icons';
 import CashfreeModal from './PhonePeModal';
+import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 
 interface CombinedHistoryItem {
     date: Date | undefined;
     description: string;
-    type: 'Payment Made' | 'Payout' | 'Refund';
+    type: 'Payment Made' | 'Payout' | 'Refund' | 'Daily Payout';
     amount: number;
     status: string;
     transactionId: string;
@@ -34,11 +35,15 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
     const [refunds, setRefunds] = useState<RefundRequest[]>([]);
+    const [dailyPayouts, setDailyPayouts] = useState<DailyPayoutRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'all' | 'payments' | 'payouts' | 'penalties'>('all');
     const [showPayPenaltyModal, setShowPayPenaltyModal] = useState(false);
+    const [showDailyPayoutModal, setShowDailyPayoutModal] = useState(false);
     const [platformSettings, setPlatformSettings] = useState<any>(null);
+
+    const isBusinessUser = user.role === 'livetv' || user.role === 'banneragency';
 
     useEffect(() => {
         const fetchData = async () => {
@@ -57,11 +62,18 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                     brandRefunds = await apiService.getRefundsForUser(user.id);
                 }
 
+                // If user is LiveTV/Agency, fetch daily payouts
+                let userDailyPayouts: DailyPayoutRequest[] = [];
+                if (isBusinessUser) {
+                    userDailyPayouts = await apiService.getDailyPayoutsForUser(user.id);
+                }
+
                 const [userTransactions, userPayouts, settings] = await Promise.all(promises);
                 
                 setTransactions(userTransactions);
                 setPayouts(userPayouts);
                 setRefunds(brandRefunds);
+                setDailyPayouts(userDailyPayouts);
                 setPlatformSettings(settings);
             } catch (err) {
                 console.error(err);
@@ -71,7 +83,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             }
         };
         fetchData();
-    }, [user.id, user.role]);
+    }, [user.id, user.role, isBusinessUser]);
 
     const combinedHistory = useMemo<CombinedHistoryItem[]>(() => {
         const safeToDate = (ts: any): Date | undefined => {
@@ -118,12 +130,23 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             collabId: r.collabId,
         }));
 
-        return [...mappedTransactions, ...mappedPayouts, ...mappedRefunds].sort((a, b) => {
+        const mappedDailyPayouts: CombinedHistoryItem[] = dailyPayouts.map(d => ({
+            date: safeToDate(d.timestamp),
+            description: `Daily Payout for ${d.collaborationId}`,
+            type: 'Daily Payout',
+            amount: d.approvedAmount || 0, // Should be the requested/approved amount
+            status: d.status,
+            transactionId: d.id,
+            collaborationId: d.collaborationId,
+            collabId: d.collabId,
+        }));
+
+        return [...mappedTransactions, ...mappedPayouts, ...mappedRefunds, ...mappedDailyPayouts].sort((a, b) => {
             const timeA = a.date instanceof Date ? a.date.getTime() : 0;
             const timeB = b.date instanceof Date ? b.date.getTime() : 0;
             return timeB - timeA;
         });
-    }, [transactions, payouts, refunds]);
+    }, [transactions, payouts, refunds, dailyPayouts]);
 
     const filteredHistory = useMemo(() => {
         if (activeTab === 'payments') return combinedHistory.filter(item => item.type === 'Payment Made');
@@ -132,7 +155,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             if (user.role === 'brand') {
                 return combinedHistory.filter(item => item.type === 'Refund');
             }
-            return combinedHistory.filter(item => item.type === 'Payout');
+            return combinedHistory.filter(item => item.type === 'Payout' || item.type === 'Daily Payout');
         }
         if (activeTab === 'penalties') {
             return combinedHistory.filter(item => 
@@ -145,9 +168,20 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
 
     return (
         <div className="space-y-6 h-full flex flex-col">
-            <div>
-                <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Payment History</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions, {user.role === 'brand' ? 'refunds' : 'payouts'}, and penalties.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Payment History</h1>
+                    <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions, {user.role === 'brand' ? 'refunds' : 'payouts'}, and penalties.</p>
+                </div>
+                {isBusinessUser && (
+                    <button 
+                        onClick={() => setShowDailyPayoutModal(true)}
+                        className="px-6 py-2.5 bg-gradient-to-r from-teal-500 to-green-600 text-white font-bold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+                    >
+                        <BanknotesIcon className="w-5 h-5" />
+                        Request Daily Payout
+                    </button>
+                )}
             </div>
 
             {/* Penalty Alert Section */}
@@ -230,7 +264,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                 {filteredHistory.map((item, index) => (
-                                    <tr key={`${item.transactionId}-${index}`}>
+                                    <tr key={`${item.transactionId}-${index}`} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.date?.toLocaleDateString()}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 max-w-xs truncate" title={item.description}>
                                             {item.description}
@@ -271,6 +305,19 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                         description: `Penalty Payment`,
                         relatedId: user.id, // User paying for themselves
                     }}
+                />
+            )}
+
+            {showDailyPayoutModal && platformSettings && (
+                <DailyPayoutRequestModal 
+                    user={user} 
+                    onClose={() => {
+                        setShowDailyPayoutModal(false);
+                        // Trigger refresh by reloading window or refetching
+                        // Simple way is to reload window to get fresh data
+                        window.location.reload();
+                    }} 
+                    platformSettings={platformSettings}
                 />
             )}
         </div>

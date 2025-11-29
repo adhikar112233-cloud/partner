@@ -10,6 +10,8 @@
 
 
 
+
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -253,7 +255,12 @@ export interface PlatformSettings {
     isPlatformCommissionEnabled: boolean; // Affects Creators
     platformCommissionRate: number;
     isPaymentProcessingChargeEnabled: boolean; // Deprecated: replaced by isBrandPlatformFeeEnabled
-    paymentProcessingChargeRate: number;
+    paymentProcessingChargeRate: number; // Generic/Default fee for Brands
+    
+    // Specific Brand Fees
+    liveTvBookingFeeRate?: number; 
+    bannerAdBookingFeeRate?: number;
+
     isGstEnabled: boolean; // Deprecated: replaced by specific flags
     gstRate: number;
     cancellationPenaltyAmount: number; // Penalty for creators cancelling collabs

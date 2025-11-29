@@ -3,6 +3,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest, EmiItem } from '../types';
 import { apiService } from '../services/apiService';
@@ -60,12 +62,13 @@ const OfferModal: React.FC<{
 
     useEffect(() => {
         if (dailyRate && !isNaN(Number(dailyRate))) {
-            const pricing = calculateAdPricing(Number(dailyRate), req.startDate, req.endDate, platformSettings);
+            const pricingType = req.type === 'Live TV' ? 'ad_slot' : 'banner_booking';
+            const pricing = calculateAdPricing(Number(dailyRate), req.startDate, req.endDate, platformSettings, pricingType);
             setCalculations(pricing);
         } else {
             setCalculations(null);
         }
-    }, [dailyRate, req.startDate, req.endDate, platformSettings]);
+    }, [dailyRate, req.startDate, req.endDate, platformSettings, req]);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
@@ -127,7 +130,8 @@ const PaymentSelectionModal: React.FC<{
     isProcessing: boolean;
 }> = ({ req, user, platformSettings, onClose, onSelectOption, isProcessing }) => {
     const dailyRate = req.dailyRate || req.currentOffer?.dailyRate || 0;
-    const pricing = calculateAdPricing(dailyRate, req.startDate, req.endDate, platformSettings);
+    const pricingType = req.type === 'Live TV' ? 'ad_slot' : 'banner_booking';
+    const pricing = calculateAdPricing(dailyRate, req.startDate, req.endDate, platformSettings, pricingType);
     const emiSchedule = generateEmiSchedule(pricing.finalAmount, req.startDate, req.endDate);
     const monthlyAmount = emiSchedule.length > 0 ? emiSchedule[0].amount : pricing.finalAmount;
 
@@ -389,7 +393,8 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
         if (!selectedRequest) return;
         
         const dailyRate = selectedRequest.dailyRate || selectedRequest.currentOffer?.dailyRate || 0;
-        const pricing = calculateAdPricing(dailyRate, selectedRequest.startDate, selectedRequest.endDate, platformSettings);
+        const pricingType = selectedRequest.type === 'Live TV' ? 'ad_slot' : 'banner_booking';
+        const pricing = calculateAdPricing(dailyRate, selectedRequest.startDate, selectedRequest.endDate, platformSettings, pricingType);
 
         if (option === 'full') {
             setPayingRequest(selectedRequest);
@@ -623,7 +628,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
 
             {/* Modals */}
             {modal === 'details' && selectedRequest && (
-                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} currentUser={user} />
+                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
             )}
             
             {modal === 'offer' && selectedRequest && (

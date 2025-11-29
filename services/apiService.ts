@@ -1,5 +1,3 @@
-
-
 import { 
     collection, 
     doc, 
@@ -103,7 +101,9 @@ export const apiService = {
                 isPlatformCommissionEnabled: true,
                 platformCommissionRate: 10,
                 isPaymentProcessingChargeEnabled: true,
-                paymentProcessingChargeRate: 2,
+                paymentProcessingChargeRate: 2, // Default generic rate
+                liveTvBookingFeeRate: 5, // Default specific rate
+                bannerAdBookingFeeRate: 5, // Default specific rate
                 isGstEnabled: true,
                 gstRate: 18,
                 cancellationPenaltyAmount: 500,
@@ -587,6 +587,12 @@ export const apiService = {
     // Daily Payouts
     getAllDailyPayouts: async (): Promise<DailyPayoutRequest[]> => {
         const q = query(collection(db, 'daily_payout_requests'), orderBy('timestamp', 'desc'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyPayoutRequest));
+    },
+
+    getDailyPayoutsForUser: async (userId: string): Promise<DailyPayoutRequest[]> => {
+        const q = query(collection(db, 'daily_payout_requests'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyPayoutRequest));
     },

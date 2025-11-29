@@ -75,6 +75,7 @@ const DisputeModal: React.FC<DisputeModalProps> = ({ user, collaboration, onClos
             const finalAmountRaw = collaboration?.finalAmount ? parseFloat(String(collaboration.finalAmount).replace(/[^0-9.-]+/g, "")) : 0;
             const finalAmount = isNaN(finalAmountRaw) ? 0 : finalAmountRaw;
 
+            // 1. Create the dispute record
             await apiService.createDispute({
                 collaborationId: collaboration.id,
                 collaborationType: collabType,
@@ -89,6 +90,19 @@ const DisputeModal: React.FC<DisputeModalProps> = ({ user, collaboration, onClos
                 amount: finalAmount,
                 collabId: collaboration.collabId || null,
             });
+
+            // 2. Update the collaboration status to 'disputed'
+            const statusUpdate = { status: 'disputed' };
+            if (collabType === 'direct') {
+                await apiService.updateCollaborationRequest(collaboration.id, statusUpdate, user.id);
+            } else if (collabType === 'campaign') {
+                await apiService.updateCampaignApplication(collaboration.id, statusUpdate, user.id);
+            } else if (collabType === 'ad_slot') {
+                await apiService.updateAdSlotRequest(collaboration.id, statusUpdate, user.id);
+            } else if (collabType === 'banner_booking') {
+                await apiService.updateBannerAdBookingRequest(collaboration.id, statusUpdate, user.id);
+            }
+
             onDisputeSubmitted();
         } catch (err) {
             console.error(err);

@@ -305,7 +305,6 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
 
-  // App Mode for Dashboard/Community Toggle
   const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
   const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
 

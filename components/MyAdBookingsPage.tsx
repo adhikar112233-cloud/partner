@@ -40,14 +40,15 @@ const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) =
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
-const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, onClose, onConfirm }) => {
+const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; providerName?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, providerName, onClose, onConfirm }) => {
     const [amount, setAmount] = useState('');
+    const name = providerName || 'Agency';
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
                 <h3 className="text-lg font-bold mb-4 dark:text-gray-100">{type === 'accept' ? 'Accept with Offer' : 'Send Counter Offer'}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  {type === 'recounter' && currentOffer ? `Agency's offer is ${currentOffer}. ` : ''}
+                  {type === 'recounter' && currentOffer ? `${name}'s offer is ${currentOffer}. ` : ''}
                   Propose your fee for this ad booking.
                 </p>
                 <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g., 25000" className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
@@ -264,11 +265,22 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
             return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
         }
         if (req.currentOffer) {
+            let label = 'Agency Offer';
+            if (req.currentOffer.offeredBy === 'brand') {
+                label = 'My Offer';
+            } else {
+                if (req.type === 'Live TV') {
+                    label = `${(req as AdSlotRequest).liveTvName} Offer`;
+                } else {
+                    label = `${(req as BannerAdBookingRequest).agencyName} Offer`;
+                }
+            }
+
             return (
                 <div className="flex flex-col">
                     <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {req.currentOffer.offeredBy === 'brand' ? 'My Offer' : 'Agency Offer'}
+                        {label}
                     </span>
                 </div>
             );
@@ -367,7 +379,13 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
             )}
             {modal === 'offer' && selectedRequest && (
-                <OfferModal type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} />
+                <OfferModal 
+                    type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} 
+                    currentOffer={selectedRequest.currentOffer?.amount} 
+                    providerName={selectedRequest.type === 'Live TV' ? (selectedRequest as AdSlotRequest).liveTvName : (selectedRequest as BannerAdBookingRequest).agencyName}
+                    onClose={() => setModal(null)} 
+                    onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} 
+                />
             )}
              {payingRequest && (
                 <CashfreeModal

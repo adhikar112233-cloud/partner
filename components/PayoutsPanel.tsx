@@ -1,4 +1,3 @@
-
 // ... (Previous imports)
 import React, { useState, useMemo, useEffect } from 'react';
 import { PayoutRequest, RefundRequest, DailyPayoutRequest, UserRole, CombinedCollabItem, User, Transaction, AnyCollaboration } from '../types';
@@ -378,7 +377,7 @@ const DetailsModal: React.FC<{ item: PayoutQueueItem, collaborations: CombinedCo
                                              'campaignTitle' in linkedCollab ? linkedCollab.campaignTitle : 
                                              'campaignName' in linkedCollab ? linkedCollab.campaignName : 'Untitled'}
                                         </h3>
-                                        <p className="text-xs text-gray-500 font-mono">Collab ID: {item.collabId || item.collaborationId}</p>
+                                        <p className="text-xs text-gray-500 font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded inline-block">Collab ID: {item.collabId || item.collaborationId}</p>
                                     </div>
                                     
                                     <div className="grid grid-cols-2 gap-4 text-sm dark:text-gray-200">

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -16,7 +17,6 @@ interface MyAdBookingsPageProps {
     platformSettings: PlatformSettings;
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiateRefund: (collab: BannerAdBookingRequest | AdSlotRequest) => void;
-    refreshUser?: () => void;
 }
 
 const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) => {
@@ -40,7 +40,6 @@ const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) =
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
-// ... (OfferModal remains unchanged)
 const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, onClose, onConfirm }) => {
     const [amount, setAmount] = useState('');
     return (
@@ -83,8 +82,7 @@ const TabButton: React.FC<{
 };
 
 
-export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund, refreshUser }) => {
-    // ... (rest of the component logic)
+export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund }) => {
     const [requests, setRequests] = useState<AdRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -94,18 +92,18 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
     const [selectedRequest, setSelectedRequest] = useState<AdRequest | null>(null);
     const [confirmAction, setConfirmAction] = useState<{req: AdRequest, action: 'approve_payment'} | null>(null);
     const [activeTab, setActiveTab] = useState<'pending' | 'inProgress' | 'completed'>('pending');
-    
-    // Cancellation State
-    const [cancellingReq, setCancellingReq] = useState<AdRequest | null>(null);
-    const [isCancelling, setIsCancelling] = useState(false);
 
     const fetchRequests = async () => {
         setIsLoading(true);
         try {
-            // If user is agency, get requests sent TO them
-            const bannerRequests = await apiService.getBannerAdBookingRequestsForAgency(user.id);
-            const combined: AdRequest[] = bannerRequests.map(r => ({...r, type: 'Banner Ad' as const}));
-            
+            const [tvRequests, bannerRequests] = await Promise.all([
+                apiService.getAdSlotRequestsForBrand(user.id),
+                apiService.getBannerAdBookingRequestsForBrand(user.id)
+            ]);
+            const combined: AdRequest[] = [
+                ...tvRequests.map(r => ({...r, type: 'Live TV' as const})),
+                ...bannerRequests.map(r => ({...r, type: 'Banner Ad' as const}))
+            ];
             combined.sort((a, b) => {
                 const timeB = (b.timestamp && typeof (b.timestamp as Timestamp).toMillis === 'function') ? (b.timestamp as Timestamp).toMillis() : 0;
                 const timeA = (a.timestamp && typeof (a.timestamp as Timestamp).toMillis === 'function') ? (a.timestamp as Timestamp).toMillis() : 0;
@@ -147,7 +145,11 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
 
     const handleUpdate = async (req: AdRequest, data: Partial<AdSlotRequest | BannerAdBookingRequest>) => {
         try {
-            await apiService.updateBannerAdBookingRequest(req.id, data, user.id);
+            if (req.type === 'Live TV') {
+                await apiService.updateAdSlotRequest(req.id, data, user.id);
+            } else {
+                await apiService.updateBannerAdBookingRequest(req.id, data, user.id);
+            }
             fetchRequests();
         } catch (e) {
             console.error("Failed to update ad booking:", e);
@@ -160,42 +162,19 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
     const handleDelete = async (req: AdRequest) => {
         if(window.confirm("Are you sure you want to delete this from history? This cannot be undone.")) {
             try {
-                await apiService.deleteCollaboration(req.id, 'banner_ad_booking_requests');
+                const collectionName = req.type === 'Live TV' ? 'ad_slot_requests' : 'banner_ad_booking_requests';
+                await apiService.deleteCollaboration(req.id, collectionName);
                 fetchRequests();
             } catch (err) {
                 console.error("Delete failed", err);
             }
         }
     };
-    
-    const handleConfirmCancellation = async (reason: string) => {
-        if (!cancellingReq) return;
-        setIsCancelling(true);
-        const penalty = platformSettings.cancellationPenaltyAmount || 0;
-        
-        try {
-            await apiService.cancelCollaboration(
-                user.id, 
-                cancellingReq.id, 
-                'banner_ad_booking_requests', 
-                reason, 
-                penalty
-            );
-            setCancellingReq(null);
-            fetchRequests();
-            if (refreshUser) refreshUser(); // Update penalty balance immediately
-        } catch (err) {
-            console.error(err);
-            alert("Failed to cancel booking. Please try again.");
-        } finally {
-            setIsCancelling(false);
-        }
-    };
 
-    const handleAction = (req: AdRequest, action: 'message' | 'accept_with_offer' | 'accept_offer' | 'recounter_offer' | 'reject' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'view_details' | 'cancel_active') => {
-        const brandId = req.brandId;
-        const brandName = req.brandName;
-        const brandAvatar = req.brandAvatar;
+    const handleAction = (req: AdRequest, action: 'message' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'pay_now' | 'work_complete' | 'work_incomplete' | 'brand_complete_disputed' | 'brand_request_refund' | 'view_details') => {
+        const agencyId = req.type === 'Live TV' ? req.liveTvId : req.agencyId;
+        const agencyName = req.type === 'Live TV' ? (req as AdSlotRequest).liveTvName : (req as BannerAdBookingRequest).agencyName;
+        const agencyAvatar = req.type === 'Live TV' ? (req as AdSlotRequest).liveTvAvatar : (req as BannerAdBookingRequest).agencyAvatar;
 
         setSelectedRequest(req);
         
@@ -204,32 +183,31 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 setModal('details');
                 break;
             case 'message':
-                onStartChat({ id: brandId, name: brandName, avatar: brandAvatar, role: 'brand' });
+                onStartChat({ id: agencyId, name: agencyName, avatar: agencyAvatar, role: req.type === 'Live TV' ? 'livetv' : 'banneragency' });
                 break;
-            case 'accept_with_offer':
             case 'recounter_offer':
                 setModal('offer');
                 break;
             case 'accept_offer':
                 handleUpdate(req, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount });
                 break;
-            case 'reject':
-                // Simple reject without penalty if pending
-                handleUpdate(req, { status: 'rejected', rejectionReason: 'Offer rejected by agency.' });
+            case 'reject_offer':
+                handleUpdate(req, { status: 'rejected', rejectionReason: 'Offer rejected by brand.' });
                 break;
-            case 'cancel':
-            case 'cancel_active':
-                setCancellingReq(req);
+            case 'pay_now':
+                setPayingRequest(req);
                 break;
-            case 'start_work':
-                handleUpdate(req, { workStatus: 'started' });
+            case 'work_complete':
+                handleUpdate(req, { status: 'completed' });
                 break;
-            case 'complete_work':
-                handleUpdate(req, { status: 'work_submitted' });
+            case 'work_incomplete':
+                setDisputingRequest(req);
                 break;
-            case 'get_payment':
-                // For agency, initiate payout
-                onInitiateRefund(req); // Using the prop name, but implementation in App.tsx maps it to onInitiatePayout for agency role
+            case 'brand_complete_disputed':
+                setConfirmAction({ req, action: 'approve_payment' });
+                break;
+            case 'brand_request_refund':
+                onInitiateRefund(req);
                 break;
         }
     };
@@ -248,31 +226,22 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
         actions.push({ label: 'Message', action: 'message', style: 'text-indigo-600 hover:bg-indigo-50', icon: <MessagesIcon className="w-4 h-4" /> });
 
         switch (req.status) {
-            case 'pending_approval':
-                actions.push({ label: 'Reject', action: 'reject', style: 'text-red-600 hover:bg-red-50' });
-                actions.push({ label: 'Accept & Offer', action: 'accept_with_offer', style: 'text-green-600 hover:bg-green-50' });
-                break;
-            case 'brand_offer':
-                actions.push({ label: 'Reject', action: 'reject', style: 'text-red-600 hover:bg-red-50' });
+            case 'agency_offer':
+                actions.push({ label: 'Reject', action: 'reject_offer', style: 'text-red-600 hover:bg-red-50' });
                 actions.push({ label: 'Counter', action: 'recounter_offer', style: 'text-blue-600 hover:bg-blue-50' });
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'agreement_reached':
-            case 'in_progress':
-                actions.push({ label: 'Cancel Booking', action: 'cancel_active', style: 'text-red-600 hover:bg-red-50 font-bold border-red-200' });
-                if (req.paymentStatus === 'paid' && !req.workStatus) {
-                    actions.push({ label: 'Start Work', action: 'start_work', style: 'text-indigo-600 hover:bg-indigo-50 font-bold' });
-                }
-                if (req.workStatus === 'started') {
-                    actions.push({ label: 'Complete', action: 'complete_work', style: 'text-teal-600 hover:bg-teal-50 font-bold' });
-                }
+                actions.push({ label: `Pay Now`, action: 'pay_now', style: 'text-green-600 hover:bg-green-50 font-bold' });
                 break;
-            case 'completed':
-                 if (req.paymentStatus === 'paid' || req.paymentStatus === 'payout_complete') {
-                    // Logic to show payout status or request it
-                    if(req.paymentStatus === 'paid') actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
-                 }
-                 break;
+            case 'work_submitted':
+                actions.push({ label: 'Complete', action: 'work_complete', style: 'text-green-600 hover:bg-green-50' });
+                actions.push({ label: 'Dispute', action: 'work_incomplete', style: 'text-orange-600 hover:bg-orange-50' });
+                break;
+            case 'brand_decision_pending':
+                actions.push({ label: 'Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50' });
+                actions.push({ label: 'Approve', action: 'brand_complete_disputed', style: 'text-green-600 hover:bg-green-50' });
+                break;
         }
         
         return (
@@ -291,7 +260,8 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Brand / Campaign</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Provider / Campaign</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
@@ -316,6 +286,9 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                                         <span className="text-xs text-indigo-500 bg-indigo-50 px-1 rounded">{req.type}</span>
                                     </div>
                                 </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
+                                {req.collabId || req.id}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <RequestStatusBadge status={req.status} />
@@ -349,8 +322,8 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
     return (
         <div className="space-y-8">
             <div>
-                <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Ad Bookings (Agency)</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">Manage incoming requests for your banner ads.</p>
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-white">My Ad Bookings</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">Track your Live TV and Banner Ad campaigns.</p>
             </div>
             
             <div className="flex space-x-2 p-1 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-x-auto">
@@ -369,16 +342,49 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
             )}
             {modal === 'offer' && selectedRequest && (
-                <OfferModal type={selectedRequest.status === 'pending_approval' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'agency_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'agency' }})} />
+                <OfferModal type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} />
             )}
-            
-            <CancellationPenaltyModal 
-                isOpen={!!cancellingReq}
-                onClose={() => setCancellingReq(null)}
-                onConfirm={handleConfirmCancellation}
-                penaltyAmount={platformSettings.cancellationPenaltyAmount || 0}
-                isProcessing={isCancelling}
-            />
+             {payingRequest && (
+                <CashfreeModal
+                    user={user}
+                    collabType={payingRequest.type === 'Live TV' ? 'ad_slot' : 'banner_booking'}
+                    baseAmount={parseFloat(payingRequest.finalAmount?.replace(/[^0-9.-]+/g, "") || "0")}
+                    platformSettings={platformSettings}
+                    onClose={() => {
+                        setPayingRequest(null);
+                        fetchRequests();
+                    }}
+                    transactionDetails={{
+                        userId: user.id,
+                        description: `Payment for ${payingRequest.type}: ${payingRequest.campaignName}`,
+                        relatedId: payingRequest.id,
+                        collabId: payingRequest.collabId,
+                    }}
+                />
+            )}
+            {disputingRequest && (
+                <DisputeModal
+                    user={user}
+                    collaboration={disputingRequest}
+                    onClose={() => setDisputingRequest(null)}
+                    onDisputeSubmitted={() => {
+                        setDisputingRequest(null);
+                        fetchRequests();
+                    }}
+                />
+            )}
+            {confirmAction && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+                        <h3 className="text-lg font-bold dark:text-gray-100">Confirm Action</h3>
+                        <p className="text-gray-600 dark:text-gray-300 my-4">Are you sure you want to approve this work? This will mark the collaboration as complete and release the final payment to the agency.</p>
+                        <div className="flex justify-end space-x-2">
+                            <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-600 dark:text-gray-200">Cancel</button>
+                            <button onClick={executeConfirmAction} className="px-4 py-2 text-sm rounded-md bg-green-600 text-white">Confirm &amp; Approve</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

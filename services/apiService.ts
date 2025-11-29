@@ -1,5 +1,3 @@
-
-
 // ... (imports)
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
@@ -25,6 +23,11 @@ const uploadFile = async (path: string, file: File): Promise<string> => {
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, file);
     return await getDownloadURL(storageRef);
+};
+
+// Helper to generate Collab ID (CI + 10 digits)
+const generateCollabId = () => {
+    return 'CI' + Math.floor(1000000000 + Math.random() * 9000000000).toString();
 };
 
 export const apiService = {
@@ -169,7 +172,6 @@ export const apiService = {
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
     },
-    // ... rest of the file remains unchanged
     getAgreements: async (): Promise<Agreements> => {
         const docRef = doc(db, 'settings', 'agreements');
         const docSnap = await getDoc(docRef);
@@ -352,7 +354,14 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
     },
     sendCollabRequest: async (request: any) => {
-        const ref = await addDoc(collection(db, 'collaboration_requests'), { ...request, status: 'pending', timestamp: serverTimestamp() });
+        // Generate Collab ID
+        const collabId = generateCollabId();
+        const ref = await addDoc(collection(db, 'collaboration_requests'), { 
+            ...request, 
+            collabId, 
+            status: 'pending', 
+            timestamp: serverTimestamp() 
+        });
         await apiService.createNotification(request.influencerId, {
             userId: request.influencerId,
             title: "New Collaboration Request",
@@ -366,6 +375,12 @@ export const apiService = {
     updateCollaborationRequest: async (id: string, data: any, actorId: string) => {
         const docRef = doc(db, 'collaboration_requests', id);
         const snapshot = await getDoc(docRef);
+        
+        if (!snapshot.exists()) {
+            console.warn(`Collaboration Request ${id} not found. Skipping update.`);
+            return;
+        }
+
         const currentData = snapshot.data() as CollaborationRequest;
         
         await updateDoc(docRef, data);
@@ -424,7 +439,14 @@ export const apiService = {
         return campaigns.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     applyToCampaign: async (application: any) => {
-        const ref = await addDoc(collection(db, 'campaign_applications'), { ...application, status: 'pending_brand_review', timestamp: serverTimestamp() });
+        // Generate Collab ID
+        const collabId = generateCollabId();
+        const ref = await addDoc(collection(db, 'campaign_applications'), { 
+            ...application, 
+            collabId,
+            status: 'pending_brand_review', 
+            timestamp: serverTimestamp() 
+        });
         await updateDoc(doc(db, 'campaigns', application.campaignId), {
             applicantIds: arrayUnion(application.influencerId)
         });
@@ -456,6 +478,12 @@ export const apiService = {
     updateCampaignApplication: async (id: string, data: any, actorId: string) => {
         const docRef = doc(db, 'campaign_applications', id);
         const snapshot = await getDoc(docRef);
+        
+        if (!snapshot.exists()) {
+            console.warn(`Campaign Application ${id} not found. Skipping update.`);
+            return;
+        }
+
         const currentData = snapshot.data() as CampaignApplication;
         
         await updateDoc(docRef, data);
@@ -488,7 +516,14 @@ export const apiService = {
         });
     },
     sendAdSlotRequest: async (request: any) => {
-        const ref = await addDoc(collection(db, 'ad_slot_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
+        // Generate Collab ID
+        const collabId = generateCollabId();
+        const ref = await addDoc(collection(db, 'ad_slot_requests'), { 
+            ...request, 
+            collabId,
+            status: 'pending_approval', 
+            timestamp: serverTimestamp() 
+        });
         
         await apiService.createNotification(request.liveTvId, {
             userId: request.liveTvId,
@@ -517,6 +552,12 @@ export const apiService = {
     updateAdSlotRequest: async (id: string, data: any, userId: string) => {
         const docRef = doc(db, 'ad_slot_requests', id);
         const snapshot = await getDoc(docRef);
+        
+        if (!snapshot.exists()) {
+            console.warn(`Ad Slot Request ${id} not found. Skipping update.`);
+            return;
+        }
+
         const currentData = snapshot.data() as AdSlotRequest;
         
         await updateDoc(docRef, data);
@@ -559,7 +600,14 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAd));
     },
     sendBannerAdBookingRequest: async (request: any) => {
-        const ref = await addDoc(collection(db, 'banner_ad_booking_requests'), { ...request, status: 'pending_approval', timestamp: serverTimestamp() });
+        // Generate Collab ID
+        const collabId = generateCollabId();
+        const ref = await addDoc(collection(db, 'banner_ad_booking_requests'), { 
+            ...request, 
+            collabId,
+            status: 'pending_approval', 
+            timestamp: serverTimestamp() 
+        });
         
         await apiService.createNotification(request.agencyId, {
             userId: request.agencyId,
@@ -588,6 +636,12 @@ export const apiService = {
     updateBannerAdBookingRequest: async (id: string, data: any, userId: string) => {
         const docRef = doc(db, 'banner_ad_booking_requests', id);
         const snapshot = await getDoc(docRef);
+        
+        if (!snapshot.exists()) {
+            console.warn(`Banner Booking Request ${id} not found. Skipping update.`);
+            return;
+        }
+
         const currentData = snapshot.data() as BannerAdBookingRequest;
         
         await updateDoc(docRef, data);

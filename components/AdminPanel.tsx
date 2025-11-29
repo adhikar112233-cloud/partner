@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, PlatformBanner, UserRole, StaffPermission, RefundRequest, DailyPayoutRequest, Dispute, CombinedCollabItem, Partner, DiscountSetting, Leaderboard, LeaderboardEntry, Agreements, KycDetails, CreatorVerificationDetails } from '../types';
@@ -101,7 +98,7 @@ const DisputeResolutionModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[110] p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">Resolve Dispute</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 text-2xl">&times;</button>
@@ -134,34 +131,49 @@ const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transactio
         if (!searchQuery) return disputes;
         const lower = searchQuery.toLowerCase();
         return disputes.filter(d => 
-            d.collaborationTitle.toLowerCase().includes(lower) || d.disputedByName.toLowerCase().includes(lower) || d.disputedAgainstName.toLowerCase().includes(lower) || d.reason.toLowerCase().includes(lower) || d.id.toLowerCase().includes(lower)
+            d.collaborationTitle.toLowerCase().includes(lower) || 
+            d.disputedByName.toLowerCase().includes(lower) || 
+            d.disputedAgainstName.toLowerCase().includes(lower) || 
+            d.reason.toLowerCase().includes(lower) || 
+            d.id.toLowerCase().includes(lower) ||
+            (d.collabId && d.collabId.toLowerCase().includes(lower))
         );
     }, [disputes, searchQuery]);
 
     return (
-        <div className="p-6">
+        <div className="p-4 sm:p-6 h-full overflow-y-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <h2 className="text-2xl font-bold dark:text-white">Disputes</h2>
                 <div className="relative w-full sm:w-64">
-                    <input type="text" placeholder="Search disputes..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                    <input type="text" placeholder="Search disputes by ID, Collab ID..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
                     <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 </div>
             </div>
             {filteredDisputes.length === 0 ? <p className="dark:text-gray-400">No open disputes found.</p> : (
-                <div className="space-y-4">
-                    {filteredDisputes.map(d => (
-                        <div key={d.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-red-500">
-                            <div className="flex justify-between"><p className="font-bold dark:text-white">Dispute on: {d.collaborationTitle}</p><span className="text-xs font-mono text-gray-400">ID: {d.id}</span></div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">By: {d.disputedByName} vs {d.disputedAgainstName}</p>
-                            <p className="mt-2 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm italic dark:text-gray-300">{d.reason}</p>
-                            <p className="mt-2 font-bold dark:text-gray-200">Amount: ₹{d.amount}</p>
-                            {d.status !== 'resolved' && (
-                                <div className="mt-4 flex justify-end pt-3 border-t dark:border-gray-700">
-                                    <button onClick={() => setSelectedDispute(d)} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"><CheckBadgeIcon className="w-4 h-4" />Resolve</button>
+                <div className="w-full overflow-x-auto">
+                    <div className="space-y-4 min-w-[300px]">
+                        {filteredDisputes.map(d => (
+                            <div key={d.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-red-500">
+                                <div className="flex justify-between flex-wrap gap-2">
+                                    <p className="font-bold dark:text-white break-all">Dispute on: {d.collaborationTitle}</p>
+                                    <div className="text-right">
+                                        <span className="text-xs font-mono text-gray-400 block">ID: {d.id}</span>
+                                        {d.collabId && <span className="text-xs font-mono bg-indigo-50 text-indigo-700 px-1 rounded">Collab ID: {d.collabId}</span>}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                    ))}
+                                <p className="text-sm text-gray-600 dark:text-gray-400">By: {d.disputedByName} vs {d.disputedAgainstName}</p>
+                                <div className="mt-2 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm italic dark:text-gray-300 max-h-32 overflow-y-auto">
+                                    {d.reason}
+                                </div>
+                                <p className="mt-2 font-bold dark:text-gray-200">Amount: ₹{d.amount}</p>
+                                {d.status !== 'resolved' && (
+                                    <div className="mt-4 flex justify-end pt-3 border-t dark:border-gray-700">
+                                        <button onClick={() => setSelectedDispute(d)} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"><CheckBadgeIcon className="w-4 h-4" />Resolve</button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
             {selectedDispute && <DisputeResolutionModal dispute={selectedDispute} onClose={() => setSelectedDispute(null)} onResolve={onUpdate} />}
@@ -231,17 +243,51 @@ const StaffManagementPanel: React.FC<{ staffUsers: User[], onUpdate: () => void,
 
 const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allTransactions: Transaction[], onUpdate: (id: string, type: string, data: any) => Promise<void> }> = ({ collaborations, onUpdate }) => {
     const [selectedCollab, setSelectedCollab] = useState<CombinedCollabItem | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const filteredCollaborations = useMemo(() => {
+        if (!searchQuery) return collaborations;
+        const lower = searchQuery.toLowerCase();
+        return collaborations.filter(c => 
+            c.title.toLowerCase().includes(lower) ||
+            c.customerName.toLowerCase().includes(lower) ||
+            c.providerName.toLowerCase().includes(lower) ||
+            (c.visibleCollabId && c.visibleCollabId.toLowerCase().includes(lower)) ||
+            c.status.toLowerCase().includes(lower)
+        );
+    }, [collaborations, searchQuery]);
+
     return (
         <div className="p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">All Collaborations</h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">All Collaborations</h2>
+                <div className="relative w-full sm:w-64">
+                    <input 
+                        type="text" 
+                        placeholder="Search by Collab ID, Title..." 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                    <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                </div>
+            </div>
             <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow">
                 <table className="w-full text-left">
                     <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
-                        <tr><th className="p-4">Type</th><th className="p-4">Title</th><th className="p-4">Users</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
+                        <tr>
+                            <th className="p-4">Collab ID</th>
+                            <th className="p-4">Type</th>
+                            <th className="p-4">Title</th>
+                            <th className="p-4">Users</th>
+                            <th className="p-4">Status</th>
+                            <th className="p-4">Action</th>
+                        </tr>
                     </thead>
                     <tbody>
-                        {collaborations.map(c => (
+                        {filteredCollaborations.map(c => (
                             <tr key={c.id} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td className="p-4 text-sm font-mono dark:text-gray-300">{c.visibleCollabId || '-'}</td>
                                 <td className="p-4 text-sm dark:text-gray-300">{c.type}</td>
                                 <td className="p-4 font-medium dark:text-white">{c.title}</td>
                                 <td className="p-4 text-sm dark:text-gray-300">{c.customerName} & {c.providerName}</td>

@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
@@ -74,7 +76,7 @@ const FirebaseConfigError: React.FC = () => (
 
 const DatabaseConfigError: React.FC<{ message: string }> = ({ message }) => {
     // ... (Error component logic remains the same)
-    return <div className="p-4 text-red-500">{message}</div>; // Simplified for brevity in this block, use full version in real file
+    return <div className="p-4 text-red-500">{message}</div>; 
 };
 
 const MaintenancePage: React.FC = () => (
@@ -262,10 +264,12 @@ const App: React.FC = () => {
         
         // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
-          // FIX: Passed 1 argument instead of 2.
           const influencerResult = await apiService.getInfluencersPaginated({ limit: INFLUENCER_PAGE_LIMIT });
-          setInfluencers(influencerResult.influencers);
-          setFilteredInfluencers(influencerResult.influencers);
+          // Sort influencers to show boosted profiles first
+          const sortedInfluencers = influencerResult.influencers.sort((a, b) => (b.isBoosted ? 1 : 0) - (a.isBoosted ? 1 : 0));
+          
+          setInfluencers(sortedInfluencers);
+          setFilteredInfluencers(sortedInfluencers);
           setLastInfluencerDoc(influencerResult.lastVisible);
           setHasMoreInfluencers(influencerResult.influencers.length === INFLUENCER_PAGE_LIMIT);
           
@@ -312,9 +316,12 @@ const App: React.FC = () => {
             startAfterDoc: lastInfluencerDoc!,
         });
 
-        setInfluencers(prev => [...prev, ...result.influencers]);
+        // Append and sort again to ensure boosted are always on top if fetched later (though ideally DB handles this, client sort is backup)
+        const combinedInfluencers = [...influencers, ...result.influencers].sort((a, b) => (b.isBoosted ? 1 : 0) - (a.isBoosted ? 1 : 0));
+        
+        setInfluencers(combinedInfluencers);
         if (!searchQuery) {
-            setFilteredInfluencers(prev => [...prev, ...result.influencers]);
+            setFilteredInfluencers(combinedInfluencers);
         }
         setLastInfluencerDoc(result.lastVisible);
         setHasMoreInfluencers(result.influencers.length === INFLUENCER_PAGE_LIMIT);
@@ -323,7 +330,7 @@ const App: React.FC = () => {
     } finally {
         setIsLoadingMore(false);
     }
-  }, [platformSettings, hasMoreInfluencers, isLoadingMore, lastInfluencerDoc, searchQuery]);
+  }, [platformSettings, hasMoreInfluencers, isLoadingMore, lastInfluencerDoc, searchQuery, influencers]);
 
   useEffect(() => {
     const unsubscribe = authService.onAuthChange((firebaseUser) => {

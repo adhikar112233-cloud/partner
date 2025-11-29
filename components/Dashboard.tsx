@@ -1,7 +1,9 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, View, CollaborationStatusItem, CollabRequestStatus, CampaignApplication, CollaborationRequest, PlatformSettings, PlatformBanner, AdSlotRequest, BannerAdBookingRequest } from '../types';
-import { InfluencersIcon, SparklesIcon, CollabIcon, SettingsIcon, AdminIcon as CompletedIcon, ExclamationTriangleIcon } from './Icons';
+import { InfluencersIcon, SparklesIcon, CollabIcon, SettingsIcon, AdminIcon as CompletedIcon, ExclamationTriangleIcon, RocketIcon } from './Icons';
 import { generateDashboardTip } from '../services/geminiService';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
@@ -244,6 +246,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, setActiveView, platformSett
         }
     };
     
+    // Check if boosting is relevant
+    const isCreator = ['influencer', 'livetv', 'banneragency'].includes(user.role);
+    const showBoostCard = (isCreator && platformSettings.isProfileBoostingEnabled && !user.isBoosted) || 
+                          (user.role === 'brand' && platformSettings.isCampaignBoostingEnabled);
+
     return (
         <div className="space-y-6">
             
@@ -251,6 +258,35 @@ const Dashboard: React.FC<DashboardProps> = ({ user, setActiveView, platformSett
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-gray-100">Welcome back, {user.name}!</h1>
                 <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm sm:text-base">Here's a snapshot of your BIGYAPON dashboard.</p>
             </div>
+
+            {showBoostCard && (
+                <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl shadow-lg p-6 text-white relative overflow-hidden">
+                    <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-white/20 p-3 rounded-full backdrop-blur-sm">
+                                <RocketIcon className="w-8 h-8 text-white" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold">Boost Your Visibility</h3>
+                                <p className="text-purple-100 text-sm mt-1">
+                                    {isCreator 
+                                        ? "Get featured at the top of search results and attract more brands!" 
+                                        : "Boost your campaigns to reach 3x more influencers instantly!"}
+                                </p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={() => setActiveView(isCreator ? View.BOOST_PROFILE : View.CAMPAIGNS)}
+                            className="bg-white text-indigo-600 px-6 py-2.5 rounded-full font-bold shadow-md hover:bg-gray-100 transition-all transform hover:scale-105 whitespace-nowrap"
+                        >
+                            {isCreator ? "Boost Profile Now" : "Boost Campaigns"}
+                        </button>
+                    </div>
+                    {/* Background decorations */}
+                    <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+                    <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-purple-500/30 rounded-full blur-2xl"></div>
+                </div>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                 <StatCard title="Pending" value={pendingCollabs.length.toString()} icon={<CollabIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />} />

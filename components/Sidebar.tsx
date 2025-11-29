@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
 import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon, ShoppingBagIcon, AcademicCapIcon } from './Icons';
@@ -79,6 +81,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     // Dashboard first for all primary roles including LiveTV
     { view: View.DASHBOARD, label: 'Dashboard', icon: DashboardIcon, roles: ['brand', 'influencer', 'banneragency', 'livetv'] },
     
+    // Boost Profile - Moved UP for visibility
+    { view: View.BOOST_PROFILE, label: 'Boost Profile', icon: RocketIcon, roles: ['influencer', 'livetv', 'banneragency'] },
+
     // LIVETV role specific action
     { view: View.LIVETV, label: 'Collaboration Status', icon: CollabIcon, roles: ['livetv'] },
     
@@ -108,7 +113,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     { view: View.CAMPAIGNS, label: 'Discover Campaigns', icon: CampaignIcon, roles: ['influencer'] },
     { view: View.MY_APPLICATIONS, label: 'My Applications', icon: ApplicationsIcon, roles: ['influencer'] },
     { view: View.COLLAB_REQUESTS, label: 'Direct Requests', icon: CollabIcon, roles: ['influencer'] },
-    { view: View.BOOST_PROFILE, label: 'Boost Profile', icon: RocketIcon, roles: ['influencer', 'livetv', 'banneragency'] },
     
     // Shopping Link (All standard users)
     { view: View.SHOPPING, label: 'Shopping', icon: ShoppingBagIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },

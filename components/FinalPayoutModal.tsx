@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { User, AdSlotRequest, BannerAdBookingRequest, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
-import { BanknotesIcon, IdentityIcon } from './Icons';
+import { BanknotesIcon, IdentityIcon, PencilIcon } from './Icons';
 
 interface FinalPayoutModalProps {
     user: User;
@@ -15,6 +15,20 @@ interface FinalPayoutModalProps {
 const FinalPayoutModal: React.FC<FinalPayoutModalProps> = ({ user, collab, onClose, platformSettings, onSubmitted }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Payment Details Edit State
+    const [isEditingDetails, setIsEditingDetails] = useState(false);
+    const [editBankDetails, setEditBankDetails] = useState({
+        accountHolderName: user.savedBankDetails?.accountHolderName || '',
+        accountNumber: user.savedBankDetails?.accountNumber || '',
+        ifscCode: user.savedBankDetails?.ifscCode || '',
+        bankName: user.savedBankDetails?.bankName || '',
+    });
+    const [editUpiId, setEditUpiId] = useState(user.savedUpiId || '');
+    
+    // Local display state to reflect changes immediately
+    const [currentBankDetails, setCurrentBankDetails] = useState(user.savedBankDetails);
+    const [currentUpiId, setCurrentUpiId] = useState(user.savedUpiId);
 
     // Calculations
     const calculations = useMemo(() => {
@@ -60,27 +74,55 @@ const FinalPayoutModal: React.FC<FinalPayoutModalProps> = ({ user, collab, onClo
         };
     }, [collab, platformSettings]);
 
+    const handleSavePaymentDetails = async () => {
+        setError(null);
+        // Basic Validation
+        if (!editUpiId && (!editBankDetails.accountNumber || !editBankDetails.ifscCode)) {
+            setError("Please provide either Bank Details or UPI ID.");
+            return;
+        }
+        
+        setIsLoading(true);
+        try {
+            const updatedBank = { ...editBankDetails, isVerified: false };
+            await apiService.updateUserProfile(user.id, {
+                savedBankDetails: updatedBank, 
+                savedUpiId: editUpiId,
+                isUpiVerified: false
+            });
+            setCurrentBankDetails(updatedBank);
+            setCurrentUpiId(editUpiId);
+            setIsEditingDetails(false);
+        } catch (e) {
+            setError("Failed to save payment details.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSubmit = async () => {
         setError(null);
+        
+        // Check if bank details exist using LOCAL state (to capture updates)
+        if (!currentBankDetails?.accountNumber && !currentUpiId) {
+            setError("Please add Bank Account or UPI details above first.");
+            return;
+        }
+
         setIsLoading(true);
 
         try {
-            // Check if bank details exist
-            if (!user.savedBankDetails?.accountNumber && !user.savedUpiId) {
-                throw new Error("Please add Bank Account or UPI details in your profile first.");
-            }
-
             const description = `Final Payout for ${collab.campaignName} (Rem. Amount: ₹${calculations.finalPayout.toFixed(2)})`;
             
-            // Determine beneficiary info string
+            // Determine beneficiary info string from LOCAL state
             let bankDetailsStr = '';
             let upiIdStr = '';
 
-            if (user.savedBankDetails?.accountNumber) {
-                bankDetailsStr = `Account Holder: ${user.savedBankDetails.accountHolderName}\nAccount Number: ${user.savedBankDetails.accountNumber}\nIFSC: ${user.savedBankDetails.ifscCode}\nBank: ${user.savedBankDetails.bankName}`;
+            if (currentBankDetails?.accountNumber) {
+                bankDetailsStr = `Account Holder: ${currentBankDetails.accountHolderName}\nAccount Number: ${currentBankDetails.accountNumber}\nIFSC: ${currentBankDetails.ifscCode}\nBank: ${currentBankDetails.bankName}`;
             }
-            if (user.savedUpiId) {
-                upiIdStr = user.savedUpiId;
+            if (currentUpiId) {
+                upiIdStr = currentUpiId;
             }
 
             await apiService.submitPayoutRequest({
@@ -92,8 +134,9 @@ const FinalPayoutModal: React.FC<FinalPayoutModalProps> = ({ user, collab, onClo
                 collaborationTitle: collab.campaignName,
                 amount: calculations.finalPayout,
                 collabId: collab.collabId || null,
-                isAccountVerified: user.savedBankDetails?.isVerified || !!user.isUpiVerified,
-                accountVerifiedName: user.savedBankDetails?.accountHolderName || user.name,
+                // Verification status check - using updated local verification status if possible, or fallback to user status (optimistic check)
+                isAccountVerified: currentBankDetails?.isVerified || !!user.isUpiVerified, 
+                accountVerifiedName: currentBankDetails?.accountHolderName || user.name,
                 bankDetails: bankDetailsStr,
                 upiId: upiIdStr,
                 panNumber: user.creatorVerificationDetails?.isBusinessPanVerified ? 'Verified Business PAN' : 'N/A' // Or fetch if stored elsewhere
@@ -179,22 +222,57 @@ const FinalPayoutModal: React.FC<FinalPayoutModalProps> = ({ user, collab, onClo
 
                         {/* Beneficiary Details */}
                         <div>
-                            <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Beneficiary Details</h4>
-                            <div className="bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-3 space-y-1">
-                                {user.savedBankDetails?.accountNumber ? (
-                                    <>
-                                        <p className="flex justify-between"><span className="text-gray-500">Name:</span> <span className="font-medium dark:text-gray-200">{user.savedBankDetails.accountHolderName}</span></p>
-                                        <p className="flex justify-between"><span className="text-gray-500">Bank:</span> <span className="font-medium dark:text-gray-200">{user.savedBankDetails.bankName}</span></p>
-                                        <p className="flex justify-between"><span className="text-gray-500">IFSC:</span> <span className="font-medium dark:text-gray-200">{user.savedBankDetails.ifscCode}</span></p>
-                                    </>
-                                ) : (
-                                    <p className="text-red-500 italic">No Bank Details Saved</p>
-                                )}
-                                <p className="flex justify-between border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
-                                    <span className="text-gray-500">UPI (Optional):</span> 
-                                    <span className="font-medium dark:text-gray-200">{user.savedUpiId || 'N/A'}</span>
-                                </p>
+                            <div className="flex justify-between items-center mb-2">
+                                <h4 className="text-xs font-bold text-gray-500 uppercase">Beneficiary Details</h4>
+                                <button 
+                                    onClick={() => setIsEditingDetails(!isEditingDetails)} 
+                                    className="text-indigo-600 hover:text-indigo-800 text-xs font-semibold flex items-center gap-1"
+                                >
+                                    <PencilIcon className="w-3 h-3" />
+                                    {isEditingDetails ? 'Cancel Edit' : 'Add/Edit Details'}
+                                </button>
                             </div>
+
+                            {isEditingDetails ? (
+                                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-indigo-200 dark:border-indigo-700 space-y-3 shadow-inner">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <input type="text" placeholder="Account Holder Name" value={editBankDetails.accountHolderName} onChange={e => setEditBankDetails({...editBankDetails, accountHolderName: e.target.value})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-xs" />
+                                        <input type="text" placeholder="Bank Name" value={editBankDetails.bankName} onChange={e => setEditBankDetails({...editBankDetails, bankName: e.target.value})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-xs" />
+                                        <input type="text" placeholder="Account Number" value={editBankDetails.accountNumber} onChange={e => setEditBankDetails({...editBankDetails, accountNumber: e.target.value})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-xs" />
+                                        <input type="text" placeholder="IFSC Code" value={editBankDetails.ifscCode} onChange={e => setEditBankDetails({...editBankDetails, ifscCode: e.target.value.toUpperCase()})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-xs uppercase" />
+                                    </div>
+                                    <div className="border-t pt-2 dark:border-gray-600">
+                                        <input type="text" placeholder="UPI ID (Optional)" value={editUpiId} onChange={e => setEditUpiId(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-xs" />
+                                    </div>
+                                    <button 
+                                        onClick={handleSavePaymentDetails} 
+                                        disabled={isLoading}
+                                        className="w-full py-2 bg-indigo-600 text-white rounded font-medium text-xs hover:bg-indigo-700 disabled:opacity-50"
+                                    >
+                                        {isLoading ? 'Saving...' : 'Save Details'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-3 space-y-1">
+                                    {currentBankDetails?.accountNumber ? (
+                                        <>
+                                            <p className="flex justify-between"><span className="text-gray-500">Name:</span> <span className="font-medium dark:text-gray-200">{currentBankDetails.accountHolderName}</span></p>
+                                            <p className="flex justify-between"><span className="text-gray-500">Bank:</span> <span className="font-medium dark:text-gray-200">{currentBankDetails.bankName}</span></p>
+                                            <p className="flex justify-between"><span className="text-gray-500">IFSC:</span> <span className="font-medium dark:text-gray-200">{currentBankDetails.ifscCode}</span></p>
+                                        </>
+                                    ) : (
+                                        <p className="text-red-500 italic text-xs">No Bank Details Saved</p>
+                                    )}
+                                    <p className="flex justify-between border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
+                                        <span className="text-gray-500">UPI (Optional):</span> 
+                                        <span className="font-medium dark:text-gray-200">{currentUpiId || 'N/A'}</span>
+                                    </p>
+                                </div>
+                            )}
+                            
+                            {(!currentBankDetails?.accountNumber && !currentUpiId && !isEditingDetails) && (
+                                <p className="text-xs text-red-500 mt-2">* Please add your payment details above to proceed.</p>
+                            )}
                         </div>
 
                         {error && (
@@ -203,13 +281,15 @@ const FinalPayoutModal: React.FC<FinalPayoutModalProps> = ({ user, collab, onClo
                             </div>
                         )}
 
-                        <button
-                            onClick={handleSubmit}
-                            disabled={isLoading}
-                            className="w-full py-4 bg-gradient-to-r from-green-600 to-teal-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:translate-y-[-1px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isLoading ? 'Processing...' : 'APPLY FOR FINAL PAYOUT'}
-                        </button>
+                        {!isEditingDetails && (
+                            <button
+                                onClick={handleSubmit}
+                                disabled={isLoading}
+                                className="w-full py-4 bg-gradient-to-r from-green-600 to-teal-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:translate-y-[-1px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isLoading ? 'Processing...' : 'APPLY FOR FINAL PAYOUT'}
+                            </button>
+                        )}
 
                     </div>
                 </div>

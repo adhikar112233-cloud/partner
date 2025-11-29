@@ -1,3 +1,6 @@
+
+
+
 import { 
     collection, 
     doc, 
@@ -169,15 +172,7 @@ export const apiService = {
         
         const users: User[] = [];
         for (const chunk of chunks) {
-            const q = query(collection(db, 'users'), where('id', 'in', chunk)); // Assuming 'id' field exists in doc, usually doc.id is implicit but for 'in' query referencing doc ID requires FieldPath.documentId()
-            // However, usually we store ID in the doc as well. If not, we'd use documentId().
-            // Let's assume 'users' collection documents have 'id' field or use __name__.
-            // To be safe with 'in' queries on IDs:
-            // Actually, best to fetch individually if we can't rely on 'id' field being there.
-            // Or use FieldPath.documentId().
-            // Given the complexity, let's just fetch individually for now or assume 'id' field is present as per User type.
-            // But wait, the User type implies id is the doc id.
-            // Let's just do individual fetches for robustness in this example or map results.
+            const q = query(collection(db, 'users'), where('id', 'in', chunk)); 
             const chunkSnap = await getDocs(query(collection(db, 'users'), where('__name__', 'in', chunk)));
             chunkSnap.forEach(doc => users.push({ id: doc.id, ...doc.data() } as User));
         }
@@ -219,12 +214,11 @@ export const apiService = {
 
     updateInfluencerProfile: async (userId: string, data: Partial<Influencer>): Promise<void> => {
         const docRef = doc(db, 'influencers', userId);
-        const snapshot = await getDoc(docRef);
-        if (snapshot.exists()) {
-            await updateDoc(docRef, data);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+             await updateDoc(docRef, data);
         } else {
-            // Create if doesn't exist (e.g. upgraded user)
-            await setDoc(docRef, { ...data, id: userId });
+             await setDoc(docRef, { ...data, id: userId });
         }
     },
 
@@ -493,9 +487,15 @@ export const apiService = {
     },
 
     getTransactionsForUser: async (userId: string): Promise<Transaction[]> => {
-        const q = query(collection(db, 'transactions'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
+        // Removed server-side orderBy to fix missing index errors. Doing client-side sort.
+        const q = query(collection(db, 'transactions'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ ...doc.data() } as Transaction));
+        const transactions = snapshot.docs.map(doc => ({ ...doc.data() } as Transaction));
+        return transactions.sort((a, b) => {
+            const timeA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp instanceof Date ? a.timestamp.getTime() : 0);
+            const timeB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp instanceof Date ? b.timestamp.getTime() : 0);
+            return timeB - timeA;
+        });
     },
 
     getAllPayouts: async (): Promise<PayoutRequest[]> => {
@@ -505,9 +505,15 @@ export const apiService = {
     },
 
     getPayoutHistoryForUser: async (userId: string): Promise<PayoutRequest[]> => {
-        const q = query(collection(db, 'payout_requests'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
+        // Removed server-side orderBy to fix missing index errors. Doing client-side sort.
+        const q = query(collection(db, 'payout_requests'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutRequest));
+        const payouts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutRequest));
+        return payouts.sort((a, b) => {
+            const timeA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp instanceof Date ? a.timestamp.getTime() : 0);
+            const timeB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp instanceof Date ? b.timestamp.getTime() : 0);
+            return timeB - timeA;
+        });
     },
 
     submitPayoutRequest: async (data: Omit<PayoutRequest, 'id' | 'status' | 'timestamp'>): Promise<void> => {
@@ -547,6 +553,21 @@ export const apiService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ requestId, requestType })
         });
+    },
+
+    // New Function to update Reference ID manually
+    updateReferenceId: async (id: string, refId: string, type: 'Payment Made' | 'Payout' | 'Refund' | 'Daily Payout'): Promise<void> => {
+        let collectionName = '';
+        switch(type) {
+            case 'Payment Made': collectionName = 'transactions'; break;
+            case 'Payout': collectionName = 'payout_requests'; break;
+            case 'Refund': collectionName = 'refund_requests'; break;
+            case 'Daily Payout': collectionName = 'daily_payout_requests'; break;
+        }
+        
+        if (collectionName) {
+            await updateDoc(doc(db, collectionName, id), { manualTransactionRef: refId });
+        }
     },
 
     createSubscription: async (options: {
@@ -592,9 +613,15 @@ export const apiService = {
     },
 
     getDailyPayoutsForUser: async (userId: string): Promise<DailyPayoutRequest[]> => {
-        const q = query(collection(db, 'daily_payout_requests'), where('userId', '==', userId), orderBy('timestamp', 'desc'));
+        // Removed server-side orderBy to fix missing index errors. Doing client-side sort.
+        const q = query(collection(db, 'daily_payout_requests'), where('userId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyPayoutRequest));
+        const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyPayoutRequest));
+        return requests.sort((a, b) => {
+            const timeA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp instanceof Date ? a.timestamp.getTime() : 0);
+            const timeB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp instanceof Date ? b.timestamp.getTime() : 0);
+            return timeB - timeA;
+        });
     },
 
     submitDailyPayoutRequest: async (data: Omit<DailyPayoutRequest, 'id' | 'status' | 'timestamp'>): Promise<void> => {
@@ -645,9 +672,15 @@ export const apiService = {
     },
 
     getRefundsForUser: async (userId: string): Promise<RefundRequest[]> => {
-        const q = query(collection(db, 'refund_requests'), where('brandId', '==', userId), orderBy('timestamp', 'desc'));
+        // Removed server-side orderBy to fix potential missing index errors. Doing client-side sort.
+        const q = query(collection(db, 'refund_requests'), where('brandId', '==', userId));
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RefundRequest));
+        const refunds = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RefundRequest));
+        return refunds.sort((a, b) => {
+            const timeA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp instanceof Date ? a.timestamp.getTime() : 0);
+            const timeB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp instanceof Date ? b.timestamp.getTime() : 0);
+            return timeB - timeA;
+        });
     },
 
     createRefundRequest: async (data: Omit<RefundRequest, 'id' | 'status' | 'timestamp'>): Promise<void> => {

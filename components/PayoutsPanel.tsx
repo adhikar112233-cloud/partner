@@ -4,6 +4,7 @@ import { PayoutRequest, RefundRequest, DailyPayoutRequest, UserRole, CombinedCol
 import { apiService } from '../services/apiService';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { PencilIcon, CheckBadgeIcon } from './Icons';
 
 interface PayoutQueueItem {
     id: string;
@@ -24,6 +25,7 @@ interface PayoutQueueItem {
     description?: string;
     collabId?: string;
     originalRequest: PayoutRequest | RefundRequest | DailyPayoutRequest;
+    manualRef?: string;
 }
 
 // ... (Helper Components: StatusBadge, safeToLocaleString, getTime remain the same)
@@ -297,6 +299,7 @@ const DetailsModal: React.FC<{ item: PayoutQueueItem, collaborations: CombinedCo
                                     <div><p className="text-gray-500">Status</p><StatusBadge status={item.status} /></div>
                                     <div><p className="text-gray-500">Amount</p><p className="font-bold text-indigo-600 dark:text-indigo-400 text-lg">₹{item.amount.toLocaleString()}</p></div>
                                     <div><p className="text-gray-500">Date</p><p className="dark:text-white">{safeToLocaleString(item.timestamp)}</p></div>
+                                    <div><p className="text-gray-500">Ref ID</p><p className="dark:text-white">{item.manualRef || '-'}</p></div>
                                 </div>
                             </section>
 
@@ -481,6 +484,11 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
     const [targetStatus, setTargetStatus] = useState<PayoutQueueItem['status'] | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
 
+    // Edit Ref State
+    const [editingRefId, setEditingRefId] = useState<string | null>(null);
+    const [tempRefValue, setTempRefValue] = useState('');
+    const [isSavingRef, setIsSavingRef] = useState(false);
+
     // Data Processing
     const combinedItems = useMemo<PayoutQueueItem[]>(() => {
         const userMap = new Map<string, User>(allUsers.map(u => [u.id, u] as [string, User]));
@@ -490,7 +498,7 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
             id: r.id, requestType: 'Payout', status: r.status, amount: r.amount, userName: r.userName,
             userAvatar: r.userAvatar, userRole: 'influencer', userPiNumber: userMap.get(r.userId)?.piNumber,
             collabTitle: r.collaborationTitle, collaborationId: r.collaborationId, collabType: r.collaborationType,
-            timestamp: r.timestamp, bankDetails: r.bankDetails, upiId: r.upiId,
+            timestamp: r.timestamp, bankDetails: r.bankDetails, upiId: r.upiId, manualRef: r.manualTransactionRef,
             collabId: r.collabId || collabIdMap.get(r.collaborationId), originalRequest: r,
         }));
 
@@ -499,14 +507,14 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
             userAvatar: r.brandAvatar, userRole: 'brand', userPiNumber: userMap.get(r.brandId)?.piNumber,
             collabTitle: r.collabTitle, collaborationId: r.collaborationId, collabType: r.collabType,
             timestamp: r.timestamp, bankDetails: r.bankDetails, panNumber: r.panNumber, description: r.description,
-            collabId: r.collabId || collabIdMap.get(r.collaborationId), originalRequest: r,
+            collabId: r.collabId || collabIdMap.get(r.collaborationId), originalRequest: r, manualRef: r.manualTransactionRef,
         }));
 
         const d: PayoutQueueItem[] = dailyPayouts.map(r => ({
             id: r.id, requestType: 'Daily Payout', status: r.status, amount: r.approvedAmount || 0, userName: r.userName,
             userAvatar: userMap.get(r.userId)?.avatar || '', userRole: r.userRole, userPiNumber: userMap.get(r.userId)?.piNumber,
             collabTitle: `Daily Payout: ${r.collaborationId}`, collaborationId: r.collaborationId, collabType: r.collaborationType,
-            timestamp: r.timestamp, originalRequest: r, collabId: r.collabId || collabIdMap.get(r.collaborationId),
+            timestamp: r.timestamp, originalRequest: r, collabId: r.collabId || collabIdMap.get(r.collaborationId), manualRef: r.manualTransactionRef,
         }));
 
         return [...p, ...r, ...d].sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
@@ -524,7 +532,8 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
                 i.collabTitle.toLowerCase().includes(lower) ||
                 i.amount.toString().includes(lower) ||
                 (i.userPiNumber && i.userPiNumber.toLowerCase().includes(lower)) ||
-                (i.collabId && i.collabId.toLowerCase().includes(lower))
+                (i.collabId && i.collabId.toLowerCase().includes(lower)) ||
+                (i.manualRef && i.manualRef.toLowerCase().includes(lower))
             );
         }
         return items;
@@ -544,6 +553,26 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
     const handleActionSelect = (status: PayoutQueueItem['status']) => {
         setTargetStatus(status);
         setActiveModal('confirm');
+    };
+
+    const handleEditRef = (item: PayoutQueueItem) => {
+        setEditingRefId(item.id);
+        setTempRefValue(item.manualRef || '');
+    };
+
+    const handleSaveRef = async (item: PayoutQueueItem) => {
+        if (!tempRefValue.trim()) return;
+        setIsSavingRef(true);
+        try {
+            await apiService.updateReferenceId(item.id, tempRefValue, item.requestType);
+            setEditingRefId(null);
+            onUpdate(); // Trigger refresh to show new data
+        } catch (error) {
+            console.error("Failed to update reference ID:", error);
+            alert("Failed to update reference ID");
+        } finally {
+            setIsSavingRef(false);
+        }
     };
 
     const executeUpdate = async (details: { reason?: string, amount?: number }) => {
@@ -630,6 +659,7 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
                                         <th className="p-4">Amount</th>
                                         <th className="p-4">Date</th>
                                         <th className="p-4">Status</th>
+                                        <th className="p-4">Transaction Ref ID</th>
                                         <th className="p-4 text-right">Actions</th>
                                     </tr>
                                 </thead>
@@ -655,6 +685,43 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
                                             </td>
                                             <td className="p-4">
                                                 <StatusBadge status={item.status} />
+                                            </td>
+                                            <td className="p-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
+                                                {editingRefId === item.id ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <input 
+                                                            type="text" 
+                                                            value={tempRefValue} 
+                                                            onChange={e => setTempRefValue(e.target.value)} 
+                                                            className="w-32 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white"
+                                                        />
+                                                        <button 
+                                                            onClick={() => handleSaveRef(item)} 
+                                                            disabled={isSavingRef}
+                                                            className="text-green-600 hover:text-green-800 disabled:opacity-50"
+                                                        >
+                                                            <CheckBadgeIcon className="w-4 h-4" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => setEditingRefId(null)}
+                                                            disabled={isSavingRef}
+                                                            className="text-red-500 hover:text-red-700"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2 group">
+                                                        <span>{item.manualRef || '-'}</span>
+                                                        <button 
+                                                            onClick={() => handleEditRef(item)} 
+                                                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition-opacity"
+                                                            title="Edit Reference ID"
+                                                        >
+                                                            <PencilIcon className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="p-4 text-right space-x-2">
                                                 <button 

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, AdSlotRequest, BannerAdBookingRequest, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
-import { BanknotesIcon, CreditCardIcon } from './Icons';
+import { BanknotesIcon, CreditCardIcon, PencilIcon } from './Icons';
 
 interface DailyPayoutRequestModalProps {
     user: User;
@@ -24,6 +24,20 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const recordedChunksRef = useRef<Blob[]>([]);
+
+    // Payment Details Edit State
+    const [isEditingDetails, setIsEditingDetails] = useState(false);
+    const [editBankDetails, setEditBankDetails] = useState({
+        accountHolderName: user.savedBankDetails?.accountHolderName || '',
+        accountNumber: user.savedBankDetails?.accountNumber || '',
+        ifscCode: user.savedBankDetails?.ifscCode || '',
+        bankName: user.savedBankDetails?.bankName || '',
+    });
+    const [editUpiId, setEditUpiId] = useState(user.savedUpiId || '');
+    
+    // Local display state to reflect changes immediately
+    const [currentBankDetails, setCurrentBankDetails] = useState(user.savedBankDetails);
+    const [currentUpiId, setCurrentUpiId] = useState(user.savedUpiId);
 
     useEffect(() => {
         const fetchActiveCollabs = async () => {
@@ -139,6 +153,32 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
         }
     };
 
+    const handleSavePaymentDetails = async () => {
+        setError(null);
+        // Basic Validation
+        if (!editUpiId && (!editBankDetails.accountNumber || !editBankDetails.ifscCode)) {
+            setError("Please provide either Bank Details or UPI ID.");
+            return;
+        }
+        
+        setIsLoading(true);
+        try {
+            const updatedBank = { ...editBankDetails, isVerified: false };
+            await apiService.updateUserProfile(user.id, {
+                savedBankDetails: updatedBank, 
+                savedUpiId: editUpiId,
+                isUpiVerified: false
+            });
+            setCurrentBankDetails(updatedBank);
+            setCurrentUpiId(editUpiId);
+            setIsEditingDetails(false);
+        } catch (e) {
+            setError("Failed to save payment details.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSubmit = async (videoBlobToUpload: Blob | null = videoBlob) => {
         if (selectedCollabIds.size === 0) return;
         if (platformSettings.payoutSettings.requireLiveVideoForDailyPayout && !videoBlobToUpload) {
@@ -154,17 +194,11 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
                 videoUrl = await apiService.uploadDailyPayoutVideo(user.id, videoBlobToUpload);
             }
             
-            // Create a request for EACH selected collaboration
-            // In a real app, you might group them into one 'PayoutRequest' batch, 
-            // but the current API service handles one at a time or we iterate.
             const promises = Array.from(selectedCollabIds).map(async (collabId) => {
                 const collab = activeCollabs.find(c => c.id === collabId);
                 if (!collab) return;
 
                 const dailyRate = getDailyRate(collab);
-                // Pro-rate the fee/GST per request or just log the amount
-                // For simplicity, we are submitting the raw amount request, backend handles payout logic
-                // Or we store the calculated 'approvedAmount' request.
                 
                 // Let's store the calculated partials
                 const ratio = dailyRate / financials.totalEarnings;
@@ -208,11 +242,12 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
             return;
         }
         
-        const hasBankDetails = user.savedBankDetails && user.savedBankDetails.accountNumber;
-        const hasUpi = !!user.savedUpiId;
+        // Check local state for details (user might have just updated them)
+        const hasBankDetails = currentBankDetails && currentBankDetails.accountNumber;
+        const hasUpi = !!currentUpiId;
 
         if (!hasBankDetails && !hasUpi) {
-            setError("Please add Bank or UPI details in your profile first.");
+            setError("Please add Bank or UPI details below before proceeding.");
             return;
         }
 
@@ -223,7 +258,7 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
         }
     };
 
-    if (isLoading && step !== 1) {
+    if (isLoading && step !== 1 && !isEditingDetails) {
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[80] p-4">
                 <div className="bg-white p-8 rounded-lg text-center">
@@ -246,7 +281,7 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
                             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select active ads to claim today's earnings.</p>
                         </div>
 
-                        {isLoading ? (
+                        {isLoading && !isEditingDetails ? (
                             <div className="text-center py-10 text-gray-500">Loading active campaigns...</div>
                         ) : activeCollabs.length === 0 ? (
                             <div className="text-center py-10 text-gray-500">
@@ -315,48 +350,81 @@ const DailyPayoutRequestModal: React.FC<DailyPayoutRequestModalProps> = ({ user,
 
                                 {/* BENEFICIARY SECTION */}
                                 <section>
-                                    <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 border-b dark:border-gray-700 pb-1">
-                                        Cashfree Beneficiary
-                                    </h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                                        <div>
-                                            <label className="block text-xs text-gray-400">Name</label>
-                                            <div className="font-medium text-gray-900 dark:text-white truncate">
-                                                {user.savedBankDetails?.accountHolderName || user.name}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-400">Bank Account</label>
-                                            <div className="font-medium text-gray-900 dark:text-white font-mono">
-                                                {user.savedBankDetails?.accountNumber || 'Not provided'}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-400">IFSC Code</label>
-                                            <div className="font-medium text-gray-900 dark:text-white font-mono">
-                                                {user.savedBankDetails?.ifscCode || 'Not provided'}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-400">UPI ID (Optional)</label>
-                                            <div className="font-medium text-gray-900 dark:text-white font-mono">
-                                                {user.savedUpiId || 'Not provided'}
-                                            </div>
-                                        </div>
+                                    <div className="flex justify-between items-center mb-3 border-b dark:border-gray-700 pb-1">
+                                        <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">
+                                            Bank Account Details
+                                        </h3>
+                                        <button 
+                                            onClick={() => setIsEditingDetails(!isEditingDetails)} 
+                                            className="text-indigo-600 hover:text-indigo-800 text-xs font-semibold flex items-center gap-1"
+                                        >
+                                            <PencilIcon className="w-3 h-3" />
+                                            {isEditingDetails ? 'Cancel Edit' : 'Add/Edit Details'}
+                                        </button>
                                     </div>
-                                    {(!user.savedBankDetails?.accountNumber && !user.savedUpiId) && (
-                                        <p className="text-xs text-red-500 mt-2">* Please update your payment details in your profile settings.</p>
+
+                                    {isEditingDetails ? (
+                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-indigo-200 dark:border-indigo-700 space-y-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <input type="text" placeholder="Account Holder Name" value={editBankDetails.accountHolderName} onChange={e => setEditBankDetails({...editBankDetails, accountHolderName: e.target.value})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" />
+                                                <input type="text" placeholder="Bank Name" value={editBankDetails.bankName} onChange={e => setEditBankDetails({...editBankDetails, bankName: e.target.value})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" />
+                                                <input type="text" placeholder="Account Number" value={editBankDetails.accountNumber} onChange={e => setEditBankDetails({...editBankDetails, accountNumber: e.target.value})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" />
+                                                <input type="text" placeholder="IFSC Code" value={editBankDetails.ifscCode} onChange={e => setEditBankDetails({...editBankDetails, ifscCode: e.target.value.toUpperCase()})} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm uppercase" />
+                                            </div>
+                                            <div className="border-t pt-3 dark:border-gray-600">
+                                                <input type="text" placeholder="UPI ID (Optional)" value={editUpiId} onChange={e => setEditUpiId(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm" />
+                                            </div>
+                                            <button 
+                                                onClick={handleSavePaymentDetails} 
+                                                disabled={isLoading}
+                                                className="w-full py-2 bg-indigo-600 text-white rounded font-medium text-sm hover:bg-indigo-700 disabled:opacity-50"
+                                            >
+                                                {isLoading ? 'Saving...' : 'Save Details'}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                                            <div>
+                                                <label className="block text-xs text-gray-400">Name</label>
+                                                <div className="font-medium text-gray-900 dark:text-white truncate">
+                                                    {currentBankDetails?.accountHolderName || user.name}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-400">Bank Account</label>
+                                                <div className="font-medium text-gray-900 dark:text-white font-mono">
+                                                    {currentBankDetails?.accountNumber || 'Not provided'}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-400">IFSC Code</label>
+                                                <div className="font-medium text-gray-900 dark:text-white font-mono">
+                                                    {currentBankDetails?.ifscCode || 'Not provided'}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-400">UPI ID (Optional)</label>
+                                                <div className="font-medium text-gray-900 dark:text-white font-mono">
+                                                    {currentUpiId || 'Not provided'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {(!currentBankDetails?.accountNumber && !currentUpiId && !isEditingDetails) && (
+                                        <p className="text-xs text-red-500 mt-2">* Please add your payment details above to proceed.</p>
                                     )}
                                 </section>
 
                                 {error && <p className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</p>}
 
-                                <button
-                                    onClick={handleNextStep}
-                                    className="w-full py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 focus:outline-none transform hover:-translate-y-0.5 transition-all"
-                                >
-                                    SUBMIT DAILY PAYOUT REQUEST
-                                </button>
+                                {!isEditingDetails && (
+                                    <button
+                                        onClick={handleNextStep}
+                                        className="w-full py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 focus:outline-none transform hover:-translate-y-0.5 transition-all"
+                                    >
+                                        SUBMIT DAILY PAYOUT REQUEST
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

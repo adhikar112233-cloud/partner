@@ -12,6 +12,8 @@
 
 
 
+
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -406,6 +408,7 @@ export interface Transaction {
     collabId?: string;
     timestamp: any;
     paymentGatewayDetails?: any;
+    manualTransactionRef?: string; // New editable field
 }
 
 export interface PayoutRequest {
@@ -427,6 +430,7 @@ export interface PayoutRequest {
     accountVerifiedName?: string;
     idProofSelfieUrl?: string; // New field for live selfie
     panNumber?: string;
+    manualTransactionRef?: string; // New editable field
 }
 
 export interface RefundRequest {
@@ -446,6 +450,7 @@ export interface RefundRequest {
     timestamp: any;
     collabId?: string;
     idProofSelfieUrl?: string; // New field for live selfie
+    manualTransactionRef?: string; // New editable field
 }
 
 export interface DailyPayoutRequest {
@@ -461,6 +466,7 @@ export interface DailyPayoutRequest {
     rejectionReason?: string;
     timestamp: any;
     collabId?: string;
+    manualTransactionRef?: string; // New editable field
 }
 
 export type CollabRequestStatus = 'pending' | 'rejected' | 'influencer_offer' | 'brand_offer' | 'agreement_reached' | 'in_progress' | 'work_submitted' | 'completed' | 'disputed' | 'brand_decision_pending' | 'refund_pending_admin_review';

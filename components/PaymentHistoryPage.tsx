@@ -16,6 +16,7 @@ interface CombinedHistoryItem {
     collaborationId: string;
     collabId?: string;
     deductedPenalty?: number;
+    manualRef?: string;
 }
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
@@ -105,6 +106,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             transactionId: t.transactionId,
             collaborationId: t.relatedId,
             collabId: t.collabId,
+            manualRef: t.manualTransactionRef || t.paymentGatewayDetails?.referenceId || t.paymentGatewayDetails?.payment_id
         }));
 
         const mappedPayouts: CombinedHistoryItem[] = payouts.map(p => ({
@@ -116,7 +118,8 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             transactionId: p.id,
             collaborationId: p.collaborationId,
             collabId: p.collabId,
-            deductedPenalty: p.deductedPenalty
+            deductedPenalty: p.deductedPenalty,
+            manualRef: p.manualTransactionRef
         }));
 
         const mappedRefunds: CombinedHistoryItem[] = refunds.map(r => ({
@@ -128,6 +131,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             transactionId: r.id,
             collaborationId: r.collaborationId,
             collabId: r.collabId,
+            manualRef: r.manualTransactionRef
         }));
 
         const mappedDailyPayouts: CombinedHistoryItem[] = dailyPayouts.map(d => ({
@@ -139,6 +143,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             transactionId: d.id,
             collaborationId: d.collaborationId,
             collabId: d.collabId,
+            manualRef: d.manualTransactionRef
         }));
 
         return [...mappedTransactions, ...mappedPayouts, ...mappedRefunds, ...mappedDailyPayouts].sort((a, b) => {
@@ -260,6 +265,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Type</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Ref ID</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -282,6 +288,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                                             {item.type === 'Payment Made' ? '-' : '+'} ₹{item.amount.toLocaleString('en-IN')}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap"><StatusBadge status={item.status} /></td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">{item.manualRef || '-'}</td>
                                     </tr>
                                 ))}
                             </tbody>

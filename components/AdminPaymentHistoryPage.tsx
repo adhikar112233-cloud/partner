@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { User, Transaction, PayoutRequest, UserRole } from '../types';
 import { Timestamp } from 'firebase/firestore';
-import { SparklesIcon } from './Icons';
+import { SparklesIcon, PencilIcon, CheckBadgeIcon } from './Icons';
+import { apiService } from '../services/apiService';
 
 interface AdminPaymentHistoryPageProps {
     transactions: Transaction[];
@@ -11,6 +12,7 @@ interface AdminPaymentHistoryPageProps {
 }
 
 interface CombinedHistoryItem {
+    id: string; // Document ID for updates
     date: Date | undefined;
     description: string;
     type: 'Payment Made' | 'Payout';
@@ -18,6 +20,7 @@ interface CombinedHistoryItem {
     status: string;
     transactionId: string;
     paymentRefId: string;
+    manualRef?: string;
     userName: string;
     userAvatar: string;
     userRole: UserRole;
@@ -42,6 +45,11 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
 const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ transactions, payouts, allUsers, collaborations }) => {
     const [activeTab, setActiveTab] = useState<'all' | 'payments' | 'payouts'>('all');
     const [searchQuery, setSearchQuery] = useState('');
+    
+    // Editing State
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [tempRefValue, setTempRefValue] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
 
     const combinedHistory = useMemo<CombinedHistoryItem[]>(() => {
         const userMap: Map<string, User> = new Map(allUsers.map(u => [u.id, u]));
@@ -77,6 +85,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
             }
 
             return {
+                id: t.transactionId, // Using transactionId as document ID is common structure here
                 date: safeToDate(t.timestamp),
                 description: t.description,
                 type: 'Payment Made',
@@ -84,6 +93,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 status: t.status,
                 transactionId: t.transactionId,
                 paymentRefId: refId,
+                manualRef: t.manualTransactionRef,
                 userName: user?.name || 'Unknown User',
                 userAvatar: user?.avatar || '',
                 userRole: user?.role || 'brand',
@@ -101,6 +111,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
             if (!visibleCollabId) visibleCollabId = p.collaborationId;
 
             return {
+                id: p.id,
                 date: safeToDate(p.timestamp),
                 description: p.collaborationTitle,
                 type: 'Payout',
@@ -108,6 +119,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 status: p.status,
                 transactionId: p.id,
                 paymentRefId: '-',
+                manualRef: p.manualTransactionRef,
                 userName: p.userName,
                 userAvatar: p.userAvatar,
                 userRole: user?.role || 'influencer',
@@ -148,12 +160,34 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 (item.collabId && item.collabId.toLowerCase().includes(lowercasedQuery)) ||
                 item.transactionId.toLowerCase().includes(lowercasedQuery) ||
                 item.paymentRefId.toLowerCase().includes(lowercasedQuery) ||
+                (item.manualRef && item.manualRef.toLowerCase().includes(lowercasedQuery)) ||
                 item.type.toLowerCase().includes(lowercasedQuery) ||
                 item.status.toLowerCase().includes(lowercasedQuery) ||
                 String(item.amount).includes(lowercasedQuery)
             );
         });
     }, [combinedHistory, activeTab, searchQuery]);
+
+    const handleEditRef = (item: CombinedHistoryItem) => {
+        setEditingId(item.id);
+        setTempRefValue(item.manualRef || item.paymentRefId === '-' ? '' : item.paymentRefId);
+    };
+
+    const handleSaveRef = async (item: CombinedHistoryItem) => {
+        if (!tempRefValue.trim()) return;
+        setIsSaving(true);
+        try {
+            await apiService.updateReferenceId(item.id, tempRefValue, item.type);
+            // Optimistic update logic handled by parent refreshing or snapshot listeners usually
+            // For now just close edit mode, parent re-render will update list
+            setEditingId(null);
+        } catch (error) {
+            console.error("Failed to update reference ID:", error);
+            alert("Failed to update reference ID");
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const TabButton: React.FC<{ tab: typeof activeTab, children: React.ReactNode }> = ({ tab, children }) => (
         <button
@@ -203,8 +237,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Order ID</th>
-                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Payment Ref ID</th>
+                                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Transaction Ref ID</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -239,10 +272,41 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                                                 <StatusBadge status={item.status} />
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
-                                                {item.transactionId}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
-                                                {item.paymentRefId}
+                                                {editingId === item.id ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <input 
+                                                            type="text" 
+                                                            value={tempRefValue} 
+                                                            onChange={e => setTempRefValue(e.target.value)} 
+                                                            className="w-32 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white"
+                                                        />
+                                                        <button 
+                                                            onClick={() => handleSaveRef(item)} 
+                                                            disabled={isSaving}
+                                                            className="text-green-600 hover:text-green-800 disabled:opacity-50"
+                                                        >
+                                                            <CheckBadgeIcon className="w-4 h-4" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => setEditingId(null)}
+                                                            disabled={isSaving}
+                                                            className="text-red-500 hover:text-red-700"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2 group">
+                                                        <span>{item.manualRef || item.paymentRefId}</span>
+                                                        <button 
+                                                            onClick={() => handleEditRef(item)} 
+                                                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition-opacity"
+                                                            title="Edit Reference ID"
+                                                        >
+                                                            <PencilIcon className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}

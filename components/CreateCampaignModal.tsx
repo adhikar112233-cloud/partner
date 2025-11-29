@@ -15,7 +15,7 @@ const indianCities = [
 const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ user, onClose, onCampaignCreated }) => {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
-    const [category, setCategory] = useState('Lifestyle');
+    const [category, setCategory] = useState('All Categories');
     const [collaborationType, setCollaborationType] = useState<'paid' | 'barter'>('paid');
     const [influencerCount, setInfluencerCount] = useState(1);
     const [paymentOffer, setPaymentOffer] = useState('');
@@ -23,7 +23,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ user, onClose
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     
-    const categories = ['Lifestyle', 'Travel', 'Fitness', 'Technology', 'Food', 'Gaming', 'Fashion', 'Beauty', 'Education', 'Finance'];
+    const categories = ['All Categories', 'Lifestyle', 'Travel', 'Fitness', 'Technology', 'Food', 'Gaming', 'Fashion', 'Beauty', 'Education', 'Finance'];
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

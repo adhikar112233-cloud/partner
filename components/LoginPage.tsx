@@ -633,15 +633,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ platformSettings }) => {
                         </>
                     )}
                 </div>
-
-                <div className="mt-6 text-center">
-                    <button
-                        onClick={() => setShowStaffLogin(true)}
-                        className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center justify-center w-full"
-                    >
-                        <AdminIcon className="w-4 h-4 mr-1" /> Staff Login
-                    </button>
-                </div>
             </div>
 
             {/* RECAPTCHA CONTAINERS MOVED OUTSIDE CONDITIONAL RENDERING */}

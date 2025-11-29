@@ -177,12 +177,13 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                  }
                  break;
             case 'completed':
-                 if (app.paymentStatus === 'paid') {
-                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
-                 } else if (app.paymentStatus === 'payout_requested') {
+                 // Strictly check payment status
+                 if (app.paymentStatus === 'payout_requested') {
                     return <span className="px-3 py-1 text-xs font-bold rounded border border-yellow-200 bg-yellow-50 text-yellow-800">Payout Pending</span>;
                  } else if (app.paymentStatus === 'payout_complete') {
                     return <span className="px-3 py-1 text-xs font-bold rounded border border-green-200 bg-green-50 text-green-800">Paid Out</span>;
+                 } else if (app.paymentStatus === 'paid') {
+                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
                  }
                  break;
         }

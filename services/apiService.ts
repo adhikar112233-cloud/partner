@@ -19,6 +19,7 @@ import {
     PlatformBanner, Agreements, View
 } from '../types';
 
+// ... (helpers)
 // Helper to upload file
 const uploadFile = async (path: string, file: File): Promise<string> => {
     const storageRef = ref(storage, path);
@@ -37,6 +38,7 @@ const generateCollabId = (): string => {
 };
 
 export const apiService = {
+    // ... (previous functions remain the same until submitPayoutRequest)
     initializeFirestoreData: async () => {
         // Placeholder for any initialization logic if needed
     },
@@ -45,6 +47,7 @@ export const apiService = {
         const snapshot = await getDocs(collection(db, 'users'));
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
     },
+    // ... (other user methods)
     getUserByEmail: async (email: string): Promise<User | null> => {
         const q = query(collection(db, 'users'), where('email', '==', email), limit(1));
         const snapshot = await getDocs(q);
@@ -227,6 +230,7 @@ export const apiService = {
             }
         };
     },
+    // ... (rest of standard functions)
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
     },
@@ -263,8 +267,7 @@ export const apiService = {
         return uploadFile(`banners/${Date.now()}_${file.name}`, file);
     },
     getInfluencersPaginated: async (options: { limit: number, startAfterDoc?: any }) => {
-        // We will perform client-side sorting for boosts as complex Firestore queries need index creation
-        let q = query(collection(db, 'influencers'), limit(options.limit * 2)); // Fetch more to allow for client-side boosting reorder
+        let q = query(collection(db, 'influencers'), limit(options.limit * 2));
         if (options.startAfterDoc) {
             q = query(collection(db, 'influencers'), startAfter(options.startAfterDoc), limit(options.limit * 2));
         }
@@ -282,7 +285,6 @@ export const apiService = {
     getLiveTvChannels: async (settings: PlatformSettings): Promise<LiveTvChannel[]> => {
         const snapshot = await getDocs(collection(db, 'livetv_channels'));
         const channels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
-        // Sort boosted channels to top
         return channels.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     getConversations: async (userId: string): Promise<any[]> => {
@@ -492,7 +494,6 @@ export const apiService = {
         if (location && location !== 'All') {
             campaigns = campaigns.filter(c => !c.location || c.location === 'All' || c.location === location);
         }
-        // Sort boosted campaigns to top
         return campaigns.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     applyToCampaign: async (application: any) => {
@@ -646,7 +647,6 @@ export const apiService = {
         if (location) {
             ads = ads.filter(ad => ad.location.toLowerCase().includes(location.toLowerCase()));
         }
-        // Sort boosted ads to top
         return ads.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     getBannerAdsForAgency: async (agencyId: string): Promise<BannerAd[]> => {
@@ -767,7 +767,7 @@ export const apiService = {
         }
 
         // UPDATE PARENT COLLAB PAYMENT STATUS TO 'payout_requested'
-        // This prevents the user from clicking "Get Payment" again
+        // This ensures UI updates immediately to prevent duplicate requests
         let collectionName = '';
         if (data.collaborationType === 'direct') collectionName = 'collaboration_requests';
         else if (data.collaborationType === 'campaign') collectionName = 'campaign_applications';

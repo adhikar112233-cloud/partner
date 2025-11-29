@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CollaborationRequest, CollabRequestStatus, ProfileData, ConversationParticipant, PlatformSettings, AnyCollaboration } from '../types';
 import { apiService } from '../services/apiService';

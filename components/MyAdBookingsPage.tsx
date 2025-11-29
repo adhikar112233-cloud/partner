@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -209,7 +207,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 setConfirmAction({ req, action: 'approve_payment' });
                 break;
             case 'brand_request_refund':
-                onInitiateRefund(req as any);
+                onInitiateRefund(req);
                 break;
         }
     };
@@ -243,6 +241,9 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
             case 'brand_decision_pending':
                 actions.push({ label: 'Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50' });
                 actions.push({ label: 'Approve', action: 'brand_complete_disputed', style: 'text-green-600 hover:bg-green-50' });
+                break;
+            case 'refund_pending_admin_review':
+                // Do nothing, button hidden
                 break;
         }
         

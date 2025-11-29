@@ -1,3 +1,7 @@
+
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
 import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon, ShoppingBagIcon, AcademicCapIcon } from './Icons';
@@ -75,9 +79,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     // Dashboard first for all primary roles including LiveTV
     { view: View.DASHBOARD, label: 'Dashboard', icon: DashboardIcon, roles: ['brand', 'influencer', 'banneragency', 'livetv'] },
     
-    // Moved Boost Profile Up for better visibility
-    { view: View.BOOST_PROFILE, label: 'Boost Profile', icon: RocketIcon, roles: ['influencer', 'livetv', 'banneragency'] },
-
     // LIVETV role specific action
     { view: View.LIVETV, label: 'Collaboration Status', icon: CollabIcon, roles: ['livetv'] },
     
@@ -107,6 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     { view: View.CAMPAIGNS, label: 'Discover Campaigns', icon: CampaignIcon, roles: ['influencer'] },
     { view: View.MY_APPLICATIONS, label: 'My Applications', icon: ApplicationsIcon, roles: ['influencer'] },
     { view: View.COLLAB_REQUESTS, label: 'Direct Requests', icon: CollabIcon, roles: ['influencer'] },
+    { view: View.BOOST_PROFILE, label: 'Boost Profile', icon: RocketIcon, roles: ['influencer', 'livetv', 'banneragency'] },
     
     // Shopping Link (All standard users)
     { view: View.SHOPPING, label: 'Shopping', icon: ShoppingBagIcon, roles: ['brand', 'influencer', 'livetv', 'banneragency'] },
@@ -235,75 +237,89 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     });
   
   const isCreator = ['influencer', 'livetv', 'banneragency'].includes(user.role);
+  // Hide membership card in community mode
   const showMembershipCard = appMode === 'community' ? false : (isCreator ? platformSettings.isCreatorMembershipEnabled : platformSettings.isProMembershipEnabled);
 
-  return (
+  const renderContent = () => (
       <>
-        {/* Mobile Overlay */}
-        {isMobile && isOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={onClose}></div>
-        )}
-
-        <div className={`
-          fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-xl transform transition-transform duration-300 ease-in-out flex flex-col
-          ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0 static'}
-          ${isMobile ? '' : 'hidden md:flex'}
-        `}>
-          {/* Header / Logo */}
-          <div className="p-6 flex items-center justify-between h-20 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-            <div onClick={handleLogoClick} className="cursor-pointer">
-              <LogoIcon showTagline={!isMobile} className="h-8 w-auto" />
-            </div>
-            {isMobile && (
-              <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                <ChevronDownIcon className="w-6 h-6 transform rotate-90" />
-              </button>
-            )}
-          </div>
-
-          {/* Nav Items */}
-          <nav className="flex-1 overflow-y-auto py-4 space-y-1 px-3">
-            {navButtons}
-          </nav>
-
-          {/* Membership Card */}
-          {showMembershipCard && (
-            <MembershipStatusCard user={user} onClick={() => handleItemClick(View.MEMBERSHIP)} />
-          )}
-          
-          {/* Footer / Theme Toggle */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-             <button 
-               onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-               className="w-full flex items-center justify-center p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-             >
-               {theme === 'light' ? (
-                 <>
-                   <MoonIcon className="w-5 h-5 mr-2" /> Dark Mode
-                 </>
-               ) : (
-                 <>
-                   <SunIcon className="w-5 h-5 mr-2" /> Light Mode
-                 </>
-               )}
-             </button>
-             <div className="mt-4 text-xs text-center text-gray-400">
-               © 2024 BIGYAPON
-             </div>
-          </div>
+        <div className="h-20 flex items-center px-6">
+            <button onClick={handleLogoClick} className="focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg">
+                <LogoIcon idSuffix={isMobile ? "sidebar-mobile" : "sidebar-desktop"} />
+            </button>
         </div>
         
-        {/* Modals */}
-        {followModalType && (
-            <FollowListModal 
-                title={followModalType === 'followers' ? 'Followers' : 'Following'}
-                userIds={followModalType === 'followers' ? (user.followers || []) : (user.following || [])}
-                currentUser={user}
-                onClose={() => setFollowModalType(null)}
-                onToggleFollow={onToggleFollow || (() => {})}
-            />
+        {/* Follow Stats for Community Mode */}
+        {appMode === 'community' && (
+            <div className="px-6 pb-2 mb-2 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between text-sm">
+                    <button onClick={() => setFollowModalType('followers')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
+                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{user.followers?.length || 0}</span>
+                        <span className="text-gray-500 dark:text-gray-400 text-xs">Followers</span>
+                    </button>
+                    <button onClick={() => setFollowModalType('following')} className="text-center hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg flex-1">
+                        <span className="block font-bold text-lg text-gray-800 dark:text-white">{user.following?.length || 0}</span>
+                        <span className="text-gray-500 dark:text-gray-400 text-xs">Following</span>
+                    </button>
+                </div>
+            </div>
         )}
+
+        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+            {/* Theme Toggle (Moved from My Account dropdown to Top Level) */}
+            <button 
+                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
+                className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white transition-colors duration-200"
+            >
+                {theme === 'light' ? (
+                    <>
+                        <MoonIcon className="w-6 h-6 mr-3" /> <span>Dark Mode</span>
+                    </>
+                ) : (
+                    <>
+                        <SunIcon className="w-6 h-6 mr-3 text-yellow-500" /> <span>Light Mode</span>
+                    </>
+                )}
+            </button>
+
+            {navButtons}
+        </nav>
+        {showMembershipCard && <MembershipStatusCard user={user} onClick={() => handleItemClick(View.MEMBERSHIP)} />}
       </>
+  );
+
+  return (
+    <>
+      {isMobile ? (
+        <>
+          {/* Overlay */}
+          <div 
+            className={`fixed inset-0 bg-black bg-opacity-50 z-30 transition-opacity md:hidden ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            onClick={onClose}
+            aria-hidden="true"
+          ></div>
+          {/* Sidebar */}
+          <aside 
+            className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 flex flex-col z-40 transform transition-transform md:hidden dark:bg-gray-800 dark:border-gray-700 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          >
+            {renderContent()}
+          </aside>
+        </>
+      ) : (
+        <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:flex flex-col dark:bg-gray-800 dark:border-gray-700">
+          {renderContent()}
+        </aside>
+      )}
+
+      {followModalType && onToggleFollow && (
+          <FollowListModal 
+              title={followModalType === 'followers' ? 'Followers' : 'Following'}
+              userIds={followModalType === 'followers' ? (user.followers || []) : (user.following || [])}
+              currentUser={user}
+              onClose={() => setFollowModalType(null)}
+              onToggleFollow={onToggleFollow}
+          />
+      )}
+    </>
   );
 };
 

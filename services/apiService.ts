@@ -285,7 +285,6 @@ export const apiService = {
     getLiveTvChannels: async (settings: PlatformSettings): Promise<LiveTvChannel[]> => {
         const snapshot = await getDocs(collection(db, 'livetv_channels'));
         const channels = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LiveTvChannel));
-        // Client-side sort to show boosted channels first
         return channels.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     getConversations: async (userId: string): Promise<any[]> => {
@@ -852,17 +851,10 @@ export const apiService = {
                      const newCollabStatus = data.status === 'approved' ? 'rejected' : 'completed';
                      const reason = data.status === 'approved' ? 'Refund Approved by Admin' : 'Refund Rejected by Admin';
                      
-                     const collabUpdates: any = {
+                     await updateDoc(doc(db, collectionName, refundData.collaborationId), {
                          status: newCollabStatus,
                          rejectionReason: reason // Only relevant if rejected
-                     };
-
-                     // CRITICAL: If refund is approved, ensure paymentStatus is marked as 'refunded' so they can't re-request refund from the 'rejected' state.
-                     if (data.status === 'approved') {
-                         collabUpdates.paymentStatus = 'refunded';
-                     }
-
-                     await updateDoc(doc(db, collectionName, refundData.collaborationId), collabUpdates);
+                     });
                  }
              }
         }

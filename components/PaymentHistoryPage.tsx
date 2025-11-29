@@ -11,7 +11,7 @@ import CashfreeModal from './PhonePeModal';
 interface CombinedHistoryItem {
     date: Date | undefined;
     description: string;
-    type: 'Payment Made' | 'Payout' | 'Refund';
+    type: 'Payment Made' | 'Payout';
     amount: number;
     status: string;
     transactionId: string;
@@ -90,7 +90,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
         const mappedPayouts: CombinedHistoryItem[] = payouts.map(p => ({
             date: safeToDate(p.timestamp),
             description: p.collaborationTitle,
-            type: user.role === 'brand' ? 'Refund' : 'Payout',
+            type: 'Payout',
             amount: p.amount,
             status: p.status,
             transactionId: p.id,
@@ -104,11 +104,11 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             const timeB = b.date instanceof Date ? b.date.getTime() : 0;
             return timeB - timeA;
         });
-    }, [transactions, payouts, user.role]);
+    }, [transactions, payouts]);
 
     const filteredHistory = useMemo(() => {
         if (activeTab === 'payments') return combinedHistory.filter(item => item.type === 'Payment Made');
-        if (activeTab === 'payouts') return combinedHistory.filter(item => item.type === 'Payout' || item.type === 'Refund');
+        if (activeTab === 'payouts') return combinedHistory.filter(item => item.type === 'Payout');
         if (activeTab === 'penalties') {
             return combinedHistory.filter(item => 
                 (item.deductedPenalty && item.deductedPenalty > 0) || 
@@ -122,7 +122,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
         <div className="space-y-6 h-full flex flex-col">
             <div>
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Payment History</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions, {user.role === 'brand' ? 'refunds' : 'payouts'}, and penalties.</p>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions, payouts, and penalties.</p>
             </div>
 
             {/* Penalty Alert Section */}
@@ -136,7 +136,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                             </h3>
                             {user.pendingPenalty && user.pendingPenalty > 0 ? (
                                 <p className="text-sm text-red-700 dark:text-red-400">
-                                    This amount will be deducted from your next {user.role === 'brand' ? 'refund' : 'payout'} due to previous cancellations.
+                                    This amount will be deducted from your next payout due to previous cancellations.
                                 </p>
                             ) : (
                                 <p className="text-sm text-green-700 dark:text-green-400">
@@ -173,7 +173,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                     onClick={() => setActiveTab('payouts')} 
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'payouts' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
                 >
-                    {user.role === 'brand' ? 'Refunds' : 'Payouts'}
+                    Payouts
                 </button>
                 <button 
                     onClick={() => setActiveTab('penalties')} 

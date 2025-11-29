@@ -4,6 +4,10 @@
 
 
 
+
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { View, User, UserRole, PlatformSettings } from '../types';
 import { LogoIcon, DashboardIcon, InfluencersIcon, MessagesIcon, LiveTvIcon, BannerAdsIcon, AdminIcon, ProfileIcon, CollabIcon, AudioIcon as CampaignIcon, DocumentIcon as ApplicationsIcon, CommunityIcon, SupportIcon, PaymentIcon, MembershipIcon, SettingsIcon, RocketIcon, LogoutIcon, ChevronDownIcon, GlobeIcon, DocumentIcon, UserGroupIcon, TrophyIcon, MoonIcon, SunIcon, ShoppingBagIcon, AcademicCapIcon } from './Icons';
@@ -81,10 +85,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, user
     // Dashboard first for all primary roles including LiveTV
     { view: View.DASHBOARD, label: 'Dashboard', icon: DashboardIcon, roles: ['brand', 'influencer', 'banneragency', 'livetv'] },
     
+    // LIVETV role specific - Moved up as requested
+    { view: View.MY_CHANNEL, label: 'My Channel', icon: LiveTvIcon, roles: ['livetv'] },
+
     // Boost Profile - Moved UP for visibility
     { view: View.BOOST_PROFILE, label: 'Boost Profile', icon: RocketIcon, roles: ['influencer', 'livetv', 'banneragency'] },
 
-    // LIVETV role specific action
+    // LIVETV role specific actions
     { view: View.LIVETV, label: 'Collaboration Status', icon: CollabIcon, roles: ['livetv'] },
     
     // Other Roles (moved up)

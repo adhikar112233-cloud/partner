@@ -2,6 +2,8 @@
 
 
 
+
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -290,6 +292,7 @@ export enum View {
     MY_APPLICATIONS = 'my_applications',
     DISCOVER_LIVETV = 'discover_livetv',
     LIVETV = 'livetv',
+    MY_CHANNEL = 'my_channel',
     AD_BOOKINGS = 'ad_bookings',
     DISCOVER_BANNERADS = 'discover_bannerads',
     BANNERADS = 'bannerads',

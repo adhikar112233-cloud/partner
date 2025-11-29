@@ -756,10 +756,27 @@ export const apiService = {
         }
     },
     submitPayoutRequest: async (data: any) => {
+        // Create the payout request
         await addDoc(collection(db, 'payout_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });
+        
+        // Update user penalty
         if (data.userId) {
             await updateDoc(doc(db, 'users', data.userId), {
                 pendingPenalty: 0
+            });
+        }
+
+        // UPDATE PARENT COLLAB PAYMENT STATUS TO 'payout_requested'
+        // This prevents the user from clicking "Get Payment" again
+        let collectionName = '';
+        if (data.collaborationType === 'direct') collectionName = 'collaboration_requests';
+        else if (data.collaborationType === 'campaign') collectionName = 'campaign_applications';
+        else if (data.collaborationType === 'ad_slot') collectionName = 'ad_slot_requests';
+        else if (data.collaborationType === 'banner_booking') collectionName = 'banner_ad_booking_requests';
+
+        if (collectionName && data.collaborationId) {
+            await updateDoc(doc(db, collectionName, data.collaborationId), {
+                paymentStatus: 'payout_requested'
             });
         }
     },

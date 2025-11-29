@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -227,6 +225,10 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
             case 'completed':
                  if (req.paymentStatus === 'paid') {
                     actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
+                 } else if (req.paymentStatus === 'payout_requested') {
+                    return <span className="px-3 py-1 text-xs font-bold rounded border border-yellow-200 bg-yellow-50 text-yellow-800">Payout Pending</span>;
+                 } else if (req.paymentStatus === 'payout_complete') {
+                    return <span className="px-3 py-1 text-xs font-bold rounded border border-green-200 bg-green-50 text-green-800">Paid Out</span>;
                  }
                  break;
         }

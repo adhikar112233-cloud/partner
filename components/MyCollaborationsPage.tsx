@@ -180,6 +180,9 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
                     actions.push({ label: 'Request Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50 font-bold' });
                 }
                 break;
+            case 'refund_pending_admin_review':
+                // Do nothing, badge will show status
+                break;
         }
         
         return (
@@ -300,7 +303,7 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
                     platformSettings={platformSettings}
                     onClose={() => {
                         setPayingRequest(null);
-                        fetchRequests();
+                        // fetchRequests will be triggered by snapshot
                     }}
                     transactionDetails={{
                         userId: user.id,
@@ -317,7 +320,7 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
                     onClose={() => setDisputingRequest(null)}
                     onDisputeSubmitted={() => {
                         setDisputingRequest(null);
-                        fetchRequests();
+                        // fetchRequests(); // Snapshot handles update
                     }}
                 />
             )}
@@ -329,7 +332,7 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
                     onClose={() => setRefundRequest(null)}
                     onSubmitted={() => {
                         setRefundRequest(null);
-                        fetchRequests();
+                        // Snapshot will update the list status to refund_pending_admin_review
                         alert("Refund request submitted successfully!");
                     }}
                 />

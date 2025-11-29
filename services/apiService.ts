@@ -689,7 +689,10 @@ export const apiService = {
         await updateDoc(doc(db, 'daily_payout_requests', id), data);
     },
     updateDailyPayoutRequestStatus: async (id: string, collaborationId: string, collabType: 'ad_slot' | 'banner_booking', status: string, amount?: number, reason?: string) => {
-        await updateDoc(doc(db, 'daily_payout_requests', id), { status, approvedAmount: amount, rejectionReason: reason });
+        const updates: any = { status };
+        if (amount !== undefined) updates.approvedAmount = amount;
+        if (reason !== undefined) updates.rejectionReason = reason;
+        await updateDoc(doc(db, 'daily_payout_requests', id), updates);
         
         if (status === 'approved') {
             const collectionName = collabType === 'ad_slot' ? 'ad_slot_requests' : 'banner_ad_booking_requests';
@@ -707,7 +710,21 @@ export const apiService = {
         }
     },
     createRefundRequest: async (data: any) => {
+        // 1. Create the refund request document
         await addDoc(collection(db, 'refund_requests'), { ...data, status: 'pending', timestamp: serverTimestamp() });
+
+        // 2. Update the parent collaboration status to 'refund_pending_admin_review'
+        let collectionName = '';
+        if (data.collabType === 'direct') collectionName = 'collaboration_requests';
+        else if (data.collabType === 'campaign') collectionName = 'campaign_applications';
+        else if (data.collabType === 'ad_slot') collectionName = 'ad_slot_requests';
+        else if (data.collabType === 'banner_booking') collectionName = 'banner_ad_booking_requests';
+
+        if (collectionName && data.collaborationId) {
+            await updateDoc(doc(db, collectionName, data.collaborationId), {
+                status: 'refund_pending_admin_review'
+            });
+        }
     },
     uploadPayoutSelfie: async (userId: string, file: File): Promise<string> => {
         return uploadFile(`payout_selfies/${userId}_${Date.now()}`, file);
@@ -726,7 +743,10 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutRequest));
     },
     updatePayoutStatus: async (id: string, status: string, collaborationId: string, collabType: string, reason?: string) => {
-        await updateDoc(doc(db, 'payout_requests', id), { status, rejectionReason: reason });
+        const updates: any = { status };
+        if (reason) updates.rejectionReason = reason;
+        await updateDoc(doc(db, 'payout_requests', id), updates);
+        
         if (status === 'completed') {
             let collectionName = 'collaboration_requests';
             if (collabType === 'campaign') collectionName = 'campaign_applications';
@@ -737,7 +757,36 @@ export const apiService = {
         }
     },
     updateRefundRequest: async (id: string, data: any) => {
-        await updateDoc(doc(db, 'refund_requests', id), data);
+        const updates = { ...data };
+        // Remove undefined values to avoid Firestore errors
+        Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
+        
+        await updateDoc(doc(db, 'refund_requests', id), updates);
+        
+        // If status is final (approved/rejected), update the parent collaboration
+        if (data.status === 'approved' || data.status === 'rejected') {
+             const refundDoc = await getDoc(doc(db, 'refund_requests', id));
+             if (refundDoc.exists()) {
+                 const refundData = refundDoc.data() as RefundRequest;
+                 let collectionName = '';
+                 if (refundData.collabType === 'direct') collectionName = 'collaboration_requests';
+                 else if (refundData.collabType === 'campaign') collectionName = 'campaign_applications';
+                 else if (refundData.collabType === 'ad_slot') collectionName = 'ad_slot_requests';
+                 else if (refundData.collabType === 'banner_booking') collectionName = 'banner_ad_booking_requests';
+
+                 if (collectionName) {
+                     // If refund approved -> collab rejected (money back)
+                     // If refund rejected -> collab completed (money stays, or reverts to paid state)
+                     const newCollabStatus = data.status === 'approved' ? 'rejected' : 'completed';
+                     const reason = data.status === 'approved' ? 'Refund Approved by Admin' : 'Refund Rejected by Admin';
+                     
+                     await updateDoc(doc(db, collectionName, refundData.collaborationId), {
+                         status: newCollabStatus,
+                         rejectionReason: reason // Only relevant if rejected
+                     });
+                 }
+             }
+        }
     },
     processPayout: async (requestId: string, requestType: 'Payout' | 'Daily Payout') => {
         const endpoint = `${BACKEND_URL}/process-payout`;

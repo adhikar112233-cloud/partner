@@ -211,6 +211,7 @@ const ConfirmationModal: React.FC<{
 };
 
 const DetailsModal: React.FC<{ item: PayoutQueueItem, collaborations: CombinedCollabItem[], onClose: () => void }> = ({ item, collaborations, onClose }) => {
+    // ... (rest of DetailsModal code remains the same)
     const [activeTab, setActiveTab] = useState<'info' | 'collab' | 'chat'>('info');
     const [messages, setMessages] = useState<any[]>([]);
     const [loadingMessages, setLoadingMessages] = useState(false);
@@ -563,7 +564,10 @@ const PayoutsPanel: React.FC<PayoutsPanelProps> = ({ payouts, refunds, dailyPayo
             if (selectedItem.requestType === 'Payout') {
                 await apiService.updatePayoutStatus(selectedItem.id, targetStatus, selectedItem.collaborationId, selectedItem.collabType, details.reason);
             } else if (selectedItem.requestType === 'Refund') {
-                await apiService.updateRefundRequest(selectedItem.id, { status: targetStatus, rejectionReason: details.reason });
+                // Ensure optional fields are handled correctly before calling API
+                const updateData: any = { status: targetStatus };
+                if (details.reason) updateData.rejectionReason = details.reason;
+                await apiService.updateRefundRequest(selectedItem.id, updateData);
             } else if (selectedItem.requestType === 'Daily Payout') {
                 if (targetStatus === 'approved' || targetStatus === 'rejected') {
                     await apiService.updateDailyPayoutRequestStatus(selectedItem.id, selectedItem.collaborationId, selectedItem.collabType as any, targetStatus, details.amount, details.reason);

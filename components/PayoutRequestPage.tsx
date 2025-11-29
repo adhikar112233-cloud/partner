@@ -1,10 +1,9 @@
 
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, AnyCollaboration, PayoutRequest, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
 import CameraCapture from './CameraCapture';
-import { CheckBadgeIcon, PencilIcon } from './Icons';
+import { CheckBadgeIcon, PencilIcon, ProfileIcon, BanknotesIcon, CreditCardIcon, IdentityIcon, ShieldCheckIcon } from './Icons';
 
 interface PayoutRequestPageProps {
     user: User;
@@ -28,6 +27,9 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     // UPI State
     const [upiId, setUpiId] = useState(user.savedUpiId || '');
     
+    // Additional Verification
+    const [panNumber, setPanNumber] = useState('');
+
     // Verification Status
     const [isBankVerified, setIsBankVerified] = useState(!!user.savedBankDetails?.isVerified);
     const [isUpiVerified, setIsUpiVerified] = useState(!!user.isUpiVerified);
@@ -93,7 +95,7 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     const handleBankDetailsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setBankDetails(prev => ({ ...prev, [name]: value }));
-        // If verification is enforced, editing invalidates verification status
+        // If user modifies verified details, reset verification status
         if (isVerificationEnforced) {
             setIsBankVerified(false); 
         }
@@ -177,14 +179,19 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
             }
         }
 
+        if (!panNumber.trim()) {
+            setError("PAN Card Number is required.");
+            return;
+        }
+
         if (platformSettings.payoutSettings.requireSelfieForPayout && !selfieDataUrl) {
-            setError('A live selfie with ID proof is required for verification.');
+            setError('A live selfie is required for verification.');
             return;
         }
 
         setIsLoading(true);
         try {
-            // If verification is NOT enforced, save details now (as unverified) for convenience
+            // Save details if not strictly enforcing verification (for future use)
             if (!isVerificationEnforced) {
                 if (payoutMethod === 'bank') {
                      await apiService.updateUserProfile(user.id, { savedBankDetails: { ...bankDetails, isVerified: false } });
@@ -208,9 +215,10 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
                 collaborationTitle: collaborationTitle,
                 amount: finalPayoutAmount,
                 collabId: collaboration.collabId || null,
-                isAccountVerified: isVerificationEnforced, // Mark based on setting
+                isAccountVerified: isVerificationEnforced, 
                 accountVerifiedName: payoutMethod === 'bank' ? bankDetails.accountHolderName : user.name,
-                deductedPenalty: pendingPenalty // Store the deducted penalty
+                deductedPenalty: pendingPenalty,
+                panNumber: panNumber
             };
 
             if (selfieUrl) {
@@ -235,164 +243,244 @@ const PayoutRequestPage: React.FC<PayoutRequestPageProps> = ({ user, collaborati
     };
 
     const isCurrentlyVerified = payoutMethod === 'bank' ? isBankVerified : isUpiVerified;
-    
-    const canEdit = !isVerificationEnforced || (isEditing || !isCurrentlyVerified);
+    // Fields are disabled if verification is enforced AND verified AND not explicitly editing
+    const areFieldsDisabled = isVerificationEnforced && isCurrentlyVerified && !isEditing;
 
     return (
-        <div className="max-w-6xl mx-auto">
-            <div className="flex items-center justify-between mb-6">
-                 <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Request Payout</h1>
+        <div className="max-w-4xl mx-auto p-4 sm:p-6 bg-white dark:bg-gray-900 min-h-screen">
+            <div className="flex items-center justify-between mb-8">
+                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">Payout Request</h1>
                  <button onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
                     &larr; Back to Dashboard
                  </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Left Column */}
-                <div className="space-y-6">
-                    {/* Collab Details */}
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">Collaboration Details</h2>
-                        <div className="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                            <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Title:</span> <span className="font-semibold text-right">{collaborationTitle}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">ID:</span> <span className="font-mono text-xs">{collaboration.id}</span></div>
-                            {collaboration.collabId && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Collab ID:</span> <span className="font-mono text-xs">{collaboration.collabId}</span></div>}
+            <form onSubmit={handleSubmit} className="space-y-8">
+                
+                {/* 1. User Details (Prefilled) */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                        <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><ProfileIcon className="w-5 h-5" /></div>
+                        User Details
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Full Name</label>
+                            <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Registered Mobile</label>
+                            <div className="font-medium text-gray-900 dark:text-white">{user.mobileNumber || 'N/A'}</div>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">User ID / Member ID</label>
+                            <div className="font-medium text-gray-900 dark:text-white font-mono">{user.piNumber || user.id}</div>
                         </div>
                     </div>
-                    {/* Payout Calculation */}
-                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">Final Payout Calculation</h2>
-                        <div className="mt-4 space-y-2 text-sm border-t dark:border-gray-700 pt-4 dark:text-gray-300">
-                            <div className="flex justify-between"><span>Final Agreed Price:</span> <span className="font-semibold">₹{finalAmount.toFixed(2)}</span></div>
+                </div>
+
+                {/* 2. Withdrawal Method */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                        <div className="p-1.5 bg-purple-100 text-purple-600 rounded-lg"><CreditCardIcon className="w-5 h-5" /></div>
+                        Withdrawal Method
+                    </h3>
+                    <div className="flex gap-4 flex-col sm:flex-row">
+                        <label className={`flex-1 p-4 border-2 rounded-xl cursor-pointer transition-all flex items-center gap-4 ${payoutMethod === 'bank' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300'}`}>
+                            <input type="radio" name="payoutMethod" value="bank" checked={payoutMethod === 'bank'} onChange={() => { setPayoutMethod('bank'); if(isVerificationEnforced) setIsEditing(false); }} className="h-5 w-5 text-indigo-600 focus:ring-indigo-500" />
+                            <div>
+                                <span className="block font-bold text-gray-800 dark:text-white">Bank Transfer</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Direct to bank account</span>
+                            </div>
+                        </label>
+                        <label className={`flex-1 p-4 border-2 rounded-xl cursor-pointer transition-all flex items-center gap-4 ${payoutMethod === 'upi' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300'}`}>
+                            <input type="radio" name="payoutMethod" value="upi" checked={payoutMethod === 'upi'} onChange={() => { setPayoutMethod('upi'); if(isVerificationEnforced) setIsEditing(false); }} className="h-5 w-5 text-indigo-600 focus:ring-indigo-500" />
+                            <div>
+                                <span className="block font-bold text-gray-800 dark:text-white">UPI ID</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">GPay, PhonePe, Paytm</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                {/* 3. Payment Details */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 relative transition-all duration-300">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                            <div className="p-1.5 bg-teal-100 text-teal-600 rounded-lg"><BanknotesIcon className="w-5 h-5" /></div>
+                            {payoutMethod === 'bank' ? 'Bank Details' : 'UPI Details'}
+                        </h3>
+                        {/* Status Badge or Edit Button */}
+                        <div className="flex items-center gap-2">
+                            {isCurrentlyVerified && !isEditing ? (
+                                <>
+                                    <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full flex items-center gap-1 font-bold border border-green-200">
+                                        <CheckBadgeIcon className="w-4 h-4" /> Verified
+                                    </span>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setIsEditing(true)}
+                                        className="text-sm text-indigo-600 font-medium hover:underline flex items-center gap-1 ml-2"
+                                    >
+                                        <PencilIcon className="w-3 h-3" /> Edit
+                                    </button>
+                                </>
+                            ) : null}
+                        </div>
+                    </div>
+
+                    {payoutMethod === 'bank' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="col-span-1 md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Account Holder Name</label>
+                                <input type="text" name="accountHolderName" value={bankDetails.accountHolderName} onChange={handleBankDetailsChange} disabled={areFieldsDisabled} placeholder="As per bank records" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bank Name</label>
+                                <input type="text" name="bankName" value={bankDetails.bankName} onChange={handleBankDetailsChange} disabled={areFieldsDisabled} placeholder="e.g. HDFC Bank" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Account Number</label>
+                                <input type="text" name="accountNumber" value={bankDetails.accountNumber} onChange={handleBankDetailsChange} disabled={areFieldsDisabled} className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            </div>
+                            <div className="col-span-1 md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">IFSC Code</label>
+                                <input type="text" name="ifscCode" value={bankDetails.ifscCode} onChange={handleBankDetailsChange} disabled={areFieldsDisabled} className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none uppercase" />
+                            </div>
+                        </div>
+                    ) : (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">UPI ID</label>
+                            <input type="text" value={upiId} onChange={handleUpiChange} disabled={areFieldsDisabled} placeholder="username@upi" className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                        </div>
+                    )}
+
+                    {/* Verification Actions */}
+                    {isVerificationEnforced && (!isCurrentlyVerified || isEditing) && (
+                        <div className="mt-6 flex justify-end">
+                            <button 
+                                type="button" 
+                                onClick={handleVerifyPaymentDetails} 
+                                disabled={isVerifying}
+                                className="px-6 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 shadow-md transition-all active:scale-95"
+                            >
+                                {isVerifying ? 'Verifying...' : 'Verify Details'}
+                            </button>
+                        </div>
+                    )}
+                    
+                    {successMessage && <div className="mt-4 p-3 bg-green-50 text-green-800 text-sm font-medium rounded-lg border border-green-200 flex items-center gap-2"><CheckBadgeIcon className="w-5 h-5"/> {successMessage}</div>}
+                </div>
+
+                {/* 4. Amount Details */}
+                <div className="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                        <div className="p-1.5 bg-yellow-100 text-yellow-600 rounded-lg"><span className="text-lg">₹</span></div>
+                        Amount Details
+                    </h3>
+                    <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+                        <div className="flex justify-between items-center py-1">
+                            <span className="font-medium">Payout Amount (Agreed)</span>
+                            <span className="font-bold text-gray-900 dark:text-white">₹{finalAmount.toFixed(2)}</span>
+                        </div>
+                        
+                        {/* Deductions */}
+                        <div className="pl-4 space-y-2 border-l-2 border-gray-200 dark:border-gray-600 my-2">
                             {platformSettings.isPlatformCommissionEnabled && commission > 0 && (
-                                <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Platform Commission ({platformSettings.platformCommissionRate}%):</span> <span>- ₹{commission.toFixed(2)}</span></div>
+                                <div className="flex justify-between text-red-600 dark:text-red-400">
+                                    <span>Platform Commission ({platformSettings.platformCommissionRate}%)</span> 
+                                    <span>- ₹{commission.toFixed(2)}</span>
+                                </div>
                             )}
                             {platformSettings.isCreatorGstEnabled && gstOnCommission > 0 && (
-                                 <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) GST on Commission ({platformSettings.gstRate}%):</span> <span>- ₹{gstOnCommission.toFixed(2)}</span></div>
+                                 <div className="flex justify-between text-red-600 dark:text-red-400">
+                                    <span>GST on Commission ({platformSettings.gstRate}%)</span> 
+                                    <span>- ₹{gstOnCommission.toFixed(2)}</span>
+                                </div>
                             )}
-                            {dailyPayoutsReceived > 0 && <div className="flex justify-between text-red-600 dark:text-red-400"><span>(-) Daily Payouts Received:</span> <span>- ₹{dailyPayoutsReceived.toFixed(2)}</span></div>}
-                            
+                            {dailyPayoutsReceived > 0 && (
+                                <div className="flex justify-between text-red-600 dark:text-red-400">
+                                    <span>Daily Payouts Already Received</span> 
+                                    <span>- ₹{dailyPayoutsReceived.toFixed(2)}</span>
+                                </div>
+                            )}
                             {pendingPenalty > 0 && (
-                                <div className="flex justify-between text-red-600 dark:text-red-400 font-bold">
-                                    <span>(-) Cancellation Penalty:</span>
+                                <div className="flex justify-between text-red-700 dark:text-red-300 font-bold bg-red-50 dark:bg-red-900/20 p-2 rounded">
+                                    <span>Cancellation Penalty Deduction</span>
                                     <span>- ₹{pendingPenalty.toFixed(2)}</span>
                                 </div>
                             )}
+                        </div>
 
-                            <div className="flex justify-between font-bold text-lg border-t dark:border-gray-700 pt-2 mt-2 text-gray-900 dark:text-white"><span>Final Payout Amount:</span> <span>₹{finalPayoutAmount.toFixed(2)}</span></div>
+                        <div className="border-t-2 border-dashed border-gray-300 dark:border-gray-600 pt-3 flex justify-between items-center mt-2">
+                            <span className="font-bold text-gray-900 dark:text-white text-lg">Final Amount to Receive</span>
+                            <span className="font-extrabold text-green-600 dark:text-green-400 text-2xl">₹{finalPayoutAmount.toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Right Column */}
-                <div className="space-y-6">
-                    {/* Payment Details */}
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border-2 border-transparent transition-colors duration-300">
-                        <div className="flex justify-between items-center">
-                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">Payment Method</h2>
-                            {isCurrentlyVerified && !isEditing && isVerificationEnforced && (
-                                <div className="flex items-center gap-2 text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
-                                    <CheckBadgeIcon className="w-5 h-5" />
-                                    <span className="text-xs font-bold">VERIFIED</span>
-                                </div>
-                            )}
+                {/* 5. Verification */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
+                        <div className="p-1.5 bg-red-100 text-red-600 rounded-lg"><ShieldCheckIcon className="w-5 h-5" /></div>
+                        Identity Verification
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* Live Selfie */}
+                        <div>
+                            <div className="flex justify-between items-center mb-3">
+                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+                                    Live Selfie <span className="text-red-500">*</span>
+                                </label>
+                                {!platformSettings.payoutSettings.requireSelfieForPayout && <span className="text-xs text-gray-400">(Optional)</span>}
+                            </div>
+                            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl overflow-hidden bg-gray-50 dark:bg-gray-700/50 p-2">
+                                <CameraCapture
+                                    capturedImage={selfieDataUrl}
+                                    onCapture={setSelfieDataUrl}
+                                    onRetake={() => setSelfieDataUrl(null)}
+                                    selfieInstruction="Take a clear selfie to verify it's you."
+                                />
+                            </div>
                         </div>
 
-                         <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Select Type</label>
-                            <select 
-                                value={payoutMethod} 
-                                onChange={e => { 
-                                    setPayoutMethod(e.target.value as any); 
-                                    if(isVerificationEnforced) setIsEditing(false); 
-                                }} 
-                                disabled={!canEdit && isVerificationEnforced}
-                                className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
-                            >
-                                <option value="bank">Bank Account</option>
-                                <option value="upi">UPI ID</option>
-                            </select>
-                         </div>
-
-                         {payoutMethod === 'bank' ? (
-                            <div className="mt-4 space-y-4">
-                                <div>
-                                    <label htmlFor="accountHolderName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Account Holder Name</label>
-                                    <input type="text" name="accountHolderName" value={bankDetails.accountHolderName} onChange={handleBankDetailsChange} disabled={!canEdit && isVerificationEnforced} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-gray-800"/>
-                                </div>
-                                <div>
-                                    <label htmlFor="accountNumber" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Account Number</label>
-                                    <input type="text" name="accountNumber" value={bankDetails.accountNumber} onChange={handleBankDetailsChange} disabled={!canEdit && isVerificationEnforced} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-gray-800"/>
-                                </div>
-                                <div>
-                                    <label htmlFor="ifscCode" className="block text-sm font-medium text-gray-700 dark:text-gray-300">IFSC Code</label>
-                                    <input type="text" name="ifscCode" value={bankDetails.ifscCode} onChange={handleBankDetailsChange} disabled={!canEdit && isVerificationEnforced} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-gray-800"/>
-                                </div>
-                                <div>
-                                    <label htmlFor="bankName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Bank Name & Branch</label>
-                                    <input type="text" name="bankName" value={bankDetails.bankName} onChange={handleBankDetailsChange} disabled={!canEdit && isVerificationEnforced} required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-gray-800"/>
-                                </div>
-                            </div>
-                         ) : (
-                             <div className="mt-4">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">UPI ID</label>
-                                <input type="text" value={upiId} onChange={handleUpiChange} disabled={!canEdit && isVerificationEnforced} placeholder="yourname@upi" required className="mt-1 w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-gray-800"/>
-                            </div>
-                         )}
-
-                         <div className="mt-6">
-                             {isVerificationEnforced ? (
-                                 !isCurrentlyVerified || isEditing ? (
-                                     <button 
-                                        type="button" 
-                                        onClick={handleVerifyPaymentDetails} 
-                                        disabled={isVerifying}
-                                        className="w-full py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50"
-                                     >
-                                         {isVerifying ? 'Verifying...' : 'Verify & Save Details'}
-                                     </button>
-                                 ) : (
-                                     <button 
-                                        type="button" 
-                                        onClick={() => setIsEditing(true)} 
-                                        className="w-full py-2 border border-indigo-500 text-indigo-600 bg-white rounded-lg font-semibold hover:bg-indigo-50 flex items-center justify-center gap-2"
-                                     >
-                                         <PencilIcon className="w-4 h-4" /> Edit / Change Account
-                                     </button>
-                                 )
-                             ) : (
-                                 <p className="text-xs text-gray-500 text-center">Details will be saved upon submission.</p>
-                             )}
-                         </div>
-                         {successMessage && <p className="mt-2 text-sm text-green-600 text-center bg-green-50 p-2 rounded border border-green-200">{successMessage}</p>}
-                    </div>
-
-                    {/* Selfie Verification */}
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg">
-                        <div className="flex justify-between items-center mb-2">
-                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">Identity Verification</h2>
-                            {!platformSettings.payoutSettings.requireSelfieForPayout && (
-                                <span className="text-xs text-gray-500 uppercase font-semibold">Optional</span>
-                            )}
+                        {/* PAN Input */}
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-3">
+                                PAN Card Number <span className="text-red-500">*</span>
+                            </label>
+                            <input 
+                                type="text" 
+                                value={panNumber} 
+                                onChange={(e) => setPanNumber(e.target.value.toUpperCase())} 
+                                maxLength={10}
+                                placeholder="ABCDE1234F"
+                                className="w-full p-4 border border-gray-300 rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-lg uppercase tracking-widest text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                            <p className="text-xs text-gray-500 mt-2">Mandatory for tax compliance and identity check.</p>
                         </div>
-                        <CameraCapture
-                            capturedImage={selfieDataUrl}
-                            onCapture={setSelfieDataUrl}
-                            onRetake={() => setSelfieDataUrl(null)}
-                            selfieInstruction="Hold a valid ID (Aadhaar, PAN, Voter ID) next to your face and take a clear selfie."
-                        />
                     </div>
-                    
-                    {error && <p className="text-red-600 text-sm text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-md">{error}</p>}
-                    
+                </div>
+
+                {error && <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-center font-medium">{error}</div>}
+
+                {/* 6. Submit Button */}
+                <div className="pt-2 pb-8">
                     <button 
                         type="submit" 
-                        disabled={isLoading || (isVerificationEnforced && (!isCurrentlyVerified || isEditing)) || (platformSettings.payoutSettings.requireSelfieForPayout && !selfieDataUrl)} 
-                        className="w-full py-4 text-lg font-semibold rounded-lg text-white bg-gradient-to-r from-green-500 to-teal-600 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        disabled={isLoading || (isVerificationEnforced && (!isCurrentlyVerified || isEditing))} 
+                        className="w-full py-4 text-lg font-bold rounded-xl text-white bg-gradient-to-r from-green-600 to-teal-600 shadow-xl hover:shadow-2xl hover:translate-y-[-2px] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none transition-all transform active:scale-98"
                     >
-                        {isLoading ? 'Submitting...' : 'Submit Payout Request'}
+                        {isLoading ? 'Submitting Request...' : 'Submit Payout Request'}
                     </button>
+                    {isVerificationEnforced && (!isCurrentlyVerified || isEditing) && (
+                        <p className="text-center text-xs text-gray-500 mt-3">
+                            You must verify your payment details above before submitting.
+                        </p>
+                    )}
                 </div>
+
             </form>
         </div>
     );

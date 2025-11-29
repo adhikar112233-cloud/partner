@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { User, Transaction, PayoutRequest, UserRole } from '../types';
 import { Timestamp } from 'firebase/firestore';
@@ -46,6 +47,10 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
 
     const combinedHistory = useMemo<CombinedHistoryItem[]>(() => {
         const userMap: Map<string, User> = new Map(allUsers.map(u => [u.id, u]));
+        const collabIdMap = new Map<string, string>();
+        collaborations.forEach(c => {
+            if (c.trackingId) collabIdMap.set(c.id, c.trackingId);
+        });
         
         const safeToDate = (ts: any): Date | undefined => {
             if (!ts) return undefined;
@@ -60,6 +65,21 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
         const mappedTransactions: CombinedHistoryItem[] = transactions.map(t => {
             const user = userMap.get(t.userId);
             const refId = t.paymentGatewayDetails?.razorpayPaymentId || t.paymentGatewayDetails?.referenceId || t.paymentGatewayDetails?.payment_id || '-';
+            
+            // Priority: 1. ID on Transaction, 2. Tag from Gateway, 3. Lookup from Map, 4. Fallback to Doc ID if it looks like a collab
+            let visibleCollabId = t.collabId;
+            if (!visibleCollabId) visibleCollabId = t.paymentGatewayDetails?.order_tags?.collabId;
+            if (!visibleCollabId && t.relatedId) visibleCollabId = collabIdMap.get(t.relatedId);
+            
+            // If still no ID, but it's a collab payment, show the Document ID as fallback so it's not blank
+            if (!visibleCollabId && t.relatedId && (
+                t.description?.toLowerCase().includes('collaboration') || 
+                t.description?.toLowerCase().includes('campaign') || 
+                t.description?.toLowerCase().includes('ad')
+            )) {
+                visibleCollabId = t.relatedId;
+            }
+
             return {
                 date: safeToDate(t.timestamp),
                 description: t.description,
@@ -73,12 +93,18 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 userRole: user?.role || 'brand', // Default to brand for safety
                 userPiNumber: user?.piNumber,
                 collaborationId: t.relatedId,
-                collabId: t.collabId,
+                collabId: visibleCollabId,
             };
         });
 
         const mappedPayouts: CombinedHistoryItem[] = payouts.map(p => {
             const user = userMap.get(p.userId);
+            
+            // Priority: 1. ID on Request, 2. Lookup from Map, 3. Fallback to Doc ID
+            let visibleCollabId = p.collabId;
+            if (!visibleCollabId && p.collaborationId) visibleCollabId = collabIdMap.get(p.collaborationId);
+            if (!visibleCollabId) visibleCollabId = p.collaborationId;
+
             return {
                 date: safeToDate(p.timestamp),
                 description: p.collaborationTitle,
@@ -92,7 +118,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 userRole: user?.role || 'influencer', // Default to influencer for safety
                 userPiNumber: user?.piNumber,
                 collaborationId: p.collaborationId || '',
-                collabId: p.collabId,
+                collabId: visibleCollabId,
             };
         });
 
@@ -101,7 +127,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
             const timeB = b.date instanceof Date ? b.date.getTime() : 0;
             return timeB - timeA;
         });
-    }, [transactions, payouts, allUsers]);
+    }, [transactions, payouts, allUsers, collaborations]);
     
     const filteredHistory = useMemo(() => {
         let history = combinedHistory;

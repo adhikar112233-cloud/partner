@@ -315,8 +315,9 @@ const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabIt
     );
 };
 
-const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({ collaborations }) => {
+const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[], currentUser: User }> = ({ collaborations, currentUser }) => {
     const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+    const [selectedCollabData, setSelectedCollabData] = useState<AnyCollaboration | null>(null);
 
     const pendingEmis = useMemo(() => {
         const emis: any[] = [];
@@ -359,6 +360,13 @@ const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({
         }
     };
 
+    const handleViewDetails = (collabId: string) => {
+        const collab = collaborations.find(c => c.id === collabId);
+        if (collab) {
+            setSelectedCollabData(collab.originalData);
+        }
+    };
+
     return (
         <div className="p-6 h-full overflow-y-auto">
             <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">EMI Management</h2>
@@ -366,6 +374,7 @@ const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({
                 <table className="w-full text-left">
                     <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                         <tr>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Collab ID</th>
                             <th className="p-4 text-gray-600 dark:text-gray-300">Due Date</th>
                             <th className="p-4 text-gray-600 dark:text-gray-300">Amount</th>
                             <th className="p-4 text-gray-600 dark:text-gray-300">Campaign</th>
@@ -376,12 +385,13 @@ const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({
                     </thead>
                     <tbody>
                         {pendingEmis.length === 0 ? (
-                            <tr><td colSpan={6} className="p-8 text-center text-gray-500">No pending EMI payments found.</td></tr>
+                            <tr><td colSpan={7} className="p-8 text-center text-gray-500">No pending EMI payments found.</td></tr>
                         ) : (
                             pendingEmis.map((emi) => {
                                 const isOverdue = emi.dueDateObj < new Date();
                                 return (
                                     <tr key={`${emi.collabId}-${emi.id}`} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        <td className="p-4 font-mono text-xs text-gray-500 dark:text-gray-400">{emi.visibleCollabId || '-'}</td>
                                         <td className="p-4 dark:text-white">
                                             {emi.dueDateObj.toLocaleDateString()}
                                             {isOverdue && <span className="ml-2 text-xs text-red-500 font-bold">OVERDUE</span>}
@@ -389,7 +399,6 @@ const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({
                                         <td className="p-4 font-bold text-gray-800 dark:text-gray-200">₹{emi.amount.toLocaleString()}</td>
                                         <td className="p-4">
                                             <div className="font-medium dark:text-white">{emi.collabTitle}</div>
-                                            <div className="text-xs text-gray-500 font-mono">{emi.visibleCollabId}</div>
                                         </td>
                                         <td className="p-4 dark:text-gray-300">{emi.brandName}</td>
                                         <td className="p-4">
@@ -398,13 +407,21 @@ const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({
                                             </span>
                                         </td>
                                         <td className="p-4 text-right">
-                                            <button 
-                                                onClick={() => handleSendReminder(emi)}
-                                                disabled={sendingReminder === emi.id}
-                                                className="px-3 py-1.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded text-xs font-semibold disabled:opacity-50"
-                                            >
-                                                {sendingReminder === emi.id ? 'Sending...' : 'Send Reminder'}
-                                            </button>
+                                            <div className="flex justify-end gap-2">
+                                                <button 
+                                                    onClick={() => handleViewDetails(emi.collabId)}
+                                                    className="px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded text-xs font-semibold"
+                                                >
+                                                    View Details
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleSendReminder(emi)}
+                                                    disabled={sendingReminder === emi.id}
+                                                    className="px-3 py-1.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded text-xs font-semibold disabled:opacity-50"
+                                                >
+                                                    {sendingReminder === emi.id ? 'Sending...' : 'Send Reminder'}
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -413,6 +430,13 @@ const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({
                     </tbody>
                 </table>
             </div>
+            {selectedCollabData && (
+                <CollabDetailsModal 
+                    collab={selectedCollabData} 
+                    onClose={() => setSelectedCollabData(null)} 
+                    currentUser={currentUser} 
+                />
+            )}
         </div>
     );
 };
@@ -790,7 +814,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
             case 'user_management': return <UserManagementPanel allUsers={allUsers} onUpdate={handleRefresh} transactions={allTransactions} payouts={allPayouts} collabs={allCollabs} />;
             case 'staff_management': return <StaffManagementPanel staffUsers={staffUsers} onUpdate={handleRefresh} platformSettings={platformSettings} />;
             case 'collaborations': return <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} currentUser={user} />;
-            case 'emi_management': return <EmiDashboardPanel collaborations={combinedCollaborations} />;
+            case 'emi_management': return <EmiDashboardPanel collaborations={combinedCollaborations} currentUser={user} />;
             case 'kyc': return <KycPanel onUpdate={handleRefresh} />;
             case 'creator_verification': return <CreatorVerificationPanel onUpdate={handleRefresh} />;
             case 'payouts': return <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={handleRefresh} />;

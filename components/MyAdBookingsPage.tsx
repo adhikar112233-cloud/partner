@@ -81,6 +81,23 @@ const TabButton: React.FC<{
     );
 };
 
+const getAmountDisplay = (req: AdRequest) => {
+    if (req.finalAmount) {
+        return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
+    }
+    if (req.currentOffer) {
+        const isAgencyOffer = req.currentOffer.offeredBy === 'agency';
+        return (
+            <div className="flex flex-col">
+                <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {isAgencyOffer ? 'My Offer' : 'Brand Offer'}
+                </span>
+            </div>
+        );
+    }
+    return <span className="text-gray-500 dark:text-gray-400">Negotiating...</span>;
+};
 
 export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund }) => {
     const [requests, setRequests] = useState<AdRequest[]>([]);
@@ -243,7 +260,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 actions.push({ label: 'Approve', action: 'brand_complete_disputed', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'refund_pending_admin_review':
-                // Do nothing, button hidden
+                // Hide actions
                 break;
         }
         
@@ -256,24 +273,6 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 ))}
             </div>
         );
-    };
-
-    // Helper function to display amounts clearly
-    const getAmountDisplay = (req: AdRequest) => {
-        if (req.finalAmount) {
-            return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
-        }
-        if (req.currentOffer) {
-            return (
-                <div className="flex flex-col">
-                    <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {req.currentOffer.offeredBy === 'brand' ? 'My Offer' : 'Agency Offer'}
-                    </span>
-                </div>
-            );
-        }
-        return <span className="text-gray-500 dark:text-gray-400">Negotiating...</span>;
     };
 
     const renderTable = (list: AdRequest[]) => (
@@ -310,7 +309,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                                 </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
-                                {req.collabId || '-'}
+                                {req.collabId || req.id}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 {getAmountDisplay(req)}

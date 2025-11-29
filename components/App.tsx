@@ -264,11 +264,15 @@ const App: React.FC = () => {
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
           // FIX: Passed 1 argument instead of 2.
           const influencerResult = await apiService.getInfluencersPaginated({ limit: INFLUENCER_PAGE_LIMIT });
-          setInfluencers(influencerResult.influencers);
-          setFilteredInfluencers(influencerResult.influencers);
+          // Sort boosted influencers to the top client-side
+          const sortedInfluencers = influencerResult.influencers.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
+          
+          setInfluencers(sortedInfluencers);
+          setFilteredInfluencers(sortedInfluencers);
           setLastInfluencerDoc(influencerResult.lastVisible);
           setHasMoreInfluencers(influencerResult.influencers.length === INFLUENCER_PAGE_LIMIT);
           
+          // LiveTV channels are already sorted by isBoosted in apiService
           const channelData = await apiService.getLiveTvChannels(platformSettings);
           setLiveTvChannels(channelData);
         }
@@ -312,9 +316,12 @@ const App: React.FC = () => {
             startAfterDoc: lastInfluencerDoc!,
         });
 
-        setInfluencers(prev => [...prev, ...result.influencers]);
+        // Sort new batch (mostly helpful if mixing boosted/non-boosted in same fetch, though less likely with pagination)
+        const newInfluencers = result.influencers.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
+
+        setInfluencers(prev => [...prev, ...newInfluencers]);
         if (!searchQuery) {
-            setFilteredInfluencers(prev => [...prev, ...result.influencers]);
+            setFilteredInfluencers(prev => [...prev, ...newInfluencers]);
         }
         setLastInfluencerDoc(result.lastVisible);
         setHasMoreInfluencers(result.influencers.length === INFLUENCER_PAGE_LIMIT);
@@ -374,13 +381,15 @@ const App: React.FC = () => {
                 if (newNotifications.length > 0) {
                     const latestNotification = newNotifications[0];
                     const isNew = latestNotification.id !== latestNotificationIdRef.current;
-                    const isUnread = !latestNotification.isRead;
-
-                    // Play sound if it's a new, unread notification and not the initial load (ref is not null)
-                    if (isNew && isUnread && latestNotificationIdRef.current !== null) {
-                        const audio = new Audio(NOTIFICATION_SOUND);
-                        audio.volume = 0.5;
-                        audio.play().catch(e => console.log("Audio playback prevented:", e));
+                    // Play sound if it's a new notification and not the initial load (ref is not null)
+                    if (isNew && latestNotificationIdRef.current !== null) {
+                        try {
+                            const audio = new Audio(NOTIFICATION_SOUND);
+                            audio.volume = 0.5;
+                            audio.play().catch(e => console.log("Audio playback prevented:", e));
+                        } catch (err) {
+                            console.error("Failed to play sound:", err);
+                        }
                     }
 
                     // Update the ref to the current latest ID

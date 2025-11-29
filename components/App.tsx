@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
@@ -50,6 +51,9 @@ import ActivityFeed from './ActivityFeed';
 import OurPartnersPage from './OurPartnersPage';
 import PaymentSuccessPage from './PaymentSuccessPage';
 import TrainingPage from './TrainingPage';
+
+// Simple "Pop" sound encoded in Base64 to avoid external asset dependency
+const NOTIFICATION_SOUND = 'data:audio/mp3;base64,//uQRAAAAWMSLwUIYAAsYkXgoQwAEaYLWfkWgAI0wWs/ItAAAG1xisiYkTV98L0AWxwwjZYAdgZc64DCwcQDBaQqirAlqJz3WhfqTz9DgQ2ODQqjfww4oYLmJk0ubftpnZ963+4TAS99LF5gUNQACUOZzKwPNXcbjKnD0307yE0X+l78179en65Z//uQRA168360Z/ImwEA5y0a/JmAEOcAE+3gAAE5wAT7eAAAG3z3zftcAAAAAA+Dud74Fad97238K1ntx5XCCEIdt5YFqgtEE2KcIGAF/1vOKBaGrC6LCbfAOv4l9sFv/2qBP4V0gnoV3KZtOd96//uQRA668720a/JmYEh3t21/ZmIAOsAE/3gAAI6wAT/eAAAG3bAgAAAB//uQRA868fY1a/JmYEA8wAT7eAACT7gAT7eAAAG3gAA//uQRA+68fY1a/JmYEA8wAT7eAACT7gAT7eAAAG3gAA//uQRA/68fY1a/JmYEA8wAT7eAACT7gAT7eAAAG3gAA//uQRBA68fY1a/JmYEA8wAT7eAACT7gAT7eAAAG3gAA';
 
 const FirebaseConfigError: React.FC = () => (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
@@ -308,6 +312,9 @@ const App: React.FC = () => {
   const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
   const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
 
+  // Ref to track the latest notification ID to prevent sound playing on initial load
+  const latestNotificationIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     const root = window.document.documentElement;
     if (theme === 'dark') {
@@ -480,6 +487,25 @@ const App: React.FC = () => {
         const unsubscribe = apiService.getNotificationsForUserListener(
             user.id,
             (newNotifications) => {
+                // Determine if a new notification has arrived
+                if (newNotifications.length > 0) {
+                    const latestNotification = newNotifications[0];
+                    const isNew = latestNotification.id !== latestNotificationIdRef.current;
+                    const isUnread = !latestNotification.isRead;
+
+                    // Play sound if it's a new, unread notification and not the initial load (ref is not null)
+                    if (isNew && isUnread && latestNotificationIdRef.current !== null) {
+                        const audio = new Audio(NOTIFICATION_SOUND);
+                        audio.volume = 0.5;
+                        audio.play().catch(e => console.log("Audio playback prevented:", e));
+                    }
+
+                    // Update the ref to the current latest ID
+                    latestNotificationIdRef.current = latestNotification.id;
+                } else {
+                    latestNotificationIdRef.current = null;
+                }
+
                 setNotifications(newNotifications);
             },
             (error) => {

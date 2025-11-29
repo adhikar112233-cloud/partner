@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from './services/firebase';
 import { authService } from './services/authService';
 import { apiService } from './services/apiService';
@@ -49,6 +49,7 @@ import CreatorVerificationPage from './components/CreatorVerificationPage';
 import ActivityFeed from './components/ActivityFeed';
 import OurPartnersPage from './components/OurPartnersPage';
 import PaymentSuccessPage from './components/PaymentSuccessPage';
+import TrainingPage from './components/TrainingPage';
 
 const FirebaseConfigError: React.FC = () => (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
@@ -303,6 +304,10 @@ const App: React.FC = () => {
   const [liveHelpSessionId, setLiveHelpSessionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
+
+  // New state variables for app mode and community feed
+  const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
+  const [communityFeedFilter, setCommunityFeedFilter] = useState<'global' | 'my_posts' | 'following'>('global');
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -602,6 +607,22 @@ const App: React.FC = () => {
     setLiveHelpSessionId(sessionId);
   };
 
+  const handleToggleFollow = async (targetId: string) => {
+      if (!user) return;
+      const isFollowing = user.following?.includes(targetId);
+      try {
+          if (isFollowing) {
+              await apiService.unfollowUser(user.id, targetId);
+              setUser(prev => prev ? { ...prev, following: prev.following?.filter(id => id !== targetId) } : null);
+          } else {
+              await apiService.followUser(user.id, targetId);
+              setUser(prev => prev ? { ...prev, following: [...(prev.following || []), targetId] } : null);
+          }
+      } catch (error) {
+          console.error("Failed to toggle follow:", error);
+      }
+  };
+
   if (configError) {
       return <DatabaseConfigError message={configError} />;
   }
@@ -639,6 +660,8 @@ const App: React.FC = () => {
     switch (activeView) {
       case View.PARTNERS:
         return <OurPartnersPage />;
+      case View.TRAINING:
+        return <TrainingPage user={user} platformSettings={platformSettings} />;
       case View.CREATOR_VERIFICATION:
         return <CreatorVerificationPage 
             user={user} 
@@ -680,6 +703,7 @@ const App: React.FC = () => {
         return <RefundRequestPage
                   user={user}
                   collaboration={refundingCollab}
+                  platformSettings={platformSettings}
                   onClose={() => {
                       setActiveView(View.MY_COLLABORATIONS);
                       setRefundingCollab(null);
@@ -767,15 +791,15 @@ const App: React.FC = () => {
         if (!platformSettings.isCommunityFeedEnabled) {
             return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Community Feed Disabled</h2><p className="dark:text-gray-300">This feature is currently turned off by the administrator.</p></div>;
         }
-        return <CommunityPage user={user} />;
+        return <CommunityPage user={user} feedType={communityFeedFilter} onToggleFollow={handleToggleFollow} />;
       case View.MESSAGES:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Messages</h2><p className="dark:text-gray-300">Select a conversation from the header to start chatting.</p></div>;
       case View.COLLAB_REQUESTS:
-        return <CollaborationRequestsPage user={user} onViewProfile={handleViewProfileClick} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+        return <CollaborationRequestsPage user={user} onViewProfile={handleViewProfileClick} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
       case View.MY_COLLABORATIONS:
         return <MyCollaborationsPage user={user} onViewProfile={handleViewProfileClick} onStartChat={handleConversationSelected} onInitiateRefund={handleInitiateRefund} platformSettings={platformSettings} />;
       case View.MY_APPLICATIONS:
-          return <MyApplicationsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+          return <MyApplicationsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
       case View.CAMPAIGNS:
         if (user.role === 'brand') return <CampaignsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiateRefund={handleInitiateRefund} />;
         if (user.role === 'influencer') return <DiscoverCampaignsPage user={user} />;
@@ -783,10 +807,10 @@ const App: React.FC = () => {
       case View.AD_BOOKINGS:
         return <MyAdBookingsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiateRefund={handleInitiateRefund} />;
       case View.LIVETV:
-        if (user.role === 'livetv') return <AdRequestsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+        if (user.role === 'livetv') return <AdRequestsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Live TV</h2><p className="dark:text-gray-300">This feature is not available for your account type.</p></div>;
       case View.BANNERADS:
-        if (user.role === 'banneragency') return <AdBookingsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} />;
+        if (user.role === 'banneragency') return <AdBookingsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Banner Ads</h2><p className="dark:text-gray-300">This feature is not available for your account type.</p></div>;
       case View.SUPPORT:
         if (user.role === 'staff') return <SupportAdminPage user={user} />;
@@ -810,6 +834,10 @@ const App: React.FC = () => {
         platformSettings={platformSettings}
         theme={theme}
         setTheme={setTheme}
+        appMode={appMode}
+        communityFeedFilter={communityFeedFilter}
+        setCommunityFeedFilter={setCommunityFeedFilter}
+        onToggleFollow={handleToggleFollow}
       />
       <Sidebar 
         isMobile
@@ -822,6 +850,10 @@ const App: React.FC = () => {
         platformSettings={platformSettings}
         theme={theme}
         setTheme={setTheme}
+        appMode={appMode}
+        communityFeedFilter={communityFeedFilter}
+        setCommunityFeedFilter={setCommunityFeedFilter}
+        onToggleFollow={handleToggleFollow}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <NotificationManager user={user} />
@@ -853,14 +885,15 @@ const App: React.FC = () => {
             appMode={appMode}
             setAppMode={setAppMode}
         />
-
-        {platformBanners.length > 0 && (
-            <ClickableImageBanner 
-                banners={platformBanners}
-            />
-        )}
         
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto min-h-0">
+          {platformBanners.length > 0 && activeView !== View.ADMIN && (
+            <div className="mb-6">
+                <ClickableImageBanner 
+                    banners={platformBanners}
+                />
+            </div>
+          )}
           {renderContent()}
         </main>
       </div>

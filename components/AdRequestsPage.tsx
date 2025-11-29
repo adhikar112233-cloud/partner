@@ -240,6 +240,24 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         );
     };
 
+    // Helper function to display amounts clearly
+    const getAmountDisplay = (req: AdSlotRequest) => {
+        if (req.finalAmount) {
+            return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
+        }
+        if (req.currentOffer) {
+            return (
+                <div className="flex flex-col">
+                    <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {req.currentOffer.offeredBy === 'agency' ? 'My Offer' : 'Brand Offer'}
+                    </span>
+                </div>
+            );
+        }
+        return <span className="text-gray-500 dark:text-gray-400">Negotiating...</span>;
+    };
+
     const FilterButton: React.FC<{ label: string; filterType: FilterType; count: number }> = ({ label, filterType, count }) => {
         const isActive = filter === filterType;
         return (
@@ -264,6 +282,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                     <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Brand / Campaign</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
@@ -285,6 +304,9 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
                                 {req.collabId || req.id}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {getAmountDisplay(req)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <RequestStatusBadge status={req.status} />

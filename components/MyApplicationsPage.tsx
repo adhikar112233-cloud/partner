@@ -194,6 +194,24 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
         );
     };
 
+    // Helper function to display amounts clearly
+    const getAmountDisplay = (app: CampaignApplication) => {
+        if (app.finalAmount) {
+            return <span className="text-green-600 font-bold dark:text-green-400">{app.finalAmount}</span>;
+        }
+        if (app.currentOffer) {
+            return (
+                <div className="flex flex-col">
+                    <span className="text-blue-600 font-bold dark:text-blue-400">{app.currentOffer.amount}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {app.currentOffer.offeredBy === 'influencer' ? 'My Offer' : 'Brand Offer'}
+                    </span>
+                </div>
+            );
+        }
+        return <span className="text-gray-500 dark:text-gray-400">Negotiating...</span>;
+    };
+
     const { active, pending, completed, archived } = useMemo(() => {
         const active: CampaignApplication[] = [];
         const pending: CampaignApplication[] = [];
@@ -239,6 +257,7 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                     <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Brand / Campaign</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
@@ -259,6 +278,9 @@ export const MyApplicationsPage: React.FC<MyApplicationsPageProps> = ({ user, pl
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
                                 {app.collabId || app.id}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {getAmountDisplay(app)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <ApplicationStatusBadge status={app.status} />

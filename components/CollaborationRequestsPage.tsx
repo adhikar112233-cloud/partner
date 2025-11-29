@@ -222,7 +222,24 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
         );
     };
     
-    // ... (Memoized filters and render logic remain unchanged)
+    // Helper function to display amounts clearly
+    const getAmountDisplay = (req: CollaborationRequest) => {
+        if (req.finalAmount) {
+            return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
+        }
+        if (req.currentOffer) {
+            return (
+                <div className="flex flex-col">
+                    <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {req.currentOffer.offeredBy === 'influencer' ? 'My Offer' : 'Brand Offer'}
+                    </span>
+                </div>
+            );
+        }
+        return <span className="text-gray-500 dark:text-gray-400">{req.budget || 'N/A'}</span>;
+    };
+
     const { active, pending, archived } = useMemo(() => {
         const active: CollaborationRequest[] = [];
         const pending: CollaborationRequest[] = [];
@@ -265,6 +282,7 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                     <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Brand / Request</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
@@ -280,16 +298,14 @@ const CollaborationRequestsPage: React.FC<CollaborationRequestsPageProps> = ({ u
                                     <div className="ml-4">
                                         <div className="text-sm font-medium text-gray-900 dark:text-white">{req.brandName}</div>
                                         <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{req.title}</div>
-                                        {req.budget && (
-                                            <div className="text-xs font-bold text-green-600 dark:text-green-400 mt-1">
-                                                Budget: {req.budget}
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
                                 {req.collabId || req.id}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {getAmountDisplay(req)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <RequestStatusBadge status={req.status} />

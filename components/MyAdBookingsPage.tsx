@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -206,7 +205,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 setConfirmAction({ req, action: 'approve_payment' });
                 break;
             case 'brand_request_refund':
-                onInitiateRefund(req);
+                onInitiateRefund(req as any);
                 break;
         }
     };
@@ -254,12 +253,32 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
         );
     };
 
+    // Helper function to display amounts clearly
+    const getAmountDisplay = (req: AdSlotRequest) => {
+        if (req.finalAmount) {
+            return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
+        }
+        if (req.currentOffer) {
+            return (
+                <div className="flex flex-col">
+                    <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {req.currentOffer.offeredBy === 'agency' ? 'My Offer' : 'Brand Offer'}
+                    </span>
+                </div>
+            );
+        }
+        return <span className="text-gray-500 dark:text-gray-400">Negotiating...</span>;
+    };
+
     const renderTable = (list: AdRequest[]) => (
         <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Provider / Campaign</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Collab ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
@@ -284,6 +303,12 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                                         <span className="text-xs text-indigo-500 bg-indigo-50 px-1 rounded">{req.type}</span>
                                     </div>
                                 </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
+                                {req.collabId || req.id}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {getAmountDisplay(req)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <RequestStatusBadge status={req.status} />

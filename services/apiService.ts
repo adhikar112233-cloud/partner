@@ -1,3 +1,5 @@
+
+
 import { 
     collection, 
     doc, 
@@ -547,6 +549,41 @@ export const apiService = {
         });
     },
 
+    createSubscription: async (options: {
+        userId: string,
+        amount: number,
+        collabId: string,
+        description: string,
+        phone: string,
+        email: string,
+        returnUrl: string,
+        isAdSlot: boolean
+    }) => {
+        const response = await fetch(`${BACKEND_URL}/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                collabType: 'subscription',
+                amount: options.amount,
+                userId: options.userId,
+                collabId: options.collabId,
+                description: options.description,
+                phone: options.phone,
+                customerEmail: options.email,
+                returnUrl: options.returnUrl,
+                relatedId: options.collabId, // Using collabId as relatedId
+                additionalMeta: { isAdSlot: options.isAdSlot }
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || "Failed to create subscription");
+        }
+        
+        return await response.json();
+    },
+
     // Daily Payouts
     getAllDailyPayouts: async (): Promise<DailyPayoutRequest[]> => {
         const q = query(collection(db, 'daily_payout_requests'), orderBy('timestamp', 'desc'));
@@ -907,6 +944,18 @@ export const apiService = {
             url,
             status: 'pending',
             createdAt: serverTimestamp()
+        });
+    },
+
+    // New method for manual notifications to a specific user
+    sendUserNotification: async (userId: string, title: string, body: string): Promise<void> => {
+        await addDoc(collection(db, `users/${userId}/notifications`), {
+            title,
+            body,
+            type: 'system',
+            isRead: false,
+            timestamp: serverTimestamp(),
+            view: 'ad_bookings' // Direct them to bookings page as default context
         });
     },
 

@@ -4,6 +4,12 @@
 
 
 
+
+
+
+
+
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -413,6 +419,7 @@ export interface PayoutRequest {
     isAccountVerified?: boolean;
     accountVerifiedName?: string;
     idProofSelfieUrl?: string; // New field for live selfie
+    panNumber?: string;
 }
 
 export interface RefundRequest {
@@ -513,6 +520,16 @@ export interface CampaignApplication {
     collabId?: string;
 }
 
+export interface EmiItem {
+    id: string;
+    amount: number;
+    dueDate: string; // ISO Date string
+    status: 'pending' | 'paid' | 'overdue';
+    orderId?: string; // If paid
+    paidAt?: any;
+    description: string; // e.g., "1st EMI (Day 1-30)"
+}
+
 export type AdBookingStatus = CollabRequestStatus | 'pending_approval' | 'agency_offer';
 
 export interface AdSlotRequest {
@@ -529,7 +546,7 @@ export interface AdSlotRequest {
     endDate: string;
     url?: string;
     status: AdBookingStatus;
-    currentOffer?: { amount: string; offeredBy: 'brand' | 'agency' };
+    currentOffer?: { amount: string; offeredBy: 'brand' | 'agency'; dailyRate?: number };
     finalAmount?: string;
     paymentStatus?: 'paid' | 'payout_requested' | 'payout_complete';
     workStatus?: 'started' | 'submitted'; // or boolean? Usage implies strings.
@@ -537,6 +554,14 @@ export interface AdSlotRequest {
     rejectionReason?: string;
     timestamp: any;
     collabId?: string;
+    
+    // New fields for EMI and Daily Rate
+    dailyRate?: number;
+    paymentPlan?: 'full' | 'emi' | 'subscription';
+    emiSchedule?: EmiItem[];
+    nextPaymentDueDate?: string;
+    subscriptionId?: string;
+    subscriptionLink?: string;
 }
 
 export interface BannerAdBookingRequest {
@@ -553,7 +578,7 @@ export interface BannerAdBookingRequest {
     startDate: string;
     endDate: string;
     status: AdBookingStatus;
-    currentOffer?: { amount: string; offeredBy: 'brand' | 'agency' };
+    currentOffer?: { amount: string; offeredBy: 'brand' | 'agency'; dailyRate?: number };
     finalAmount?: string;
     paymentStatus?: 'paid' | 'payout_requested' | 'payout_complete';
     workStatus?: 'started' | 'submitted';
@@ -561,6 +586,14 @@ export interface BannerAdBookingRequest {
     rejectionReason?: string;
     timestamp: any;
     collabId?: string;
+
+    // New fields for EMI and Daily Rate
+    dailyRate?: number;
+    paymentPlan?: 'full' | 'emi' | 'subscription';
+    emiSchedule?: EmiItem[];
+    nextPaymentDueDate?: string;
+    subscriptionId?: string;
+    subscriptionLink?: string;
 }
 
 export type AnyCollaboration = CollaborationRequest | CampaignApplication | AdSlotRequest | BannerAdBookingRequest;

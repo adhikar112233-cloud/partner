@@ -1,11 +1,14 @@
 
-import React from 'react';
-import { AnyCollaboration } from '../types';
+
+import React, { useState } from 'react';
+import { AnyCollaboration, User } from '../types';
 import { Timestamp } from 'firebase/firestore';
+import { apiService } from '../services/apiService';
 
 interface CollabDetailsModalProps {
     collab: AnyCollaboration;
     onClose: () => void;
+    currentUser?: User; // Pass the logged-in user to check permissions
 }
 
 const toJsDate = (ts: any): Date | undefined => {
@@ -17,7 +20,9 @@ const toJsDate = (ts: any): Date | undefined => {
     return undefined;
 };
 
-const CollabDetailsModal: React.FC<CollabDetailsModalProps> = ({ collab, onClose }) => {
+const CollabDetailsModal: React.FC<CollabDetailsModalProps> = ({ collab, onClose, currentUser }) => {
+    const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+
     const getTitle = () => {
         if ('title' in collab) return collab.title;
         if ('campaignTitle' in collab) return collab.campaignTitle;
@@ -37,6 +42,27 @@ const CollabDetailsModal: React.FC<CollabDetailsModalProps> = ({ collab, onClose
         if ('message' in collab) return collab.message;
         if ('description' in collab) return (collab as any).description; // Some types might have description
         return 'No description provided.';
+    };
+
+    const emiSchedule = ('emiSchedule' in collab) ? (collab as any).emiSchedule : null;
+    const isStaff = currentUser?.role === 'staff';
+
+    const handleSendReminder = async (emi: any) => {
+        if (!collab.brandId) return;
+        setSendingReminder(emi.id);
+        try {
+            await apiService.sendUserNotification(
+                collab.brandId,
+                "Payment Reminder",
+                `Your EMI payment for ${getTitle()} (${emi.description}) is due on ${new Date(emi.dueDate).toLocaleDateString()}. Please pay to avoid penalties.`
+            );
+            alert("Reminder sent successfully!");
+        } catch (error) {
+            console.error("Failed to send reminder:", error);
+            alert("Failed to send reminder.");
+        } finally {
+            setSendingReminder(null);
+        }
     };
 
     return (
@@ -88,7 +114,59 @@ const CollabDetailsModal: React.FC<CollabDetailsModalProps> = ({ collab, onClose
                                 Latest Offer: {collab.currentOffer.amount} (by {collab.currentOffer.offeredBy})
                             </p>
                         )}
+                        {('dailyRate' in collab) && (collab as any).dailyRate && (
+                            <p className="text-xs text-gray-500 mt-1 text-right">
+                                Agreed Daily Rate: ₹{(collab as any).dailyRate}/day
+                            </p>
+                        )}
                     </div>
+
+                    {/* EMI Schedule */}
+                    {emiSchedule && emiSchedule.length > 0 && (
+                        <div>
+                            <span className="text-xs text-gray-500 uppercase font-bold block mb-2">EMI Schedule</span>
+                            <div className="border rounded-lg overflow-hidden dark:border-gray-700">
+                                <table className="w-full text-xs text-left">
+                                    <thead className="bg-gray-100 dark:bg-gray-700">
+                                        <tr>
+                                            <th className="p-2">Installment</th>
+                                            <th className="p-2">Due Date</th>
+                                            <th className="p-2">Amount</th>
+                                            <th className="p-2">Status</th>
+                                            {isStaff && <th className="p-2 text-right">Action</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                        {emiSchedule.map((emi: any, idx: number) => (
+                                            <tr key={idx} className="dark:text-gray-300">
+                                                <td className="p-2">{emi.description.split('(')[0]}</td>
+                                                <td className="p-2">{new Date(emi.dueDate).toLocaleDateString()}</td>
+                                                <td className="p-2">₹{emi.amount.toLocaleString()}</td>
+                                                <td className="p-2">
+                                                    <span className={`px-1.5 py-0.5 rounded ${emi.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                                        {emi.status}
+                                                    </span>
+                                                </td>
+                                                {isStaff && (
+                                                    <td className="p-2 text-right">
+                                                        {emi.status !== 'paid' && (
+                                                            <button 
+                                                                onClick={() => handleSendReminder(emi)}
+                                                                disabled={sendingReminder === emi.id}
+                                                                className="px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-[10px] font-semibold disabled:opacity-50"
+                                                            >
+                                                                {sendingReminder === emi.id ? 'Sending...' : 'Send Reminder'}
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Ad Specific Details */}
                     {('startDate' in collab) && (

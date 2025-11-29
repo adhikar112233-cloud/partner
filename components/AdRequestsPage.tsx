@@ -1,13 +1,17 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings } from '../types';
+import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAdBookingRequest } from '../types';
 import { apiService } from '../services/apiService';
-import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
+import { TrashIcon, MessagesIcon, EyeIcon, BanknotesIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
 import CancellationPenaltyModal from './CancellationPenaltyModal';
+import FinalPayoutModal from './FinalPayoutModal';
+import { calculateAdPricing } from '../services/utils';
 
 interface AdRequestsPageProps {
-    user: User; // The Live TV user
+    user: User; // The Live TV user or Agency user
     platformSettings: PlatformSettings;
     onStartChat: (participant: ConversationParticipant) => void;
     onInitiatePayout: (collab: AdSlotRequest) => void;
@@ -35,21 +39,85 @@ const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) =
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
-// ... (OfferModal remains unchanged)
-const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, onClose, onConfirm }) => {
-    const [amount, setAmount] = useState('');
+// Updated Offer Modal with Daily Rate Logic
+const OfferModal: React.FC<{ 
+    type: 'accept' | 'recounter'; 
+    req: AdSlotRequest | BannerAdBookingRequest;
+    platformSettings: PlatformSettings;
+    onClose: () => void; 
+    onConfirm: (dailyRate: number, totalAmount: string) => void; 
+}> = ({ type, req, platformSettings, onClose, onConfirm }) => {
+    const [dailyRate, setDailyRate] = useState<string>('');
+    const [calculations, setCalculations] = useState<any>(null);
+
+    useEffect(() => {
+        if (dailyRate && !isNaN(Number(dailyRate))) {
+            const pricing = calculateAdPricing(Number(dailyRate), req.startDate, req.endDate, platformSettings);
+            setCalculations(pricing);
+        } else {
+            setCalculations(null);
+        }
+    }, [dailyRate, req.startDate, req.endDate, platformSettings]);
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
-                <h3 className="text-lg font-bold mb-4 dark:text-gray-100">{type === 'accept' ? 'Accept with Offer' : 'Send Counter Offer'}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  {type === 'recounter' && currentOffer ? `Brand's offer is ${currentOffer}. ` : ''}
-                  Propose your fee for this ad slot.
-                </p>
-                <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g., 50000" className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
+                <h3 className="text-lg font-bold mb-2 dark:text-gray-100">{type === 'accept' ? 'Accept with Offer' : 'Send Counter Offer'}</h3>
+                
+                {req.currentOffer?.dailyRate ? (
+                    <p className="text-sm text-blue-600 mb-2">Brand's Daily Offer: ₹{req.currentOffer.dailyRate}/day</p>
+                ) : (
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                        Brand's Total Offer: {req.currentOffer?.amount}
+                    </p>
+                )}
+
+                <div className="mb-4">
+                    <label className="block text-xs font-bold text-red-600 mb-1">ENTER 24-HOUR RATE ONLY</label>
+                    <input 
+                        type="number" 
+                        value={dailyRate} 
+                        onChange={e => setDailyRate(e.target.value)} 
+                        placeholder="e.g., 2000" 
+                        className="w-full p-2 border-2 border-red-100 rounded-md focus:border-red-500 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 outline-none"
+                    />
+                    <p className="text-xs text-red-500 mt-1">* Do not enter total amount.</p>
+                </div>
+
+                {calculations && (
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-md mb-4 text-sm space-y-1">
+                        <div className="flex justify-between">
+                            <span>Duration:</span>
+                            <span className="font-bold">{calculations.durationDays} Days</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Base Total:</span>
+                            <span>₹{calculations.baseTotal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                            <span>Fees + GST (Est):</span>
+                            <span>+ ₹{(calculations.processingFee + calculations.gstAmount).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-gray-300 pt-1 mt-1 font-bold text-indigo-600">
+                            <span>Total to Brand:</span>
+                            <span>₹{calculations.finalAmount.toLocaleString()}</span>
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex justify-end space-x-2 mt-4">
                     <button onClick={onClose} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-600 dark:text-gray-200">Cancel</button>
-                    <button onClick={() => onConfirm(amount)} className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white">Send Offer</button>
+                    <button 
+                        onClick={() => {
+                            if(calculations) {
+                                onConfirm(Number(dailyRate), `₹${calculations.finalAmount.toFixed(2)}`);
+                            }
+                        }} 
+                        disabled={!calculations}
+                        className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white disabled:opacity-50"
+                    >
+                        Send Offer
+                    </button>
                 </div>
             </div>
         </div>
@@ -59,7 +127,6 @@ const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string
 type FilterType = 'pending' | 'processing' | 'completed';
 
 const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings, onStartChat, onInitiatePayout, refreshUser }) => {
-    // ... (rest of the component logic)
     const [requests, setRequests] = useState<AdSlotRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -71,12 +138,26 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
     const [cancellingReq, setCancellingReq] = useState<AdSlotRequest | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
 
+    // Final Payout State
+    const [showFinalPayoutModal, setShowFinalPayoutModal] = useState(false);
+    const [selectedFinalPayoutCollab, setSelectedFinalPayoutCollab] = useState<AdSlotRequest | null>(null);
+
     const fetchRequests = async () => {
         setIsLoading(true);
         setError(null);
         try {
-            const data = await apiService.getAdSlotRequestsForLiveTv(user.id);
-            setRequests(data);
+            // Re-use logic for both LiveTV and Banner Agency roles based on current user
+            const data = await apiService.getActiveAdCollabsForAgency(user.id, user.role);
+            // Also need to fetch pending/completed to show full list, apiService.getActiveAdCollabsForAgency only returns in_progress/work_submitted
+            // So we might need a broader fetch or specialized fetch.
+            // Let's assume for this page we want ALL requests.
+            let allData: any[] = [];
+            if (user.role === 'livetv') {
+                allData = await apiService.getAdSlotRequestsForLiveTv(user.id);
+            } else {
+                allData = await apiService.getBannerAdBookingRequestsForAgency(user.id);
+            }
+            setRequests(allData);
         } catch (err) {
             console.error(err);
             setError("Failed to fetch ad requests.");
@@ -87,7 +168,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
     
     useEffect(() => {
         fetchRequests();
-    }, [user.id]);
+    }, [user.id, user.role]);
 
     const { pendingRequests, processingRequests, completedRequests } = useMemo(() => {
         const pending: AdSlotRequest[] = [];
@@ -113,7 +194,11 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
 
     const handleUpdate = async (reqId: string, data: Partial<AdSlotRequest>) => {
         setRequests(prev => prev.map(req => req.id === reqId ? { ...req, ...data } : req));
-        await apiService.updateAdSlotRequest(reqId, data, user.id);
+        if (user.role === 'livetv') {
+            await apiService.updateAdSlotRequest(reqId, data, user.id);
+        } else {
+            await apiService.updateBannerAdBookingRequest(reqId, data, user.id);
+        }
         setModal(null);
         setSelectedRequest(null);
     };
@@ -121,7 +206,8 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
     const handleDelete = async (reqId: string) => {
         if(window.confirm("Are you sure you want to delete this history?")) {
             try {
-                await apiService.deleteCollaboration(reqId, 'ad_slot_requests');
+                const collection = user.role === 'livetv' ? 'ad_slot_requests' : 'banner_ad_booking_requests';
+                await apiService.deleteCollaboration(reqId, collection);
                 fetchRequests();
             } catch (err) {
                 console.error("Delete failed", err);
@@ -133,12 +219,13 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         if (!cancellingReq) return;
         setIsCancelling(true);
         const penalty = platformSettings.cancellationPenaltyAmount || 0;
+        const collection = user.role === 'livetv' ? 'ad_slot_requests' : 'banner_ad_booking_requests';
         
         try {
             await apiService.cancelCollaboration(
                 user.id, 
                 cancellingReq.id, 
-                'ad_slot_requests', 
+                collection, 
                 reason, 
                 penalty
             );
@@ -153,7 +240,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
         }
     };
 
-    const handleAction = (req: AdSlotRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'view_details' | 'cancel_active') => {
+    const handleAction = (req: AdSlotRequest, action: 'message' | 'accept_with_offer' | 'reject' | 'accept_offer' | 'recounter_offer' | 'start_work' | 'complete_work' | 'get_payment' | 'cancel' | 'view_details' | 'cancel_active' | 'final_payout') => {
         setSelectedRequest(req);
         switch(action) {
             case 'view_details':
@@ -175,7 +262,8 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                 setCancellingReq(req);
                 break;
             case 'accept_offer':
-                handleUpdate(req.id, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount });
+                // For accepting brand offer, we rely on the finalAmount they proposed
+                handleUpdate(req.id, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount, dailyRate: req.currentOffer?.dailyRate });
                 break;
             case 'start_work':
                 handleUpdate(req.id, { workStatus: 'started' });
@@ -184,7 +272,11 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                 handleUpdate(req.id, { status: 'work_submitted' });
                 break;
             case 'get_payment':
-                onInitiatePayout(req);
+                onInitiatePayout(req); // This is standard payout flow (might trigger DailyPayout logic if configured, but here we want Final)
+                break;
+            case 'final_payout':
+                setSelectedFinalPayoutCollab(req);
+                setShowFinalPayoutModal(true);
                 break;
         }
     };
@@ -222,6 +314,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                     });
                 }
                 break;
+            case 'work_submitted':
             case 'completed':
                  // Strictly check payment status
                  if (req.paymentStatus === 'payout_requested') {
@@ -229,7 +322,8 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                  } else if (req.paymentStatus === 'payout_complete') {
                     return <span className="px-3 py-1 text-xs font-bold rounded border border-green-200 bg-green-50 text-green-800">Paid Out</span>;
                  } else if (req.paymentStatus === 'paid') {
-                    actions.push({ label: 'Get Payment', action: 'get_payment', style: 'text-green-600 hover:bg-green-50 font-bold' });
+                    // Show Final Payout Option
+                    actions.push({ label: 'Final Payout', action: 'final_payout', style: 'text-green-700 bg-green-100 hover:bg-green-200 font-bold border-green-300', icon: <BanknotesIcon className="w-4 h-4" /> });
                  }
                  break;
         }
@@ -248,7 +342,12 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
     // Helper function to display amounts clearly
     const getAmountDisplay = (req: AdSlotRequest) => {
         if (req.finalAmount) {
-            return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
+            return (
+                <div className="flex flex-col">
+                    <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>
+                    {req.dailyRate && <span className="text-xs text-gray-500">(@ ₹{req.dailyRate}/day)</span>}
+                </div>
+            );
         }
         if (req.currentOffer) {
             return (
@@ -257,6 +356,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                         {req.currentOffer.offeredBy === 'agency' ? 'My Offer' : 'Brand Offer'}
                     </span>
+                    {req.currentOffer.dailyRate && <span className="text-xs text-gray-400">Rate: ₹{req.currentOffer.dailyRate}/day</span>}
                 </div>
             );
         }
@@ -366,10 +466,20 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
             )}
             
             {modal === 'details' && selectedRequest && (
-                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
+                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} currentUser={user} />
             )}
              {modal === 'offer' && selectedRequest && (
-                <OfferModal type={selectedRequest.status === 'pending_approval' ? 'accept' : 'recounter'} currentOffer={selectedRequest.currentOffer?.amount} onClose={() => setModal(null)} onConfirm={(amount) => handleUpdate(selectedRequest.id, { status: 'agency_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'agency' }})} />
+                <OfferModal 
+                    type={selectedRequest.status === 'pending_approval' ? 'accept' : 'recounter'} 
+                    req={selectedRequest} 
+                    platformSettings={platformSettings}
+                    onClose={() => setModal(null)} 
+                    onConfirm={(dailyRate, totalAmount) => handleUpdate(selectedRequest.id, { 
+                        status: 'agency_offer', 
+                        currentOffer: { amount: totalAmount, dailyRate: dailyRate, offeredBy: 'agency' },
+                        dailyRate: dailyRate
+                    })} 
+                />
             )}
             
             <CancellationPenaltyModal 
@@ -379,6 +489,19 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                 penaltyAmount={platformSettings.cancellationPenaltyAmount || 0}
                 isProcessing={isCancelling}
             />
+
+            {showFinalPayoutModal && selectedFinalPayoutCollab && (
+                <FinalPayoutModal
+                    user={user}
+                    collab={selectedFinalPayoutCollab}
+                    platformSettings={platformSettings}
+                    onClose={() => { setShowFinalPayoutModal(false); setSelectedFinalPayoutCollab(null); }}
+                    onSubmitted={() => {
+                        alert("Final Payout Request Submitted Successfully!");
+                        fetchRequests();
+                    }}
+                />
+            )}
         </div>
     );
 };

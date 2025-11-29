@@ -14,6 +14,7 @@ interface PaymentModalProps {
     description: string;
     relatedId: string;
     collabId?: string;
+    additionalMeta?: any; // For EMI ID
   };
 }
 
@@ -37,6 +38,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [useCoins, setUseCoins] = useState(false);
   
   // Calculate Brand Fees using specific flags
+  // Note: If baseAmount is an EMI installment, logic typically applies fees to that installment or pre-calculated.
+  // For simplicity, we assume fees apply to the transaction amount being paid now.
   const processingCharge = platformSettings.isBrandPlatformFeeEnabled
     ? baseAmount * (platformSettings.paymentProcessingChargeRate / 100)
     : 0;
@@ -47,6 +50,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     
   const grossTotal = baseAmount + processingCharge + gstOnFees;
   const userCoins = user.coins || 0;
+  // Cap coin usage to 50% of transaction or 500, whichever is lower (example policy) or keep existing simple logic
   const maxRedeemableCoins = Math.min(userCoins, 100, Math.floor(grossTotal));
   const discountAmount = useCoins ? maxRedeemableCoins : 0;
   const finalPayableAmount = Math.max(0, grossTotal - discountAmount);
@@ -80,7 +84,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           collabId: transactionDetails.collabId, // Passed to backend
           collabType: collabType,
           coinsUsed: useCoins ? maxRedeemableCoins : 0,
-          returnUrl: returnUrl // Send current domain
+          returnUrl: returnUrl, // Send current domain
+          additionalMeta: transactionDetails.additionalMeta // For EMI tracking
         }),
       });
 
@@ -93,7 +98,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           setStatus("success");
           setTimeout(() => {
               onClose(); 
-              window.location.reload(); // Refresh to show updates
+              // window.location.reload(); // Removed force reload to handle state in parent
           }, 2000);
           return;
       }
@@ -132,7 +137,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Payment Successful!</h2>
-                <p className="text-gray-500 dark:text-gray-400 mt-2">Paid using coins.</p>
+                <p className="text-gray-500 dark:text-gray-400 mt-2">Paid successfully.</p>
              </div>
           ) : status === "processing" ? (
             <div className="text-center py-10">

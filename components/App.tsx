@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isFirebaseConfigured, db, auth, firebaseConfig } from '../services/firebase';
 import { authService } from '../services/authService';
 import { apiService } from '../services/apiService';
-import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus } from '../types';
+import { User, View, Influencer, PlatformSettings, ProfileData, ConversationParticipant, LiveTvChannel, Transaction, PayoutRequest, AnyCollaboration, PlatformBanner, RefundRequest, DailyPayoutRequest, AppNotification, CreatorVerificationStatus, AdSlotRequest, BannerAdBookingRequest, EmiItem } from '../types';
 import { Timestamp, doc, getDoc, QueryDocumentSnapshot, DocumentData, query, collection, where, limit, getDocs } from 'firebase/firestore';
 
 import LoginPage from './LoginPage';
@@ -50,6 +51,8 @@ import OurPartnersPage from './OurPartnersPage';
 import PaymentSuccessPage from './PaymentSuccessPage';
 import TrainingPage from './TrainingPage';
 import MyChannelPage from './MyChannelPage';
+import EmiReminderSplash from './EmiReminderSplash';
+import CashfreeModal from './PhonePeModal';
 
 const FirebaseConfigError: React.FC = () => (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
@@ -69,84 +72,6 @@ const FirebaseConfigError: React.FC = () => (
 );
 
 const DatabaseConfigError: React.FC<{ message: string }> = ({ message }) => {
-    const projectId = firebaseConfig?.projectId || "your-project-id";
-    const lowerMessage = message.toLowerCase();
-    const isApiNotEnabled = lowerMessage.includes("cloud firestore api") || lowerMessage.includes("datastore.googleapis.com");
-    const isPermissionDenied = lowerMessage.includes("permission-denied") || lowerMessage.includes("insufficient permissions") || lowerMessage.includes("missing or insufficient permissions");
-    const isOfflineOrProjectNotFound = lowerMessage.includes("offline") || lowerMessage.includes("project not found");
-
-    const getErrorDetails = () => {
-        if (isPermissionDenied) {
-            return {
-                title: "Permission Denied",
-                description: "Your Firestore Security Rules are blocking access.",
-                fixTitle: "How to Fix: Update Security Rules",
-                fixSteps: (
-                    <>
-                        <p>To allow this app to work, you need to allow read/write access in your Firestore Security Rules.</p>
-                        <ol className="list-decimal list-inside space-y-3 mt-3">
-                            <li>Go to the <a href={`https://console.firebase.google.com/project/${projectId}/firestore/rules`} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-bold">Firestore Rules Tab</a> for project <strong>{projectId}</strong>.</li>
-                            <li><strong>Delete</strong> the existing rules and <strong>paste</strong> the following:</li>
-                        </ol>
-                        <pre className="bg-gray-800 text-green-400 p-4 rounded-lg text-sm overflow-x-auto font-mono border border-gray-700 shadow-inner my-3">
-{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}`}
-                        </pre>
-                        <p className="text-sm bg-yellow-50 p-3 rounded border border-yellow-200 text-yellow-800">
-                            <strong>Note:</strong> These rules allow <strong>public access</strong>. This is fine for development but should be restricted for production.
-                        </p>
-                        <p className="mt-2">Click <strong>Publish</strong>, wait 30 seconds, and then reload this page.</p>
-                    </>
-                )
-            };
-        }
-        
-        if (isApiNotEnabled || isOfflineOrProjectNotFound) {
-             return {
-                title: "Database Not Found",
-                description: isOfflineOrProjectNotFound ? `The project ID "${projectId}" might be incorrect or the database doesn't exist.` : `The Firestore database has not been created or enabled for project "${projectId}".`,
-                fixTitle: "How to Fix: Create Firestore Database",
-                fixSteps: (
-                    <ol className="list-decimal list-inside space-y-4 text-gray-700">
-                        <li className="pl-2">
-                            <strong>Open Firebase Console:</strong> Go to <a href={`https://console.firebase.google.com/project/${projectId}/firestore`} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-medium">Firestore Database for {projectId}</a>.
-                        </li>
-                        <li className="pl-2">
-                            <strong>Create Database:</strong> Click the <strong>Create Database</strong> button.
-                        </li>
-                        <li className="pl-2">
-                            <strong>Select Test Mode:</strong> When prompted, select <strong>Start in Test Mode</strong>. This sets the correct permissions for development.
-                        </li>
-                        <li className="pl-2">
-                            <strong>Location:</strong> Choose a location and click <strong>Enable</strong>. Wait a minute for it to provision.
-                        </li>
-                    </ol>
-                )
-            };
-        }
-
-        return {
-            title: "Database Connection Issue",
-            description: "An unexpected error occurred while trying to connect to Firestore.",
-            fixTitle: "Troubleshooting Steps",
-            fixSteps: (
-                 <ol className="list-decimal list-inside space-y-2">
-                    <li>Verify the <strong>projectId</strong> in <code>services/firebase.ts</code> matches your Firebase project.</li>
-                    <li>Ensure you have an active internet connection.</li>
-                    <li>Check the <a href="https://status.firebase.google.com/" target="_blank" rel="noreferrer" className="text-indigo-600 underline">Firebase Status Dashboard</a> for outages.</li>
-                </ol>
-            )
-        };
-    };
-
-    const { title, description, fixTitle, fixSteps } = getErrorDetails();
-
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
             <div className="max-w-3xl w-full bg-white rounded-2xl shadow-xl p-8 border-t-4 border-indigo-600">
@@ -155,32 +80,25 @@ service cloud.firestore {
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
-                        <p className="text-gray-500">{description}</p>
+                        <h1 className="text-2xl font-bold text-gray-900">Database Connection Error</h1>
+                        <p className="text-gray-500">Could not connect to the database.</p>
                     </div>
                 </div>
-
                 <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm text-red-800 mb-6 break-all border border-gray-300">
                     <strong>Error:</strong> {message}
                 </div>
-                
-                 <div className="space-y-4 text-gray-700">
-                    <h3 className="text-lg font-bold text-gray-900 border-b pb-2 mb-2">{fixTitle}</h3>
-                    {fixSteps}
-                </div>
-
                 <div className="mt-8 flex justify-center">
                     <button 
                         onClick={() => window.location.reload()} 
                         className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors shadow-lg transform hover:-translate-y-0.5 active:translate-y-0"
                     >
-                        I've Fixed It - Reload App
+                        Reload App
                     </button>
                 </div>
             </div>
         </div>
     );
-}
+};
 
 const MaintenancePage: React.FC = () => (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4">
@@ -254,7 +172,6 @@ const CreatorVerificationBanner: React.FC<{
     );
 };
 
-// Fix: Add pagination limit constant
 const INFLUENCER_PAGE_LIMIT = 12;
 
 const App: React.FC = () => {
@@ -291,7 +208,6 @@ const App: React.FC = () => {
   const [allRefunds, setAllRefunds] = useState<RefundRequest[]>([]);
   const [allDailyPayouts, setAllDailyPayouts] = useState<DailyPayoutRequest[]>([]);
 
-  // Fix: Add state variables for pagination
   const [lastInfluencerDoc, setLastInfluencerDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreInfluencers, setHasMoreInfluencers] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -304,6 +220,10 @@ const App: React.FC = () => {
   const [liveHelpSessionId, setLiveHelpSessionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isFeedOpen, setIsFeedOpen] = useState(false);
+
+  // EMI Splash State
+  const [showEmiSplash, setShowEmiSplash] = useState(true);
+  const [payingEmi, setPayingEmi] = useState<{ collab: AdSlotRequest | BannerAdBookingRequest, emi: EmiItem } | null>(null);
 
   // New state variables for app mode and community feed
   const [appMode, setAppMode] = useState<'dashboard' | 'community'>('dashboard');
@@ -369,6 +289,7 @@ const App: React.FC = () => {
         
         // Data for discovery pages (for all roles that can see them)
         if (user.role === 'brand' || user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') {
+          // FIX: Passed 1 argument instead of 2.
           const influencerResult = await apiService.getInfluencersPaginated({ limit: INFLUENCER_PAGE_LIMIT });
           setInfluencers(influencerResult.influencers);
           setFilteredInfluencers(influencerResult.influencers);
@@ -391,7 +312,9 @@ const App: React.FC = () => {
                 apiService.getAllCampaignApplications(),
                 apiService.getAllAdSlotRequests(),
                 apiService.getAllBannerAdBookingRequests(),
+                // FIX: Corrected function name from 'getAllRefundRequests' to 'getAllRefunds'.
                 apiService.getAllRefunds(),
+                // FIX: Corrected function name from 'getAllDailyPayoutRequests' to 'getAllDailyPayouts' as suggested by the error.
                 apiService.getAllDailyPayouts(),
             ]);
             setAllUsers(allUserData);
@@ -414,6 +337,7 @@ const App: React.FC = () => {
 
     setIsLoadingMore(true);
     try {
+        // FIX: Passed 1 argument instead of 2.
         const result = await apiService.getInfluencersPaginated({
             limit: INFLUENCER_PAGE_LIMIT,
             startAfterDoc: lastInfluencerDoc!,
@@ -490,6 +414,7 @@ const App: React.FC = () => {
   const unreadCount = useMemo(() => notifications.filter(n => !n.isRead).length, [notifications]);
 
   const handleNotificationClick = (notification: AppNotification) => {
+    // FIX: Passed 2 arguments instead of 1.
     if (!notification.isRead && user) {
         apiService.markNotificationAsRead(user.id, notification.id);
     }
@@ -521,6 +446,8 @@ const App: React.FC = () => {
       }
   
       setIsSearching(true);
+      // Simulate a small delay for better UX, since this is a client-side filter
+      // and could be instant.
       setTimeout(() => {
           const results = influencers.filter(inf => {
               return (
@@ -585,6 +512,7 @@ const App: React.FC = () => {
         setActiveView(View.PAYOUT_REQUEST);
       } catch (error) {
         console.error("Failed to refresh settings before showing payout page:", error);
+        // Fallback to showing the page with potentially stale settings if the refresh fails
         setPayoutRequestCollab(collab);
         setActiveView(View.PAYOUT_REQUEST);
       }
@@ -613,6 +541,12 @@ const App: React.FC = () => {
       } catch (error) {
           console.error("Failed to toggle follow:", error);
       }
+  };
+
+  const handleEmiPaymentComplete = () => {
+      setPayingEmi(null);
+      refreshAllData(); // Refresh data to update status
+      window.location.reload(); // Hard reload to ensure fresh state
   };
 
   if (configError) {
@@ -746,6 +680,7 @@ const App: React.FC = () => {
                 />
               ))}
             </div>
+            {/* Fix: Add 'load more' button for pagination */}
             {hasMoreInfluencers && (
                 <div className="mt-8 text-center">
                     <button onClick={loadMoreInfluencers} disabled={isLoadingMore} className="px-6 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 disabled:opacity-50">
@@ -772,7 +707,7 @@ const App: React.FC = () => {
                     onUpdate={refreshAllData} 
                 />;
       case View.SETTINGS:
-        if (user.role === 'staff') return <div className="bg-white dark:bg-gray-800 shadow-lg rounded-2xl"><SettingsPanel onSettingsUpdate={refreshPlatformSettings} /></div>;
+        if (user.role === 'staff') return <div className="bg-white dark:bg-gray-800 shadow-lg rounded-2xl overflow-hidden"><SettingsPanel onSettingsUpdate={refreshPlatformSettings} /></div>;
         return <ProfilePage user={user} onProfileUpdate={handleProfileUpdate} onGoToMembership={() => setActiveView(View.MEMBERSHIP)} platformSettings={platformSettings} onGoToDashboard={() => setActiveView(View.DASHBOARD)} setActiveView={setActiveView} />;
       case View.PROFILE:
         return <ProfilePage user={user} onProfileUpdate={handleProfileUpdate} onGoToMembership={() => setActiveView(View.MEMBERSHIP)} platformSettings={platformSettings} onGoToDashboard={() => setActiveView(View.DASHBOARD)} setActiveView={setActiveView} />;
@@ -800,9 +735,6 @@ const App: React.FC = () => {
       case View.LIVETV:
         if (user.role === 'livetv') return <AdRequestsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Live TV</h2><p className="dark:text-gray-300">This feature is not available for your account type.</p></div>;
-      case View.MY_CHANNEL:
-        if (user.role === 'livetv') return <MyChannelPage user={user} />;
-        return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Access Denied</h2><p className="dark:text-gray-300">This feature is only for Live TV channels.</p></div>;
       case View.BANNERADS:
         if (user.role === 'banneragency') return <AdBookingsPage user={user} onStartChat={handleConversationSelected} platformSettings={platformSettings} onInitiatePayout={handleInitiatePayout} refreshUser={refreshUser} />;
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Banner Ads</h2><p className="dark:text-gray-300">This feature is not available for your account type.</p></div>;
@@ -813,8 +745,8 @@ const App: React.FC = () => {
         return <MembershipPage user={user} platformSettings={platformSettings} onActivationSuccess={handleMembershipActivated} />;
       case View.PAYMENT_HISTORY:
         return <PaymentHistoryPage user={user} />;
-      case View.LEADERBOARD:
-        return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Leaderboard</h2><p className="dark:text-gray-300">Coming soon.</p></div>;
+      case View.MY_CHANNEL:
+        return <MyChannelPage user={user} />;
       default:
         return <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow"><h2 className="text-2xl font-bold dark:text-gray-100">Welcome</h2><p className="dark:text-gray-300">Select a view from the sidebar.</p></div>;
     }
@@ -937,6 +869,36 @@ const App: React.FC = () => {
         onNotificationClick={handleNotificationClick}
         onMarkAllAsRead={handleMarkAllAsRead}
       />
+
+      {/* EMI SPLASH */}
+      {showEmiSplash && user.role === 'brand' && (
+          <EmiReminderSplash 
+            user={user} 
+            onClose={() => setShowEmiSplash(false)} 
+            onPayNow={(collab, emi) => {
+                setPayingEmi({ collab, emi });
+                setShowEmiSplash(false);
+            }} 
+          />
+      )}
+
+      {/* EMI Payment Modal */}
+      {payingEmi && (
+          <CashfreeModal
+            user={user}
+            collabType={payingEmi.collab.hasOwnProperty('liveTvId') ? 'ad_slot' : 'banner_booking'}
+            baseAmount={payingEmi.emi.amount}
+            platformSettings={platformSettings}
+            onClose={() => setPayingEmi(null)}
+            transactionDetails={{
+                userId: user.id,
+                description: `EMI Payment: ${payingEmi.collab.campaignName} - ${payingEmi.emi.description}`,
+                relatedId: payingEmi.collab.id,
+                collabId: payingEmi.collab.collabId,
+                additionalMeta: { emiId: payingEmi.emi.id } // Pass EMI ID to backend to mark specifically this EMI as paid
+            }}
+          />
+      )}
     </div>
   );
 };

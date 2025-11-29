@@ -1,12 +1,10 @@
 
-
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, PlatformBanner, UserRole, StaffPermission, RefundRequest, DailyPayoutRequest, Dispute, CombinedCollabItem, Partner, DiscountSetting, Leaderboard, LeaderboardEntry, Agreements, KycDetails, CreatorVerificationDetails } from '../types';
 import { Timestamp } from 'firebase/firestore';
 import AdminPaymentHistoryPage from './AdminPaymentHistoryPage';
-import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, CheckBadgeIcon, TrophyIcon, DocumentTextIcon, SearchIcon, PencilIcon, TrashIcon, EyeIcon, LockClosedIcon, LockOpenIcon } from './Icons';
+import { AnalyticsIcon, PaymentIcon, CommunityIcon, SupportIcon, CollabIcon, AdminIcon as KycIcon, UserGroupIcon, SparklesIcon, RocketIcon, ExclamationTriangleIcon, BannerAdsIcon, CheckBadgeIcon, TrophyIcon, DocumentTextIcon, SearchIcon, PencilIcon, TrashIcon, EyeIcon, LockClosedIcon, LockOpenIcon, BanknotesIcon, AdminIcon } from './Icons';
 import LiveHelpPanel from './LiveHelpPanel';
 import PayoutsPanel from './PayoutsPanel';
 import MarketingPanel from './MarketingPanel';
@@ -20,7 +18,7 @@ import StaffLoginModal from './StaffLoginModal';
 import CommunityPage from './CommunityPage';
 import UserDetailView from './UserDetailView';
 
-type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands' | 'leaderboards' | 'agreements';
+type AdminTab = 'dashboard' | 'user_management' | 'staff_management' | 'collaborations' | 'kyc' | 'creator_verification' | 'payouts' | 'payment_history' | 'community' | 'live_help' | 'marketing' | 'disputes' | 'discounts' | 'platform_banners' | 'client_brands' | 'leaderboards' | 'agreements' | 'emi_management';
 
 interface AdminPanelProps {
     user: User;
@@ -58,6 +56,106 @@ const ToggleSwitch: React.FC<{ enabled: boolean; onChange: (enabled: boolean) =>
         />
     </button>
 );
+
+const STAFF_PERMISSIONS_CONFIG: { id: StaffPermission; label: string; description: string }[] = [
+    { id: 'super_admin', label: 'Super Admin', description: 'Full access to all settings and panels.' },
+    { id: 'user_management', label: 'User Management', description: 'Manage users, block accounts, reset passwords.' },
+    { id: 'financial', label: 'Financials & Payouts', description: 'Process payouts, refunds, EMI, and view transaction history.' },
+    { id: 'collaborations', label: 'Collaborations', description: 'View and manage collaboration requests.' },
+    { id: 'kyc', label: 'KYC & Verification', description: 'Approve or reject KYC documents and creator verifications.' },
+    { id: 'support', label: 'Support Tickets', description: 'Manage and reply to support tickets.' },
+    { id: 'live_help', label: 'Live Help Chat', description: 'Respond to live chat requests from users.' },
+    { id: 'community', label: 'Community Mod', description: 'Moderate community posts and comments.' },
+    { id: 'marketing', label: 'Marketing & Ads', description: 'Manage banners, partners, push notifications, and emails.' },
+    { id: 'analytics', label: 'Analytics', description: 'View dashboard analytics.' },
+];
+
+const StaffPermissionModal: React.FC<{
+    user: User;
+    onClose: () => void;
+    onSave: () => void;
+}> = ({ user, onClose, onSave }) => {
+    const [permissions, setPermissions] = useState<StaffPermission[]>(user.staffPermissions || []);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const togglePermission = (permId: StaffPermission) => {
+        if (permissions.includes(permId)) {
+            setPermissions(prev => prev.filter(p => p !== permId));
+        } else {
+            setPermissions(prev => [...prev, permId]);
+        }
+    };
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            await apiService.updateUser(user.id, { staffPermissions: permissions });
+            onSave();
+            onClose();
+        } catch (error) {
+            console.error("Failed to update permissions:", error);
+            alert("Failed to update staff permissions.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[80] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[85vh] flex flex-col">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-800 dark:text-white">Edit Permissions</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 text-2xl">&times;</button>
+                </div>
+                
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    Managing roles for <span className="font-semibold text-gray-800 dark:text-gray-200">{user.name}</span> ({user.email})
+                </p>
+
+                <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+                    {STAFF_PERMISSIONS_CONFIG.map((perm) => {
+                        const isChecked = permissions.includes(perm.id);
+                        return (
+                            <label key={perm.id} className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-700/50 dark:border-gray-600'}`}>
+                                <input 
+                                    type="checkbox" 
+                                    checked={isChecked} 
+                                    onChange={() => togglePermission(perm.id)}
+                                    className="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                />
+                                <div className="ml-3">
+                                    <span className={`block text-sm font-medium ${isChecked ? 'text-indigo-800 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                                        {perm.label}
+                                    </span>
+                                    <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                        {perm.description}
+                                    </span>
+                                </div>
+                            </label>
+                        );
+                    })}
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
+                    <button 
+                        onClick={onClose} 
+                        disabled={isSaving}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleSave} 
+                        disabled={isSaving}
+                        className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-md disabled:opacity-50"
+                    >
+                        {isSaving ? 'Saving...' : 'Save Permissions'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const DisputeResolutionModal: React.FC<{
     dispute: Dispute;
@@ -217,36 +315,167 @@ const DashboardPanel: React.FC<{ users: User[], collaborations: CombinedCollabIt
     );
 };
 
+const EmiDashboardPanel: React.FC<{ collaborations: CombinedCollabItem[] }> = ({ collaborations }) => {
+    const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+
+    const pendingEmis = useMemo(() => {
+        const emis: any[] = [];
+        collaborations.forEach(collab => {
+            const data = collab.originalData as any;
+            if (data.paymentPlan === 'emi' && data.emiSchedule) {
+                data.emiSchedule.forEach((emi: any) => {
+                    if (emi.status !== 'paid') {
+                        emis.push({
+                            ...emi,
+                            collabTitle: collab.title,
+                            collabId: collab.id,
+                            visibleCollabId: collab.visibleCollabId,
+                            brandId: data.brandId,
+                            brandName: data.brandName,
+                            dueDateObj: new Date(emi.dueDate)
+                        });
+                    }
+                });
+            }
+        });
+        return emis.sort((a, b) => a.dueDateObj.getTime() - b.dueDateObj.getTime());
+    }, [collaborations]);
+
+    const handleSendReminder = async (emi: any) => {
+        if (!emi.brandId) return;
+        setSendingReminder(emi.id);
+        try {
+            await apiService.sendUserNotification(
+                emi.brandId,
+                "Payment Reminder",
+                `Your EMI payment for ${emi.collabTitle} (${emi.description}) is due on ${emi.dueDateObj.toLocaleDateString()}. Please pay to avoid penalties.`
+            );
+            alert("Reminder sent successfully!");
+        } catch (error) {
+            console.error("Failed to send reminder:", error);
+            alert("Failed to send reminder.");
+        } finally {
+            setSendingReminder(null);
+        }
+    };
+
+    return (
+        <div className="p-6 h-full overflow-y-auto">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">EMI Management</h2>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                        <tr>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Due Date</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Amount</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Campaign</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Brand</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Status</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {pendingEmis.length === 0 ? (
+                            <tr><td colSpan={6} className="p-8 text-center text-gray-500">No pending EMI payments found.</td></tr>
+                        ) : (
+                            pendingEmis.map((emi) => {
+                                const isOverdue = emi.dueDateObj < new Date();
+                                return (
+                                    <tr key={`${emi.collabId}-${emi.id}`} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        <td className="p-4 dark:text-white">
+                                            {emi.dueDateObj.toLocaleDateString()}
+                                            {isOverdue && <span className="ml-2 text-xs text-red-500 font-bold">OVERDUE</span>}
+                                        </td>
+                                        <td className="p-4 font-bold text-gray-800 dark:text-gray-200">₹{emi.amount.toLocaleString()}</td>
+                                        <td className="p-4">
+                                            <div className="font-medium dark:text-white">{emi.collabTitle}</div>
+                                            <div className="text-xs text-gray-500 font-mono">{emi.visibleCollabId}</div>
+                                        </td>
+                                        <td className="p-4 dark:text-gray-300">{emi.brandName}</td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-1 rounded text-xs capitalize ${isOverdue ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                                {isOverdue ? 'Overdue' : 'Pending'}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <button 
+                                                onClick={() => handleSendReminder(emi)}
+                                                disabled={sendingReminder === emi.id}
+                                                className="px-3 py-1.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded text-xs font-semibold disabled:opacity-50"
+                                            >
+                                                {sendingReminder === emi.id ? 'Sending...' : 'Send Reminder'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 const StaffManagementPanel: React.FC<{ staffUsers: User[], onUpdate: () => void, platformSettings: PlatformSettings }> = ({ staffUsers, onUpdate, platformSettings }) => {
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+    const [editingPermissionsUser, setEditingPermissionsUser] = useState<User | null>(null);
+
     return (
         <div className="p-6 h-full overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Staff Management</h2>
-                <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Add Staff</button>
+                <button onClick={() => setIsLoginModalOpen(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm flex items-center gap-2">
+                    <AdminIcon className="w-4 h-4" /> Add Staff
+                </button>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
                 <table className="w-full text-left">
                     <thead className="bg-gray-50 dark:bg-gray-700">
-                        <tr><th className="p-4 text-gray-600 dark:text-gray-300">Name</th><th className="p-4 text-gray-600 dark:text-gray-300">Email</th><th className="p-4 text-gray-600 dark:text-gray-300">Role</th></tr>
+                        <tr>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Name</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Email</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300">Role</th>
+                            <th className="p-4 text-gray-600 dark:text-gray-300 text-right">Actions</th>
+                        </tr>
                     </thead>
                     <tbody>
                         {staffUsers.map(u => (
-                            <tr key={u.id} className="border-t dark:border-gray-700">
-                                <td className="p-4 dark:text-white">{u.name}</td>
-                                <td className="p-4 dark:text-white">{u.email}</td>
-                                <td className="p-4 capitalize dark:text-white">{u.role}</td>
+                            <tr key={u.id} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                                <td className="p-4 dark:text-white font-medium">{u.name}</td>
+                                <td className="p-4 dark:text-white text-sm">{u.email}</td>
+                                <td className="p-4 capitalize dark:text-white text-sm">
+                                    {u.staffPermissions?.includes('super_admin') ? (
+                                        <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">Super Admin</span>
+                                    ) : 'Staff'}
+                                </td>
+                                <td className="p-4 text-right">
+                                    <button 
+                                        onClick={() => setEditingPermissionsUser(u)} 
+                                        className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                                        title="Edit Permissions"
+                                    >
+                                        <PencilIcon className="w-4 h-4" />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-            {isModalOpen && <StaffLoginModal onClose={() => { setIsModalOpen(false); onUpdate(); }} platformSettings={platformSettings} />}
+            {isLoginModalOpen && <StaffLoginModal onClose={() => { setIsLoginModalOpen(false); onUpdate(); }} platformSettings={platformSettings} />}
+            {editingPermissionsUser && (
+                <StaffPermissionModal 
+                    user={editingPermissionsUser} 
+                    onClose={() => setEditingPermissionsUser(null)} 
+                    onSave={onUpdate} 
+                />
+            )}
         </div>
     );
 };
 
-const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allTransactions: Transaction[], onUpdate: (id: string, type: string, data: any) => Promise<void> }> = ({ collaborations, onUpdate }) => {
+const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allTransactions: Transaction[], onUpdate: (id: string, type: string, data: any) => Promise<void>, currentUser: User }> = ({ collaborations, onUpdate, currentUser }) => {
     const [selectedCollab, setSelectedCollab] = useState<CombinedCollabItem | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -303,7 +532,7 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allT
                     </tbody>
                 </table>
             </div>
-            {selectedCollab && <CollabDetailsModal collab={selectedCollab.originalData} onClose={() => setSelectedCollab(null)} />}
+            {selectedCollab && <CollabDetailsModal collab={selectedCollab.originalData} onClose={() => setSelectedCollab(null)} currentUser={currentUser} />}
         </div>
     );
 };
@@ -526,6 +755,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
         { id: 'user_management', label: 'User Management', icon: UserGroupIcon, permission: 'user_management' },
         { id: 'staff_management', label: 'Staff Management', icon: UserGroupIcon, permission: 'super_admin' },
         { id: 'collaborations', label: 'Collaborations', icon: CollabIcon, permission: 'collaborations' },
+        { id: 'emi_management', label: 'EMI Management', icon: BanknotesIcon, permission: 'financial' },
         { id: 'kyc', label: 'KYC Verification', icon: KycIcon, permission: 'kyc' },
         { id: 'creator_verification', label: 'Creator Verification', icon: CheckBadgeIcon, permission: 'kyc' },
         { id: 'payouts', label: 'Payouts & Refunds', icon: PaymentIcon, permission: 'financial' },
@@ -559,7 +789,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, allUsers, allTrans
             case 'dashboard': return <DashboardPanel users={allUsers} collaborations={combinedCollaborations} transactions={allTransactions} payouts={allPayouts} dailyPayouts={allDailyPayouts} />;
             case 'user_management': return <UserManagementPanel allUsers={allUsers} onUpdate={handleRefresh} transactions={allTransactions} payouts={allPayouts} collabs={allCollabs} />;
             case 'staff_management': return <StaffManagementPanel staffUsers={staffUsers} onUpdate={handleRefresh} platformSettings={platformSettings} />;
-            case 'collaborations': return <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} />;
+            case 'collaborations': return <CollaborationsPanel collaborations={combinedCollaborations} allTransactions={allTransactions} onUpdate={handleCollabUpdate} currentUser={user} />;
+            case 'emi_management': return <EmiDashboardPanel collaborations={combinedCollaborations} />;
             case 'kyc': return <KycPanel onUpdate={handleRefresh} />;
             case 'creator_verification': return <CreatorVerificationPanel onUpdate={handleRefresh} />;
             case 'payouts': return <PayoutsPanel payouts={allPayouts} refunds={allRefunds} dailyPayouts={allDailyPayouts} collaborations={combinedCollaborations} allTransactions={allTransactions} allUsers={allUsers} onUpdate={handleRefresh} />;

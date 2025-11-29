@@ -1,14 +1,19 @@
 
+
+
+
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
+import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest, EmiItem } from '../types';
 import { apiService } from '../services/apiService';
 import PostBannerAdModal from './PostBannerAdModal';
 import { Timestamp } from 'firebase/firestore';
 import CashfreeModal from './PhonePeModal';
 import DisputeModal from './DisputeModal';
-import { TrashIcon, MessagesIcon, EyeIcon, SparklesIcon } from './Icons';
+import { TrashIcon, MessagesIcon, EyeIcon, SparklesIcon, BanknotesIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
 import CancellationPenaltyModal from './CancellationPenaltyModal';
+import { calculateAdPricing, generateEmiSchedule } from '../services/utils';
 
 type AdRequest = (AdSlotRequest & { type: 'Live TV' }) | (BannerAdBookingRequest & { type: 'Banner Ad' });
 
@@ -40,21 +45,173 @@ const RequestStatusBadge: React.FC<{ status: AdBookingStatus }> = ({ status }) =
     return <span className={`${baseClasses} ${classes}`}>{text}</span>;
 };
 
-const OfferModal: React.FC<{ type: 'accept' | 'recounter'; currentOffer?: string; providerName?: string; onClose: () => void; onConfirm: (amount: string) => void; }> = ({ type, currentOffer, providerName, onClose, onConfirm }) => {
-    const [amount, setAmount] = useState('');
+// Updated Offer Modal for Brand (Counter Offer) - also uses Daily Rate
+const OfferModal: React.FC<{ 
+    type: 'accept' | 'recounter'; 
+    req: AdRequest;
+    platformSettings: PlatformSettings;
+    providerName?: string; 
+    onClose: () => void; 
+    onConfirm: (dailyRate: number, totalAmount: string) => void; 
+}> = ({ type, req, platformSettings, providerName, onClose, onConfirm }) => {
+    const [dailyRate, setDailyRate] = useState('');
+    const [calculations, setCalculations] = useState<any>(null);
     const name = providerName || 'Agency';
+
+    useEffect(() => {
+        if (dailyRate && !isNaN(Number(dailyRate))) {
+            const pricing = calculateAdPricing(Number(dailyRate), req.startDate, req.endDate, platformSettings);
+            setCalculations(pricing);
+        } else {
+            setCalculations(null);
+        }
+    }, [dailyRate, req.startDate, req.endDate, platformSettings]);
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
                 <h3 className="text-lg font-bold mb-4 dark:text-gray-100">{type === 'accept' ? 'Accept with Offer' : 'Send Counter Offer'}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  {type === 'recounter' && currentOffer ? `${name}'s offer is ${currentOffer}. ` : ''}
-                  Propose your fee for this ad booking.
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                  {type === 'recounter' && req.currentOffer?.dailyRate ? `${name}'s offer is ₹${req.currentOffer.dailyRate}/day.` : ''}
                 </p>
-                <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g., 25000" className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
+                
+                <div className="mb-4">
+                    <label className="block text-xs font-bold text-red-600 mb-1">ENTER 24-HOUR RATE ONLY</label>
+                    <input 
+                        type="number" 
+                        value={dailyRate} 
+                        onChange={e => setDailyRate(e.target.value)} 
+                        placeholder="e.g., 2000" 
+                        className="w-full p-2 border-2 border-red-100 rounded-md focus:border-red-500 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 outline-none"
+                    />
+                    <p className="text-xs text-red-500 mt-1">* Do not enter total amount.</p>
+                </div>
+
+                {calculations && (
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-md mb-4 text-sm space-y-1">
+                        <div className="flex justify-between">
+                            <span>Duration:</span>
+                            <span className="font-bold">{calculations.durationDays} Days</span>
+                        </div>
+                        <div className="flex justify-between border-t border-gray-300 pt-1 mt-1 font-bold text-indigo-600">
+                            <span>Total Offer:</span>
+                            <span>₹{calculations.finalAmount.toLocaleString()}</span>
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex justify-end space-x-2 mt-4">
                     <button onClick={onClose} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-600 dark:text-gray-200">Cancel</button>
-                    <button onClick={() => onConfirm(amount)} className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white">Send Offer</button>
+                    <button 
+                        onClick={() => {
+                            if(calculations) onConfirm(Number(dailyRate), `₹${calculations.finalAmount.toFixed(2)}`);
+                        }} 
+                        disabled={!calculations}
+                        className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white disabled:opacity-50"
+                    >
+                        Send Offer
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// New Payment Selection Modal
+const PaymentSelectionModal: React.FC<{
+    req: AdRequest;
+    user: User;
+    platformSettings: PlatformSettings;
+    onClose: () => void;
+    onSelectOption: (option: 'full' | 'emi' | 'subscription') => void;
+    isProcessing: boolean;
+}> = ({ req, user, platformSettings, onClose, onSelectOption, isProcessing }) => {
+    const dailyRate = req.dailyRate || req.currentOffer?.dailyRate || 0;
+    const pricing = calculateAdPricing(dailyRate, req.startDate, req.endDate, platformSettings);
+    const emiSchedule = generateEmiSchedule(pricing.finalAmount, req.startDate, req.endDate);
+    const monthlyAmount = emiSchedule.length > 0 ? emiSchedule[0].amount : pricing.finalAmount;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg overflow-y-auto max-h-[90vh]">
+                <h3 className="text-xl font-bold mb-4 dark:text-white">Choose Payment Option</h3>
+                
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg mb-6 border border-indigo-100 dark:border-indigo-800">
+                    <div className="flex justify-between items-center mb-1">
+                        <span className="text-gray-600 dark:text-gray-300 font-medium">Total Payable Amount</span>
+                        <span className="text-xl font-extrabold text-indigo-700 dark:text-indigo-400">₹{pricing.finalAmount.toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 text-right">Includes GST & Fees</p>
+                </div>
+
+                <div className="space-y-4">
+                    {/* Option 1: Full Payment */}
+                    <button 
+                        onClick={() => onSelectOption('full')}
+                        disabled={isProcessing}
+                        className="w-full text-left p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all group disabled:opacity-50"
+                    >
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <span className="block font-bold text-gray-800 dark:text-white group-hover:text-indigo-600">One-Time Payment</span>
+                                <span className="text-sm text-gray-500 dark:text-gray-400">Pay full amount now</span>
+                            </div>
+                            <div className="h-6 w-6 rounded-full border-2 border-gray-300 group-hover:border-indigo-500"></div>
+                        </div>
+                    </button>
+
+                    {/* Option 2: Subscription (New) */}
+                    <button 
+                        onClick={() => onSelectOption('subscription')}
+                        disabled={isProcessing}
+                        className="w-full text-left p-4 border-2 border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl hover:border-indigo-500 transition-all group disabled:opacity-50 relative overflow-hidden"
+                    >
+                        <div className="absolute top-0 right-0 bg-indigo-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">RECOMMENDED</div>
+                        <div className="flex justify-between items-center mb-1">
+                            <div>
+                                <span className="block font-bold text-indigo-800 dark:text-indigo-300 group-hover:text-indigo-600">Subscribe (Auto-Pay)</span>
+                                <span className="text-sm text-gray-600 dark:text-gray-400">Recurring monthly payments</span>
+                            </div>
+                            <div className="h-6 w-6 rounded-full border-2 border-indigo-300 group-hover:border-indigo-500"></div>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            Set up auto-debit of <strong>₹{monthlyAmount.toLocaleString()}</strong> every month for {emiSchedule.length} months. No manual payments needed.
+                        </p>
+                    </button>
+
+                    {/* Option 3: Manual EMI */}
+                    <button 
+                        onClick={() => onSelectOption('emi')}
+                        disabled={isProcessing}
+                        className="w-full text-left p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all group disabled:opacity-50"
+                    >
+                        <div className="flex justify-between items-center mb-3">
+                            <div>
+                                <span className="block font-bold text-gray-800 dark:text-white group-hover:text-indigo-600">Manual EMI</span>
+                                <span className="text-sm text-gray-500 dark:text-gray-400">Pay manually each month</span>
+                            </div>
+                            <div className="h-6 w-6 rounded-full border-2 border-gray-300 group-hover:border-indigo-500"></div>
+                        </div>
+                        
+                        {/* EMI Preview */}
+                        <div className="bg-gray-100 dark:bg-gray-900/50 p-3 rounded-lg space-y-2 text-xs">
+                            {emiSchedule.map((emi, idx) => (
+                                <div key={idx} className="flex justify-between items-center">
+                                    <span className="text-gray-600 dark:text-gray-400 font-medium">
+                                        {idx === 0 ? '1st EMI (Pay Now)' : `${idx + 1}${idx === 1 ? 'nd' : idx === 2 ? 'rd' : 'th'} EMI`}
+                                    </span>
+                                    <div className="text-right">
+                                        <span className="block font-bold text-gray-800 dark:text-white">₹{emi.amount.toLocaleString()}</span>
+                                        <span className="text-[10px] text-gray-500">{new Date(emi.dueDate).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </button>
+                </div>
+
+                <div className="mt-6 text-right">
+                    <button onClick={onClose} disabled={isProcessing} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 text-sm">Cancel</button>
                 </div>
             </div>
         </div>
@@ -87,9 +244,13 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
     const [requests, setRequests] = useState<AdRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isCreatingSub, setIsCreatingSub] = useState(false);
+    
+    // Modal states
     const [payingRequest, setPayingRequest] = useState<AdRequest | null>(null);
+    const [emiPaymentItem, setEmiPaymentItem] = useState<EmiItem | null>(null); // Specific EMI being paid
     const [disputingRequest, setDisputingRequest] = useState<AdRequest | null>(null);
-    const [modal, setModal] = useState<'offer' | 'dispute' | 'details' | null>(null);
+    const [modal, setModal] = useState<'offer' | 'dispute' | 'details' | 'payment_select' | null>(null);
     const [selectedRequest, setSelectedRequest] = useState<AdRequest | null>(null);
     const [confirmAction, setConfirmAction] = useState<{req: AdRequest, action: 'approve_payment'} | null>(null);
     const [activeTab, setActiveTab] = useState<'pending' | 'inProgress' | 'completed'>('pending');
@@ -172,7 +333,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
         }
     };
 
-    const handleAction = (req: AdRequest, action: 'message' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'pay_now' | 'work_complete' | 'work_incomplete' | 'brand_complete_disputed' | 'brand_request_refund' | 'view_details') => {
+    const handleAction = (req: AdRequest, action: 'message' | 'accept_offer' | 'recounter_offer' | 'reject_offer' | 'pay_now' | 'work_complete' | 'work_incomplete' | 'brand_complete_disputed' | 'brand_request_refund' | 'view_details' | 'pay_emi') => {
         const agencyId = req.type === 'Live TV' ? req.liveTvId : req.agencyId;
         const agencyName = req.type === 'Live TV' ? (req as AdSlotRequest).liveTvName : (req as BannerAdBookingRequest).agencyName;
         const agencyAvatar = req.type === 'Live TV' ? (req as AdSlotRequest).liveTvAvatar : (req as BannerAdBookingRequest).agencyAvatar;
@@ -190,13 +351,24 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 setModal('offer');
                 break;
             case 'accept_offer':
-                handleUpdate(req, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount });
+                handleUpdate(req, { status: 'agreement_reached', finalAmount: req.currentOffer?.amount, dailyRate: req.currentOffer?.dailyRate });
                 break;
             case 'reject_offer':
                 handleUpdate(req, { status: 'rejected', rejectionReason: 'Offer rejected by brand.' });
                 break;
             case 'pay_now':
-                setPayingRequest(req);
+                // Open Payment Selection Modal
+                setModal('payment_select');
+                break;
+            case 'pay_emi':
+                // Logic to find the next pending EMI
+                const nextEmi = req.emiSchedule?.find(e => e.status === 'pending' || e.status === 'overdue');
+                if (nextEmi) {
+                    setPayingRequest(req);
+                    setEmiPaymentItem(nextEmi);
+                } else {
+                    alert("No pending EMIs found.");
+                }
                 break;
             case 'work_complete':
                 handleUpdate(req, { status: 'completed' });
@@ -210,6 +382,69 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
             case 'brand_request_refund':
                 onInitiateRefund(req);
                 break;
+        }
+    };
+
+    const handlePaymentSelect = async (option: 'full' | 'emi' | 'subscription') => {
+        if (!selectedRequest) return;
+        
+        const dailyRate = selectedRequest.dailyRate || selectedRequest.currentOffer?.dailyRate || 0;
+        const pricing = calculateAdPricing(dailyRate, selectedRequest.startDate, selectedRequest.endDate, platformSettings);
+
+        if (option === 'full') {
+            setPayingRequest(selectedRequest);
+            setEmiPaymentItem(null); 
+            setModal(null);
+        } else if (option === 'emi') {
+            const schedule = generateEmiSchedule(pricing.finalAmount, selectedRequest.startDate, selectedRequest.endDate);
+            await handleUpdate(selectedRequest, {
+                paymentPlan: 'emi',
+                emiSchedule: schedule,
+                finalAmount: `₹${pricing.finalAmount.toFixed(2)}`
+            });
+            const firstEmi = schedule[0];
+            setPayingRequest({...selectedRequest, paymentPlan: 'emi', emiSchedule: schedule, finalAmount: `₹${pricing.finalAmount.toFixed(2)}`});
+            setEmiPaymentItem(firstEmi);
+            setModal(null);
+        } else if (option === 'subscription') {
+            // Subscription Logic
+            setIsCreatingSub(true);
+            try {
+                // Generate a schedule just to calculate monthly amount, backend handles recurrence
+                const schedule = generateEmiSchedule(pricing.finalAmount, selectedRequest.startDate, selectedRequest.endDate);
+                const monthlyAmount = schedule[0]?.amount || pricing.finalAmount;
+
+                // Call Backend to Create Subscription
+                const result = await apiService.createSubscription({
+                    userId: user.id,
+                    amount: monthlyAmount,
+                    collabId: selectedRequest.id,
+                    description: `Subscription for ${selectedRequest.campaignName}`,
+                    phone: user.mobileNumber || '',
+                    email: user.email,
+                    returnUrl: window.location.href, // Redirect back here
+                    isAdSlot: selectedRequest.type === 'Live TV'
+                });
+
+                if (result.authLink) {
+                    // Update local state to mark as subscription planned
+                    await handleUpdate(selectedRequest, {
+                        paymentPlan: 'subscription',
+                        subscriptionId: result.subscriptionId,
+                        subscriptionLink: result.authLink,
+                        finalAmount: `₹${pricing.finalAmount.toFixed(2)}`
+                    });
+                    
+                    // Redirect to Cashfree Auth Link
+                    window.location.href = result.authLink;
+                } else {
+                    throw new Error("No authorization link returned");
+                }
+            } catch (err: any) {
+                console.error("Subscription setup failed:", err);
+                alert(`Failed to set up subscription: ${err.message}`);
+                setIsCreatingSub(false);
+            }
         }
     };
 
@@ -233,7 +468,20 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 actions.push({ label: 'Accept', action: 'accept_offer', style: 'text-green-600 hover:bg-green-50' });
                 break;
             case 'agreement_reached':
-                actions.push({ label: `Pay Now`, action: 'pay_now', style: 'text-green-600 hover:bg-green-50 font-bold' });
+                actions.push({ label: `Pay Now`, action: 'pay_now', style: 'text-green-600 hover:bg-green-50 font-bold', icon: <BanknotesIcon className="w-4 h-4" /> });
+                break;
+            case 'in_progress':
+                // Check for pending EMIs
+                if (req.paymentPlan === 'emi') {
+                    const pendingEmi = req.emiSchedule?.find(e => e.status === 'pending' || e.status === 'overdue');
+                    if (pendingEmi) {
+                        actions.push({ 
+                            label: `Pay EMI (₹${pendingEmi.amount.toLocaleString()})`, 
+                            action: 'pay_emi', 
+                            style: 'text-orange-600 bg-orange-100 hover:bg-orange-200 font-bold border-orange-200' 
+                        });
+                    }
+                }
                 break;
             case 'work_submitted':
                 actions.push({ label: 'Complete', action: 'work_complete', style: 'text-green-600 hover:bg-green-50' });
@@ -242,9 +490,6 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
             case 'brand_decision_pending':
                 actions.push({ label: 'Refund', action: 'brand_request_refund', style: 'text-red-600 hover:bg-red-50' });
                 actions.push({ label: 'Approve', action: 'brand_complete_disputed', style: 'text-green-600 hover:bg-green-50' });
-                break;
-            case 'refund_pending_admin_review':
-                // Do nothing, button hidden
                 break;
         }
         
@@ -262,26 +507,27 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
     // Helper function to display amounts clearly
     const getAmountDisplay = (req: AdRequest) => {
         if (req.finalAmount) {
-            return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
+            return (
+                <div className="flex flex-col">
+                    <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>
+                    {req.dailyRate && <span className="text-xs text-gray-500">(@ ₹{req.dailyRate}/day)</span>}
+                    {req.paymentPlan === 'emi' && (
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded inline-block mt-1 w-fit">EMI Plan</span>
+                    )}
+                    {req.paymentPlan === 'subscription' && (
+                        <span className="text-[10px] bg-purple-100 text-purple-700 px-1 rounded inline-block mt-1 w-fit">Auto-Pay</span>
+                    )}
+                </div>
+            );
         }
         if (req.currentOffer) {
-            let label = 'Agency Offer';
-            if (req.currentOffer.offeredBy === 'brand') {
-                label = 'My Offer';
-            } else {
-                if (req.type === 'Live TV') {
-                    label = `${(req as AdSlotRequest).liveTvName} Offer`;
-                } else {
-                    label = `${(req as BannerAdBookingRequest).agencyName} Offer`;
-                }
-            }
-
             return (
                 <div className="flex flex-col">
                     <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {label}
+                        {req.currentOffer.offeredBy === 'agency' ? 'Agency Offer' : 'My Offer'}
                     </span>
+                    {req.currentOffer.dailyRate && <span className="text-xs text-gray-400">Rate: ₹{req.currentOffer.dailyRate}/day</span>}
                 </div>
             );
         }
@@ -322,7 +568,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                                 </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
-                                {req.collabId || '-'}
+                                {req.collabId || req.id}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 {getAmountDisplay(req)}
@@ -375,33 +621,51 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                  renderTable(currentList)
             )}
 
+            {/* Modals */}
             {modal === 'details' && selectedRequest && (
-                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} />
+                <CollabDetailsModal collab={selectedRequest} onClose={() => { setModal(null); setSelectedRequest(null); }} currentUser={user} />
             )}
+            
             {modal === 'offer' && selectedRequest && (
                 <OfferModal 
                     type={selectedRequest.status === 'agency_offer' ? 'accept' : 'recounter'} 
-                    currentOffer={selectedRequest.currentOffer?.amount} 
+                    req={selectedRequest}
+                    platformSettings={platformSettings}
                     providerName={selectedRequest.type === 'Live TV' ? (selectedRequest as AdSlotRequest).liveTvName : (selectedRequest as BannerAdBookingRequest).agencyName}
                     onClose={() => setModal(null)} 
-                    onConfirm={(amount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: `₹${amount}`, offeredBy: 'brand' }})} 
+                    onConfirm={(dailyRate, totalAmount) => handleUpdate(selectedRequest, { status: 'brand_offer', currentOffer: { amount: totalAmount, dailyRate: dailyRate, offeredBy: 'brand' }, dailyRate: dailyRate })} 
                 />
             )}
+
+            {modal === 'payment_select' && selectedRequest && (
+                <PaymentSelectionModal
+                    req={selectedRequest}
+                    user={user}
+                    platformSettings={platformSettings}
+                    onClose={() => setModal(null)}
+                    onSelectOption={handlePaymentSelect}
+                    isProcessing={isCreatingSub}
+                />
+            )}
+
              {payingRequest && (
                 <CashfreeModal
                     user={user}
                     collabType={payingRequest.type === 'Live TV' ? 'ad_slot' : 'banner_booking'}
-                    baseAmount={parseFloat(payingRequest.finalAmount?.replace(/[^0-9.-]+/g, "") || "0")}
+                    baseAmount={emiPaymentItem ? emiPaymentItem.amount : parseFloat(payingRequest.finalAmount?.replace(/[^0-9.-]+/g, "") || "0")}
                     platformSettings={platformSettings}
                     onClose={() => {
                         setPayingRequest(null);
+                        setEmiPaymentItem(null);
                         fetchRequests();
                     }}
                     transactionDetails={{
                         userId: user.id,
-                        description: `Payment for ${payingRequest.type}: ${payingRequest.campaignName}`,
+                        description: emiPaymentItem ? `${payingRequest.campaignName} - ${emiPaymentItem.description}` : `Full Payment: ${payingRequest.campaignName}`,
                         relatedId: payingRequest.id,
                         collabId: payingRequest.collabId,
+                        // Pass specific EMI ID if applicable to update status
+                        additionalMeta: emiPaymentItem ? { emiId: emiPaymentItem.id } : undefined
                     }}
                 />
             )}
@@ -420,7 +684,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
                         <h3 className="text-lg font-bold dark:text-gray-100">Confirm Action</h3>
-                        <p className="text-gray-600 dark:text-gray-300 my-4">Are you sure you want to approve this work? This will mark the collaboration as complete and release the final payment to the agency.</p>
+                        <p className="text-gray-600 dark:text-gray-300 my-4">Are you sure you want to approve this work? This will mark the collaboration as complete.</p>
                         <div className="flex justify-end space-x-2">
                             <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-600 dark:text-gray-200">Cancel</button>
                             <button onClick={executeConfirmAction} className="px-4 py-2 text-sm rounded-md bg-green-600 text-white">Confirm &amp; Approve</button>

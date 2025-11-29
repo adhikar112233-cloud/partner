@@ -1,13 +1,9 @@
 
-
-
-
-
 import React, { useState } from 'react';
-import { PlatformSettings, CompanyInfo, TrainingVideo, UserRole } from '../types';
+import { PlatformSettings, CompanyInfo, TrainingVideo, UserRole, DiscountSetting } from '../types';
 import { apiService } from '../services/apiService';
 import { BACKEND_URL } from '../services/firebase';
-import { TrashIcon, AcademicCapIcon } from './Icons';
+import { TrashIcon, AcademicCapIcon, SparklesIcon } from './Icons';
 
 interface SettingsPanelProps {
     onSettingsUpdate: () => void;
@@ -55,9 +51,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
 
     React.useEffect(() => {
         apiService.getPlatformSettings().then(data => {
-            // Ensure trainingVideos structure exists
+            // Ensure structures exist
             if (!data.trainingVideos) {
                 data.trainingVideos = { brand: [], influencer: [], livetv: [], banneragency: [] };
+            }
+            if (!data.discountSettings) {
+                data.discountSettings = {
+                    creatorProfileBoost: { isEnabled: false, percentage: 0 },
+                    brandMembership: { isEnabled: false, percentage: 0 },
+                    creatorMembership: { isEnabled: false, percentage: 0 },
+                    brandCampaignBoost: { isEnabled: false, percentage: 0 },
+                    brandBannerBoost: { isEnabled: false, percentage: 0 }
+                };
             }
             setSettings(data);
             setIsLoading(false);
@@ -67,6 +72,33 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
     const handleSettingChange = (key: keyof PlatformSettings, value: any) => {
         if (settings) {
             setSettings({ ...settings, [key]: value });
+        }
+    };
+
+    const handleNestedSettingChange = (parent: keyof PlatformSettings, key: string, value: any) => {
+        if (settings) {
+            setSettings({
+                ...settings,
+                [parent]: {
+                    ...(settings[parent] as any),
+                    [key]: value
+                }
+            });
+        }
+    };
+
+    const handleDiscountChange = (key: keyof PlatformSettings['discountSettings'], field: 'isEnabled' | 'percentage', value: any) => {
+        if (settings && settings.discountSettings) {
+            setSettings({
+                ...settings,
+                discountSettings: {
+                    ...settings.discountSettings,
+                    [key]: {
+                        ...settings.discountSettings[key],
+                        [field]: value
+                    }
+                }
+            });
         }
     };
 
@@ -139,6 +171,52 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
 
     if (isLoading || !settings) return <div className="p-8 text-center dark:text-gray-300">Loading settings...</div>;
 
+    const DiscountRow = ({ 
+        label, 
+        settingKey, 
+        basePriceKey 
+    }: { 
+        label: string, 
+        settingKey: keyof PlatformSettings['discountSettings'],
+        basePriceKey?: keyof PlatformSettings['boostPrices']
+    }) => {
+        const discount = settings.discountSettings[settingKey];
+        return (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border dark:border-gray-600 gap-4">
+                <div className="flex-1">
+                    <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{label}</p>
+                    {basePriceKey && (
+                        <div className="mt-1 flex items-center gap-2">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Base Price: ₹</span>
+                            <input 
+                                type="number" 
+                                value={settings.boostPrices[basePriceKey]} 
+                                onChange={(e) => handleNestedSettingChange('boostPrices', basePriceKey, Number(e.target.value))}
+                                className="w-20 p-1 text-xs border rounded dark:bg-gray-800 dark:border-gray-500 dark:text-white"
+                            />
+                        </div>
+                    )}
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Discount:</span>
+                        <input 
+                            type="number" 
+                            value={discount.percentage} 
+                            onChange={(e) => handleDiscountChange(settingKey, 'percentage', Number(e.target.value))}
+                            className="w-16 p-1 text-sm border rounded dark:bg-gray-800 dark:border-gray-500 dark:text-white"
+                            min="0" max="100"
+                        />
+                        <span className="text-sm dark:text-gray-300">%</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <ToggleSwitch enabled={discount.isEnabled} onChange={(val) => handleDiscountChange(settingKey, 'isEnabled', val)} />
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
             <div className="px-6 py-4 border-b dark:border-gray-700 flex justify-between items-center sticky top-0 bg-white dark:bg-gray-800 z-10">
@@ -150,6 +228,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
             
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 
+                {/* Boost Plans & Discounts */}
+                <div className="px-6 py-3 bg-yellow-50 dark:bg-yellow-900/20"><h4 className="font-semibold text-yellow-800 dark:text-yellow-200 flex items-center gap-2"><SparklesIcon className="w-5 h-5"/> Boost Plans & Discounts</h4></div>
+                <SettingRow label="Boost Pricing & Offers" helpText="Set base prices for boosts and configure discount percentages to attract more users.">
+                    <div className="space-y-3">
+                        <DiscountRow label="Influencer Profile Boost" settingKey="creatorProfileBoost" basePriceKey="profile" />
+                        <DiscountRow label="Campaign Boost (Brand)" settingKey="brandCampaignBoost" basePriceKey="campaign" />
+                        <DiscountRow label="Banner Ad Boost (Agency)" settingKey="brandBannerBoost" basePriceKey="banner" />
+                    </div>
+                </SettingRow>
+                <SettingRow label="Membership Discounts" helpText="Apply discounts to membership plans.">
+                    <div className="space-y-3">
+                        <DiscountRow label="Brand Membership Plans" settingKey="brandMembership" />
+                        <DiscountRow label="Creator Membership Plans" settingKey="creatorMembership" />
+                    </div>
+                </SettingRow>
+
                 {/* Training Resources Section */}
                 <div className="px-6 py-3 bg-indigo-50 dark:bg-indigo-900/20"><h4 className="font-semibold text-indigo-800 dark:text-indigo-200 flex items-center gap-2"><AcademicCapIcon className="w-5 h-5"/> Training Resources</h4></div>
                 
@@ -217,7 +311,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsUpdate }) => {
                     </div>
                 </SettingRow>
 
-                {/* Company Information (New Section) */}
+                {/* Company Information */}
                 <div className="px-6 py-3 bg-purple-50 dark:bg-purple-900/20"><h4 className="font-semibold text-purple-800 dark:text-purple-200">Company Information (For Agreements)</h4></div>
                 <SettingRow label="Company Name" helpText="The official name of your company displayed in user agreements.">
                     <input type="text" value={settings.companyInfo?.name || ''} onChange={e => handleCompanyInfoChange('name', e.target.value)} className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />

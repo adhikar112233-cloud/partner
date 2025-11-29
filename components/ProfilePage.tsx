@@ -1,13 +1,10 @@
 
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MembershipPlan, PlatformSettings, View } from '../types';
 import { apiService } from '../services/apiService';
 import DailyPayoutRequestModal from './DailyPayoutRequestModal';
 import { Timestamp } from 'firebase/firestore';
-import { GiftIcon, CoinIcon, DocumentTextIcon, ShareIcon, VerifiedIcon } from './Icons';
+import { GiftIcon, CoinIcon, DocumentTextIcon, ShareIcon, VerifiedIcon, SparklesIcon } from './Icons';
 import AgreementModal from './AgreementModal';
 
 interface ProfilePageProps {
@@ -419,6 +416,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
               alt={user.name} 
               className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border-4 border-white object-cover shadow-md"
             />
+            {user.isBoosted && (
+                <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full flex items-center shadow-md z-10 border-2 border-white transform translate-x-1/4 -translate-y-1/4">
+                    <SparklesIcon className="w-3 h-3 mr-1" /> Boosted
+                </div>
+            )}
             {isEditing && (
                 <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                     <span className="text-xs font-semibold">Change</span>
@@ -439,7 +441,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onProfileUpdate, onGoTo
                     ⚠️ Pending Penalty: ₹{user.pendingPenalty}
                 </div>
             )}
-            {user.role === 'influencer' && (
+            {(user.role === 'influencer' || user.role === 'livetv' || user.role === 'banneragency') && (
                <button onClick={() => setActiveView(View.BOOST_PROFILE)} className="mt-2 ml-2 text-xs bg-purple-500 hover:bg-purple-400 px-3 py-1 rounded-full font-semibold transition-colors shadow-sm text-white">
                    Boost Profile 🚀
                </button>

@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useMemo } from 'react';
 import { User, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -92,15 +94,14 @@ const DisputeModal: React.FC<DisputeModalProps> = ({ user, collaboration, onClos
             });
 
             // 2. Update the collaboration status to 'disputed'
-            const statusUpdate = { status: 'disputed' };
             if (collabType === 'direct') {
-                await apiService.updateCollaborationRequest(collaboration.id, statusUpdate, user.id);
+                await apiService.updateCollaborationRequest(collaboration.id, { status: 'disputed' }, user.id);
             } else if (collabType === 'campaign') {
-                await apiService.updateCampaignApplication(collaboration.id, statusUpdate, user.id);
+                await apiService.updateCampaignApplication(collaboration.id, { status: 'disputed' }, user.id);
             } else if (collabType === 'ad_slot') {
-                await apiService.updateAdSlotRequest(collaboration.id, statusUpdate, user.id);
+                await apiService.updateAdSlotRequest(collaboration.id, { status: 'disputed' }, user.id);
             } else if (collabType === 'banner_booking') {
-                await apiService.updateBannerAdBookingRequest(collaboration.id, statusUpdate, user.id);
+                await apiService.updateBannerAdBookingRequest(collaboration.id, { status: 'disputed' }, user.id);
             }
 
             onDisputeSubmitted();

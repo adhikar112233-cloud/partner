@@ -1,6 +1,7 @@
 
 
 
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -712,6 +713,7 @@ export interface Dispute {
     status: 'open' | 'resolved';
     timestamp: any;
     collabId?: string;
+    resolution?: string;
 }
 
 export interface CollaborationStatusItem {

@@ -1,8 +1,5 @@
-
-
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, Transaction, PayoutRequest } from '../types';
+import { User, Transaction, PayoutRequest, RefundRequest } from '../types';
 import { apiService } from '../services/apiService';
 import { Timestamp } from 'firebase/firestore';
 import { ExclamationTriangleIcon } from './Icons';
@@ -11,7 +8,7 @@ import CashfreeModal from './PhonePeModal';
 interface CombinedHistoryItem {
     date: Date | undefined;
     description: string;
-    type: 'Payment Made' | 'Payout';
+    type: 'Payment Made' | 'Payout' | 'Refund';
     amount: number;
     status: string;
     transactionId: string;
@@ -36,6 +33,7 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
 const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
+    const [refunds, setRefunds] = useState<RefundRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'all' | 'payments' | 'payouts' | 'penalties'>('all');
@@ -47,13 +45,23 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             setIsLoading(true);
             setError(null);
             try {
-                const [userTransactions, userPayouts, settings] = await Promise.all([
+                const promises = [
                     apiService.getTransactionsForUser(user.id),
                     apiService.getPayoutHistoryForUser(user.id),
                     apiService.getPlatformSettings()
-                ]);
+                ];
+
+                // If user is brand, fetch refunds
+                let brandRefunds: RefundRequest[] = [];
+                if (user.role === 'brand') {
+                    brandRefunds = await apiService.getRefundsForUser(user.id);
+                }
+
+                const [userTransactions, userPayouts, settings] = await Promise.all(promises);
+                
                 setTransactions(userTransactions);
                 setPayouts(userPayouts);
+                setRefunds(brandRefunds);
                 setPlatformSettings(settings);
             } catch (err) {
                 console.error(err);
@@ -63,7 +71,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             }
         };
         fetchData();
-    }, [user.id]);
+    }, [user.id, user.role]);
 
     const combinedHistory = useMemo<CombinedHistoryItem[]>(() => {
         const safeToDate = (ts: any): Date | undefined => {
@@ -99,16 +107,33 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             deductedPenalty: p.deductedPenalty
         }));
 
-        return [...mappedTransactions, ...mappedPayouts].sort((a, b) => {
+        const mappedRefunds: CombinedHistoryItem[] = refunds.map(r => ({
+            date: safeToDate(r.timestamp),
+            description: r.collaborationTitle || r.description,
+            type: 'Refund',
+            amount: r.amount,
+            status: r.status,
+            transactionId: r.id,
+            collaborationId: r.collaborationId,
+            collabId: r.collabId,
+        }));
+
+        return [...mappedTransactions, ...mappedPayouts, ...mappedRefunds].sort((a, b) => {
             const timeA = a.date instanceof Date ? a.date.getTime() : 0;
             const timeB = b.date instanceof Date ? b.date.getTime() : 0;
             return timeB - timeA;
         });
-    }, [transactions, payouts]);
+    }, [transactions, payouts, refunds]);
 
     const filteredHistory = useMemo(() => {
         if (activeTab === 'payments') return combinedHistory.filter(item => item.type === 'Payment Made');
-        if (activeTab === 'payouts') return combinedHistory.filter(item => item.type === 'Payout');
+        if (activeTab === 'payouts') {
+            // If brand, show refunds under this tab
+            if (user.role === 'brand') {
+                return combinedHistory.filter(item => item.type === 'Refund');
+            }
+            return combinedHistory.filter(item => item.type === 'Payout');
+        }
         if (activeTab === 'penalties') {
             return combinedHistory.filter(item => 
                 (item.deductedPenalty && item.deductedPenalty > 0) || 
@@ -116,13 +141,13 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
             );
         }
         return combinedHistory;
-    }, [activeTab, combinedHistory]);
+    }, [activeTab, combinedHistory, user.role]);
 
     return (
         <div className="space-y-6 h-full flex flex-col">
             <div>
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Payment History</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions, payouts, and penalties.</p>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">View your transactions, {user.role === 'brand' ? 'refunds' : 'payouts'}, and penalties.</p>
             </div>
 
             {/* Penalty Alert Section */}
@@ -173,7 +198,7 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                     onClick={() => setActiveTab('payouts')} 
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'payouts' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
                 >
-                    Payouts
+                    {user.role === 'brand' ? 'Refunds' : 'Payouts'}
                 </button>
                 <button 
                     onClick={() => setActiveTab('penalties')} 

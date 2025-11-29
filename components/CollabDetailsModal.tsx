@@ -64,12 +64,6 @@ const CollabDetailsModal: React.FC<CollabDetailsModalProps> = ({ collab, onClose
                             <span className="text-xs text-gray-500 uppercase font-bold block mb-1">Status</span>
                             <span className="text-sm font-semibold capitalize text-indigo-600 dark:text-indigo-400">{collab.status.replace(/_/g, ' ')}</span>
                         </div>
-                        <div className="col-span-2">
-                            <span className="text-xs text-gray-500 uppercase font-bold block mb-1">Collab ID</span>
-                            <span className="text-sm font-mono bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded select-all dark:text-gray-200">
-                                {collab.collabId || collab.id}
-                            </span>
-                        </div>
                     </div>
 
                     {/* Content/Message */}

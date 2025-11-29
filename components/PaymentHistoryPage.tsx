@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Transaction, PayoutRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -211,7 +213,9 @@ const PaymentHistoryPage: React.FC<{ user: User }> = ({ user }) => {
                                                 <span className="block text-xs text-red-500 mt-1">Penalty Deducted: -₹{item.deductedPenalty}</span>
                                             ) : null}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono dark:text-gray-400">{item.collabId || 'N/A'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
+                                            {item.collabId || '-'}
+                                        </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             <span className={`font-semibold ${item.type === 'Payment Made' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{item.type}</span>
                                         </td>

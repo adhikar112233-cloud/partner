@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, AdSlotRequest, AdBookingStatus, ConversationParticipant, PlatformSettings } from '../types';
 import { apiService } from '../services/apiService';
@@ -303,7 +305,7 @@ const AdRequestsPage: React.FC<AdRequestsPageProps> = ({ user, platformSettings,
                                 </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
-                                {req.collabId || req.id}
+                                {req.collabId || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 {getAmountDisplay(req)}

@@ -202,12 +202,6 @@ const RefundRequestPage: React.FC<RefundRequestPageProps> = ({ user, collaborati
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
                             <div>
-                                <label className="block text-xs text-gray-400 mb-1">Transaction ID / Collab ID</label>
-                                <div className="font-mono font-medium text-gray-800 dark:text-gray-200 select-all">
-                                    {collaboration.collabId || collaboration.id}
-                                </div>
-                            </div>
-                            <div>
                                 <label className="block text-xs text-gray-400 mb-1">Service Type</label>
                                 <div className="font-medium text-gray-800 dark:text-gray-200 capitalize">
                                     {getCollaborationType().replace('_', ' ')}

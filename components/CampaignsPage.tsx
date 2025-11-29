@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Campaign, CampaignApplication, CampaignApplicationStatus, ConversationParticipant, PlatformSettings, AnyCollaboration } from '../types';
 import { apiService } from '../services/apiService';
@@ -119,7 +121,7 @@ const ApplicationTabs: React.FC<{
                             <p className="font-semibold text-gray-800">{app.influencerName}</p>
                             <ApplicationStatusBadge status={app.status} />
                         </div>
-                        {app.collabId && <p className="text-xs font-mono text-gray-400 mt-1">{app.collabId}</p>}
+                        {app.collabId && <p className="text-xs text-gray-500 font-mono mt-1">ID: {app.collabId}</p>}
                         {app.currentOffer && <p className="text-sm font-semibold text-indigo-600">Offer: {app.currentOffer.amount}</p>}
                         <p className="text-sm text-gray-600 mt-1 italic">"{app.message}"</p>
                         {renderActions()}
@@ -129,6 +131,7 @@ const ApplicationTabs: React.FC<{
         )
     };
 
+    // ... (rest of the component remains unchanged)
     const [activeTab, setActiveTab] = useState<'pending' | 'inProgress' | 'completed'>('pending');
 
     const { pending, inProgress, completed } = useMemo(() => {
@@ -193,6 +196,7 @@ const ApplicationTabs: React.FC<{
 
 
 const CampaignsPage: React.FC<CampaignsPageProps> = ({ user, platformSettings, onStartChat, onInitiateRefund }) => {
+    // ... (rest of CampaignsPage component logic remains unchanged)
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [applications, setApplications] = useState<Record<string, CampaignApplication[]>>({});
     const [isLoading, setIsLoading] = useState(true);

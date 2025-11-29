@@ -1,9 +1,7 @@
-
 import React, { useState, useMemo } from 'react';
 import { User, Transaction, PayoutRequest, UserRole } from '../types';
 import { Timestamp } from 'firebase/firestore';
 import { SparklesIcon } from './Icons';
-
 
 interface AdminPaymentHistoryPageProps {
     transactions: Transaction[];
@@ -66,12 +64,10 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
             const user = userMap.get(t.userId);
             const refId = t.paymentGatewayDetails?.razorpayPaymentId || t.paymentGatewayDetails?.referenceId || t.paymentGatewayDetails?.payment_id || '-';
             
-            // Priority: 1. ID on Transaction, 2. Tag from Gateway, 3. Lookup from Map, 4. Fallback to Doc ID if it looks like a collab
             let visibleCollabId = t.collabId;
             if (!visibleCollabId) visibleCollabId = t.paymentGatewayDetails?.order_tags?.collabId;
             if (!visibleCollabId && t.relatedId) visibleCollabId = collabIdMap.get(t.relatedId);
             
-            // If still no ID, but it's a collab payment, show the Document ID as fallback so it's not blank
             if (!visibleCollabId && t.relatedId && (
                 t.description?.toLowerCase().includes('collaboration') || 
                 t.description?.toLowerCase().includes('campaign') || 
@@ -90,7 +86,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 paymentRefId: refId,
                 userName: user?.name || 'Unknown User',
                 userAvatar: user?.avatar || '',
-                userRole: user?.role || 'brand', // Default to brand for safety
+                userRole: user?.role || 'brand',
                 userPiNumber: user?.piNumber,
                 collaborationId: t.relatedId,
                 collabId: visibleCollabId,
@@ -100,7 +96,6 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
         const mappedPayouts: CombinedHistoryItem[] = payouts.map(p => {
             const user = userMap.get(p.userId);
             
-            // Priority: 1. ID on Request, 2. Lookup from Map, 3. Fallback to Doc ID
             let visibleCollabId = p.collabId;
             if (!visibleCollabId && p.collaborationId) visibleCollabId = collabIdMap.get(p.collaborationId);
             if (!visibleCollabId) visibleCollabId = p.collaborationId;
@@ -112,10 +107,10 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 amount: p.amount,
                 status: p.status,
                 transactionId: p.id,
-                paymentRefId: '-', // Payouts don't have an incoming payment ref ID in this context usually
+                paymentRefId: '-',
                 userName: p.userName,
                 userAvatar: p.userAvatar,
-                userRole: user?.role || 'influencer', // Default to influencer for safety
+                userRole: user?.role || 'influencer',
                 userPiNumber: user?.piNumber,
                 collaborationId: p.collaborationId || '',
                 collabId: visibleCollabId,
@@ -176,7 +171,7 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                 <p className="text-gray-500 dark:text-gray-400 mt-1">Review all payments and payouts across the platform.</p>
             </div>
             
-            <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden mt-6 mx-6 mb-6 flex flex-col flex-1">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden mt-6 mx-6 mb-6 flex flex-col flex-1 shadow-sm border border-gray-200 dark:border-gray-700">
                 <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center flex-wrap gap-4 flex-shrink-0">
                     <nav className="flex space-x-2">
                         <TabButton tab="all">All</TabButton>
@@ -214,28 +209,41 @@ const AdminPaymentHistoryPage: React.FC<AdminPaymentHistoryPageProps> = ({ trans
                                 </thead>
                                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                     {filteredHistory.map((item, index) => (
-                                        <tr key={`${item.transactionId}-${index}`}>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.date?.toLocaleString() || 'Invalid Date'}</td>
+                                        <tr key={`${item.transactionId}-${index}`} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                {item.date?.toLocaleDateString()}
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
-                                                    <img className="h-8 w-8 rounded-full" src={item.userAvatar} alt={item.userName} />
+                                                    <div className="flex-shrink-0 h-8 w-8">
+                                                        <img className="h-8 w-8 rounded-full object-cover" src={item.userAvatar || 'https://via.placeholder.com/40'} alt="" />
+                                                    </div>
                                                     <div className="ml-3">
-                                                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.userName}</div>
-                                                        {item.userPiNumber && <div className="text-xs text-gray-400 font-mono">{item.userPiNumber}</div>}
+                                                        <div className="text-sm font-medium text-gray-900 dark:text-white">{item.userName}</div>
                                                         <div className="text-xs text-gray-500 dark:text-gray-400 capitalize">{item.userRole}</div>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 max-w-xs truncate">{item.description}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
+                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={item.description}>
+                                                {item.description}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm font-mono text-gray-500 dark:text-gray-400">
                                                 {item.collabId || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-semibold">
-                                                {item.type === 'Payment Made' ? '-' : '+'} ₹{(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
+                                                <span className={item.type === 'Payment Made' ? 'text-green-600' : 'text-red-600'}>
+                                                    {item.type === 'Payment Made' ? '+' : '-'} ₹{item.amount.toLocaleString()}
+                                                </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap"><StatusBadge status={item.status} /></td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono max-w-[100px] truncate" title={item.transactionId}>{item.transactionId}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono max-w-[100px] truncate" title={item.paymentRefId}>{item.paymentRefId}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <StatusBadge status={item.status} />
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
+                                                {item.transactionId}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">
+                                                {item.paymentRefId}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>

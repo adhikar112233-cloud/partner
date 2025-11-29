@@ -1,3 +1,6 @@
+
+
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 import { PlatformSettings, User, PayoutRequest, Post, Transaction, AnyCollaboration, CollaborationRequest, CampaignApplication, AdSlotRequest, BannerAdBookingRequest, PlatformBanner, UserRole, StaffPermission, RefundRequest, DailyPayoutRequest, Dispute, CombinedCollabItem, Partner, DiscountSetting, Leaderboard, LeaderboardEntry, Agreements, KycDetails, CreatorVerificationDetails } from '../types';
@@ -145,7 +148,7 @@ const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transactio
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <h2 className="text-2xl font-bold dark:text-white">Disputes</h2>
                 <div className="relative w-full sm:w-64">
-                    <input type="text" placeholder="Search disputes by ID, Collab ID..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                    <input type="text" placeholder="Search by ID, Collab ID..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
                     <SearchIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 </div>
             </div>
@@ -155,13 +158,15 @@ const DisputesPanel: React.FC<{ disputes: Dispute[], allTransactions: Transactio
                         {filteredDisputes.map(d => (
                             <div key={d.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-red-500">
                                 <div className="flex justify-between flex-wrap gap-2">
-                                    <p className="font-bold dark:text-white break-all">Dispute on: {d.collaborationTitle}</p>
+                                    <div>
+                                        <p className="font-bold dark:text-white break-all">Dispute on: {d.collaborationTitle}</p>
+                                        <p className="text-xs text-indigo-500 font-mono">Collab ID: {d.collabId || 'N/A'}</p>
+                                    </div>
                                     <div className="text-right">
                                         <span className="text-xs font-mono text-gray-400 block">ID: {d.id}</span>
-                                        {d.collabId && <span className="text-xs font-mono bg-indigo-50 text-indigo-700 px-1 rounded">Collab ID: {d.collabId}</span>}
                                     </div>
                                 </div>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">By: {d.disputedByName} vs {d.disputedAgainstName}</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">By: {d.disputedByName} vs {d.disputedAgainstName}</p>
                                 <div className="mt-2 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm italic dark:text-gray-300 max-h-32 overflow-y-auto">
                                     {d.reason}
                                 </div>
@@ -264,7 +269,7 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allT
                 <div className="relative w-full sm:w-64">
                     <input 
                         type="text" 
-                        placeholder="Search by Collab ID, Title..." 
+                        placeholder="Search by Title, Collab ID..." 
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -276,9 +281,9 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allT
                 <table className="w-full text-left">
                     <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                         <tr>
-                            <th className="p-4">Collab ID</th>
                             <th className="p-4">Type</th>
                             <th className="p-4">Title</th>
+                            <th className="p-4">Collab ID</th>
                             <th className="p-4">Users</th>
                             <th className="p-4">Status</th>
                             <th className="p-4">Action</th>
@@ -287,9 +292,9 @@ const CollaborationsPanel: React.FC<{ collaborations: CombinedCollabItem[], allT
                     <tbody>
                         {filteredCollaborations.map(c => (
                             <tr key={c.id} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td className="p-4 text-sm font-mono dark:text-gray-300">{c.visibleCollabId || '-'}</td>
                                 <td className="p-4 text-sm dark:text-gray-300">{c.type}</td>
                                 <td className="p-4 font-medium dark:text-white">{c.title}</td>
+                                <td className="p-4 text-sm font-mono text-gray-500 dark:text-gray-400">{c.visibleCollabId || '-'}</td>
                                 <td className="p-4 text-sm dark:text-gray-300">{c.customerName} & {c.providerName}</td>
                                 <td className="p-4"><span className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs capitalize">{c.status.replace('_', ' ')}</span></td>
                                 <td className="p-4"><button onClick={() => setSelectedCollab(c)} className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400">View</button></td>

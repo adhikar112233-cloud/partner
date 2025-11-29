@@ -1,3 +1,4 @@
+
 // ... (imports)
 import { 
     collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, 
@@ -25,9 +26,14 @@ const uploadFile = async (path: string, file: File): Promise<string> => {
     return await getDownloadURL(storageRef);
 };
 
-// Helper to generate Collab ID (CI + 10 digits)
-const generateCollabId = () => {
-    return 'CI' + Math.floor(1000000000 + Math.random() * 9000000000).toString();
+// Helper to generate Collab ID (4 Letters + 6 Digits)
+const generateCollabId = (): string => {
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const nums = "0123456789";
+    let id = "";
+    for(let i=0; i<4; i++) id += letters.charAt(Math.floor(Math.random() * letters.length));
+    for(let i=0; i<6; i++) id += nums.charAt(Math.floor(Math.random() * nums.length));
+    return id;
 };
 
 export const apiService = {
@@ -35,7 +41,6 @@ export const apiService = {
         // Placeholder for any initialization logic if needed
     },
 
-    // ... (getAllUsers to adminChangePassword - no changes)
     getAllUsers: async (): Promise<User[]> => {
         const snapshot = await getDocs(collection(db, 'users'));
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
@@ -163,11 +168,64 @@ export const apiService = {
 
     getPlatformSettings: async (): Promise<PlatformSettings> => {
         const docRef = doc(db, 'settings', 'platform');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return docSnap.data() as PlatformSettings;
+        try {
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                return docSnap.data() as PlatformSettings;
+            }
+        } catch (error: any) {
+            if (error.code === 'permission-denied') throw error;
+            console.warn("Error fetching platform settings:", error);
         }
-        throw new Error("Platform settings not found");
+        
+        // Return default settings if not found to prevent app crash on fresh install
+        return {
+            isCommunityFeedEnabled: true,
+            isCreatorMembershipEnabled: true,
+            isProMembershipEnabled: true,
+            isMaintenanceModeEnabled: false,
+            isWelcomeMessageEnabled: true,
+            isNotificationBannerEnabled: false,
+            socialMediaLinks: [],
+            isSocialMediaFabEnabled: false,
+            isStaffRegistrationEnabled: false,
+            isLiveHelpEnabled: true,
+            isProfileBoostingEnabled: true,
+            isCampaignBoostingEnabled: true,
+            isBannerAdsEnabled: true,
+            isKycIdProofRequired: true,
+            isKycSelfieRequired: true,
+            isInstantKycEnabled: false,
+            isForgotPasswordOtpEnabled: false,
+            isOtpLoginEnabled: false,
+            isGoogleLoginEnabled: false,
+            activePaymentGateway: 'cashfree',
+            paymentGatewayApiId: '',
+            paymentGatewayApiSecret: '',
+            paymentGatewaySourceCode: '',
+            otpApiId: '',
+            boostPrices: { profile: 499, campaign: 999, banner: 1499 },
+            membershipPrices: { pro_10: 999, pro_20: 1999, pro_unlimited: 4999, basic: 499, pro: 1499, premium: 2999 },
+            isPlatformCommissionEnabled: false,
+            platformCommissionRate: 10,
+            isPaymentProcessingChargeEnabled: false,
+            paymentProcessingChargeRate: 2,
+            isGstEnabled: false,
+            gstRate: 18,
+            cancellationPenaltyAmount: 500,
+            isBrandGstEnabled: false,
+            isBrandPlatformFeeEnabled: false,
+            isCreatorGstEnabled: false,
+            isPayoutInstantVerificationEnabled: false,
+            payoutSettings: { requireSelfieForPayout: true, requireLiveVideoForDailyPayout: false },
+            discountSettings: {
+                creatorProfileBoost: { isEnabled: false, percentage: 0 },
+                brandMembership: { isEnabled: false, percentage: 0 },
+                creatorMembership: { isEnabled: false, percentage: 0 },
+                brandCampaignBoost: { isEnabled: false, percentage: 0 },
+                brandBannerBoost: { isEnabled: false, percentage: 0 }
+            }
+        };
     },
     updatePlatformSettings: async (settings: PlatformSettings) => {
         await setDoc(doc(db, 'settings', 'platform'), settings, { merge: true });
@@ -354,12 +412,11 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollaborationRequest));
     },
     sendCollabRequest: async (request: any) => {
-        // Generate Collab ID
         const collabId = generateCollabId();
         const ref = await addDoc(collection(db, 'collaboration_requests'), { 
             ...request, 
-            collabId, 
             status: 'pending', 
+            collabId: collabId,
             timestamp: serverTimestamp() 
         });
         await apiService.createNotification(request.influencerId, {
@@ -439,12 +496,11 @@ export const apiService = {
         return campaigns.sort((a, b) => (b.isBoosted === true ? 1 : 0) - (a.isBoosted === true ? 1 : 0));
     },
     applyToCampaign: async (application: any) => {
-        // Generate Collab ID
         const collabId = generateCollabId();
         const ref = await addDoc(collection(db, 'campaign_applications'), { 
             ...application, 
-            collabId,
             status: 'pending_brand_review', 
+            collabId: collabId,
             timestamp: serverTimestamp() 
         });
         await updateDoc(doc(db, 'campaigns', application.campaignId), {
@@ -516,12 +572,11 @@ export const apiService = {
         });
     },
     sendAdSlotRequest: async (request: any) => {
-        // Generate Collab ID
         const collabId = generateCollabId();
         const ref = await addDoc(collection(db, 'ad_slot_requests'), { 
             ...request, 
-            collabId,
             status: 'pending_approval', 
+            collabId: collabId,
             timestamp: serverTimestamp() 
         });
         
@@ -600,12 +655,11 @@ export const apiService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BannerAd));
     },
     sendBannerAdBookingRequest: async (request: any) => {
-        // Generate Collab ID
         const collabId = generateCollabId();
         const ref = await addDoc(collection(db, 'banner_ad_booking_requests'), { 
             ...request, 
-            collabId,
             status: 'pending_approval', 
+            collabId: collabId,
             timestamp: serverTimestamp() 
         });
         

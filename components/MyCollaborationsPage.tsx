@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, CollaborationRequest, CollabRequestStatus, ProfileData, ConversationParticipant, PlatformSettings, AnyCollaboration } from '../types';
 import { apiService } from '../services/apiService';
@@ -260,7 +262,7 @@ const MyCollaborationsPage: React.FC<MyCollaborationsPageProps> = ({ user, platf
                                 </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
-                                {req.collabId || req.id}
+                                {req.collabId || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 {getAmountDisplay(req)}

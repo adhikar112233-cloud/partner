@@ -1,5 +1,6 @@
 
 
+
 import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'brand' | 'influencer' | 'livetv' | 'banneragency' | 'staff';
@@ -441,6 +442,7 @@ export interface DailyPayoutRequest {
     approvedAmount?: number;
     rejectionReason?: string;
     timestamp: any;
+    collabId?: string;
 }
 
 export type CollabRequestStatus = 'pending' | 'rejected' | 'influencer_offer' | 'brand_offer' | 'agreement_reached' | 'in_progress' | 'work_submitted' | 'completed' | 'disputed' | 'brand_decision_pending' | 'refund_pending_admin_review';

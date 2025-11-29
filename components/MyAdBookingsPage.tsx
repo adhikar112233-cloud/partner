@@ -1,3 +1,6 @@
+
+
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, BannerAdBookingRequest, AdBookingStatus, ConversationParticipant, PlatformSettings, BannerAd, AdSlotRequest } from '../types';
 import { apiService } from '../services/apiService';
@@ -5,8 +8,9 @@ import PostBannerAdModal from './PostBannerAdModal';
 import { Timestamp } from 'firebase/firestore';
 import CashfreeModal from './PhonePeModal';
 import DisputeModal from './DisputeModal';
-import { TrashIcon, MessagesIcon, EyeIcon } from './Icons';
+import { TrashIcon, MessagesIcon, EyeIcon, SparklesIcon } from './Icons';
 import CollabDetailsModal from './CollabDetailsModal';
+import CancellationPenaltyModal from './CancellationPenaltyModal';
 
 type AdRequest = (AdSlotRequest & { type: 'Live TV' }) | (BannerAdBookingRequest & { type: 'Banner Ad' });
 
@@ -254,7 +258,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
     };
 
     // Helper function to display amounts clearly
-    const getAmountDisplay = (req: AdSlotRequest) => {
+    const getAmountDisplay = (req: AdRequest) => {
         if (req.finalAmount) {
             return <span className="text-green-600 font-bold dark:text-green-400">{req.finalAmount}</span>;
         }
@@ -263,7 +267,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                 <div className="flex flex-col">
                     <span className="text-blue-600 font-bold dark:text-blue-400">{req.currentOffer.amount}</span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {req.currentOffer.offeredBy === 'agency' ? 'My Offer' : 'Brand Offer'}
+                        {req.currentOffer.offeredBy === 'brand' ? 'My Offer' : 'Agency Offer'}
                     </span>
                 </div>
             );
@@ -305,7 +309,7 @@ export const MyAdBookingsPage: React.FC<MyAdBookingsPageProps> = ({ user, platfo
                                 </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
-                                {req.collabId || req.id}
+                                {req.collabId || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 {getAmountDisplay(req)}
